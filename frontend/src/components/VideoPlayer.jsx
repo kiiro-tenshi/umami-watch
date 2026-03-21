@@ -38,6 +38,12 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
 
   const updateCC = (patch) => setCC(prev => ({ ...prev, ...patch }));
 
+  // Extract primitive values from options so effects only re-run when the actual
+  // URL or mode changes — not when WatchPage creates a new sources array reference
+  const src      = options.sources?.[0]?.src ?? '';
+  const isM3u8   = options.sources?.[0]?.type === 'application/x-mpegURL';
+  const isViewer = options.isViewer === true;
+
   // CC track: hide all native rendering, listen to cuechange for custom overlay
   useEffect(() => {
     const video = videoRef.current;
@@ -70,16 +76,12 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       video.addEventListener('loadeddata', setup, { once: true });
       return () => video.removeEventListener('loadeddata', setup);
     }
-  }, [cc.enabled, cc.activeLang, options.sources]);
+  }, [cc.enabled, cc.activeLang, src]);
 
   // Main player setup
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-
-    const src    = options.sources?.[0]?.src;
-    const isM3u8 = options.sources?.[0]?.type === 'application/x-mpegURL';
-    const isViewer = options.isViewer === true;
 
     const defaultControls = ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'pip', 'airplay', 'fullscreen'];
     const viewerControls  = ['mute', 'volume', 'fullscreen'];
@@ -173,7 +175,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       setPlyrContainer(null);
       setCcMountEl(null);
     };
-  }, [options.sources, options.isViewer, options.autoplay, token]);
+  }, [src, isM3u8, isViewer, options.autoplay, token]);
 
   const hasTracks = tracks.length > 0;
 
