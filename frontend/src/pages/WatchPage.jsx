@@ -154,10 +154,13 @@ export default function WatchPage() {
           const currentToken = token || await auth.currentUser?.getIdToken();
 
           const buildSource = (res, label) => {
-            const hlsSrc = res?.data?.sources?.find(s => s.isM3U8);
-            if (!hlsSrc) return null;
+            const sources = res?.data?.sources || [];
+            if (!sources.length) return null;
+            // Prefer M3U8, fall back to any source with a URL
+            const src = sources.find(s => s.isM3U8) || sources[0];
+            if (!src?.url) return null;
             const referer = res.data.headers?.Referer || 'https://hianime.to/';
-            const url = `/api/proxy/hls?url=${encodeURIComponent(hlsSrc.url)}&referer=${encodeURIComponent(referer)}`;
+            const url = `/api/proxy/hls?url=${encodeURIComponent(src.url)}&referer=${encodeURIComponent(referer)}`;
             const tracks = (res.data.subtitles || [])
               .filter(s => s.lang !== 'Thumbnails')
               .map(s => ({
@@ -166,17 +169,28 @@ export default function WatchPage() {
                 srclang: s.lang.toLowerCase().slice(0, 2),
                 src: `/api/proxy/hls?url=${encodeURIComponent(s.url)}&referer=${encodeURIComponent(referer)}${currentToken ? `&token=${encodeURIComponent(currentToken)}` : ''}`
               }));
-            return { label, url, type: 'hls', tracks };
+            return { label, url, type: src.isM3U8 ? 'hls' : 'hls', tracks };
           };
 
-          // Fetch all servers in parallel, keep all that work
-          const results = await Promise.allSettled(
+          // Fetch all servers in parallel — auto-retry up to 2 times on cold start failures
+          const fetchSources = () => Promise.allSettled(
             SERVERS.map(s => getAniwatchSources(decoded, s.key))
           );
-
-          const srcs = results
+          const toSrcs = (results) => results
             .map((r, i) => r.status === 'fulfilled' ? buildSource(r.value, SERVERS[i].label) : null)
             .filter(Boolean);
+
+          let srcs = toSrcs(await fetchSources());
+
+          if (srcs.length === 0) {
+            // Aniwatch-api may be cold-starting — wait and retry up to 2 times
+            for (let attempt = 1; attempt <= 2 && srcs.length === 0; attempt++) {
+              if (cancelled) return;
+              await new Promise(r => setTimeout(r, attempt * 2000));
+              srcs = toSrcs(await fetchSources());
+            }
+          }
+
           if (srcs.length === 0) {
             setError('This episode is not available on HiAnime. The anime may not be indexed there yet.');
             setLoading(false);
