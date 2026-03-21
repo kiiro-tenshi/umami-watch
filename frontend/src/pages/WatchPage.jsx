@@ -56,6 +56,7 @@ export default function WatchPage() {
   const playerRef = useRef(null);
   const hasJoinedRoomRef = useRef(false);
   const episodeListRef = useRef(null);
+  const pendingSyncRef = useRef(null); // buffers sync:state that arrives before player is ready
 
   const { socketRef, reconnecting } = useSocket(import.meta.env.VITE_API_BASE_URL, token);
   const isHost = roomData?.hostId === user?.uid;
@@ -93,10 +94,15 @@ export default function WatchPage() {
           return;
         }
         setRoomData(data);
-        // Restore stream for everyone when returning to room.
-        // If the host has content params in the URL, fetchStream will overwrite this shortly after.
-        if (data.streamUrl) {
+        // Restore stream for non-host viewers — host will re-fetch via fetchStream
+        if (data.streamUrl && data.hostId !== user?.uid) {
           setStreamUrl(data.streamUrl);
+          // Set sources so isHls is correct for the viewer's player
+          if (data.contentType === 'anime') {
+            setSources([{ type: 'hls', url: data.streamUrl, label: 'Stream', tracks: [] }]);
+          } else if (data.contentType) {
+            setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
+          }
         }
         // If no content type to fetch, we're done loading
         if (!type) setLoading(false);
@@ -316,9 +322,13 @@ export default function WatchPage() {
 
     // Viewer: apply sync state from server (periodic heartbeat or join event)
     const onSyncState = ({ position, playing } = {}) => {
+      if (isHost) return;
       const p = playerRef.current;
-      if (!p || isHost) return;
-      // Correct drift if off by more than 1 second
+      if (!p) {
+        // Player not ready yet — buffer so handlePlayerReady can apply it
+        pendingSyncRef.current = { position, playing };
+        return;
+      }
       if (typeof position === 'number' && Math.abs(p.currentTime - position) > 1) {
         p.currentTime = position;
       }
@@ -351,7 +361,14 @@ export default function WatchPage() {
     // Non-host: receive real-time content updates when host patches the room
     const onRoomContentUpdated = (data) => {
       if (isHost) return;
-      if (data.streamUrl) setStreamUrl(data.streamUrl);
+      if (data.streamUrl) {
+        setStreamUrl(data.streamUrl);
+        if (data.contentType === 'anime') {
+          setSources([{ type: 'hls', url: data.streamUrl, label: 'Stream', tracks: [] }]);
+        } else if (data.contentType) {
+          setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
+        }
+      }
       setRoomData(prev => prev ? { ...prev, ...data } : prev);
     };
 
@@ -440,6 +457,13 @@ export default function WatchPage() {
       player.on('pause', () => socketRef.current?.emit('playback:pause', player.currentTime));
       player.on('seeked', () => socketRef.current?.emit('playback:seek', player.currentTime));
     }
+    // Apply buffered sync:state that arrived before player was ready
+    if (roomId && !isHost && pendingSyncRef.current) {
+      const { position, playing } = pendingSyncRef.current;
+      pendingSyncRef.current = null;
+      if (typeof position === 'number') player.currentTime = position;
+      if (playing) player.play().catch(() => {});
+    }
   };
 
   const handleSourceSwitch = (idx) => {
@@ -455,11 +479,8 @@ export default function WatchPage() {
 
   const videoOptions = {
     autoplay: false,
-    controls: true,
-    responsive: true,
-    fluid: true,
     sources: isHls ? [{ src: streamUrl, type: 'application/x-mpegURL' }] : [],
-    controlBar: (!roomId || isHost) ? {} : { playToggle: false, progressControl: false }
+    isViewer: !!(roomId && !isHost),
   };
 
   const hasEpisodeSidebar = type === 'anime' && animeEpisodes.length > 0;
