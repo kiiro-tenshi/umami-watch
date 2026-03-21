@@ -41,6 +41,11 @@ export default {
     }
 
     const contentType = response.headers.get('content-type') || '';
+
+    // CDN returned a Cloudflare block/challenge page — tell client to use fallback proxy
+    if (contentType.includes('text/html')) {
+      return new Response('Upstream blocked this request', { status: 530, headers: CORS });
+    }
     const isM3u8 = contentType.includes('mpegurl') || decodedUrl.includes('.m3u8');
 
     const responseHeaders = {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { getAnimeById } from '../api/anilist';
@@ -29,8 +29,7 @@ function buildEmbedSources(type, { tmdbId, season, episode }) {
 
 export default function WatchPage() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const { user } = useAuth();
+const { user } = useAuth();
 
   const roomId = searchParams.get('roomId');
   const type = searchParams.get('type'); // anime | movie | tv
@@ -151,42 +150,58 @@ export default function WatchPage() {
             { key: 'vidcloud',    label: 'Vidcloud' },
           ];
 
-          const HLS_PROXY = import.meta.env.VITE_HLS_PROXY_URL;
+          const CF_PROXY     = import.meta.env.VITE_HLS_PROXY_URL;
+          const SERVER_PROXY = `${import.meta.env.VITE_API_BASE_URL}/api/proxy/hls`;
 
-          const buildSource = (res, label) => {
+          const buildSource = async (res, label) => {
             const sources = res?.data?.sources || [];
             if (!sources.length) return null;
             const src = sources.find(s => s.isM3U8) || sources[0];
             if (!src?.url) return null;
             const referer = res.data.headers?.Referer || 'https://hianime.to/';
-            const url = `${HLS_PROXY}?url=${encodeURIComponent(src.url)}&referer=${encodeURIComponent(referer)}`;
+
+            // Try CF Worker first; if it's blocked (530 or HTML), fall back to Cloud Run proxy
+            let proxy = CF_PROXY;
+            try {
+              const test = await fetch(
+                `${CF_PROXY}?url=${encodeURIComponent(src.url)}&referer=${encodeURIComponent(referer)}`
+              );
+              if (!test.ok) proxy = SERVER_PROXY; // 530 = blocked by CDN
+            } catch {
+              proxy = SERVER_PROXY;
+            }
+
+            const makeUrl = (u) => `${proxy}?url=${encodeURIComponent(u)}&referer=${encodeURIComponent(referer)}`;
             const tracks = (res.data.subtitles || [])
               .filter(s => s.lang !== 'Thumbnails')
               .map(s => ({
                 kind: 'subtitles',
                 label: s.lang,
                 srclang: s.lang.toLowerCase().slice(0, 2),
-                src: `${HLS_PROXY}?url=${encodeURIComponent(s.url)}&referer=${encodeURIComponent(referer)}`
+                src: makeUrl(s.url),
               }));
-            return { label, url, type: 'hls', tracks };
+            return { label, url: makeUrl(src.url), type: 'hls', tracks };
           };
 
           // Fetch all servers in parallel — auto-retry up to 2 times on cold start failures
           const fetchSources = () => Promise.allSettled(
             SERVERS.map(s => getAniwatchSources(decoded, s.key))
           );
-          const toSrcs = (results) => results
-            .map((r, i) => r.status === 'fulfilled' ? buildSource(r.value, SERVERS[i].label) : null)
-            .filter(Boolean);
+          const toSrcs = async (results) => {
+            const built = await Promise.all(
+              results.map((r, i) => r.status === 'fulfilled' ? buildSource(r.value, SERVERS[i].label) : null)
+            );
+            return built.filter(Boolean);
+          };
 
-          let srcs = toSrcs(await fetchSources());
+          let srcs = await toSrcs(await fetchSources());
 
           if (srcs.length === 0) {
             // Aniwatch-api may be cold-starting — wait and retry up to 2 times
             for (let attempt = 1; attempt <= 2 && srcs.length === 0; attempt++) {
               if (cancelled) return;
               await new Promise(r => setTimeout(r, attempt * 2000));
-              srcs = toSrcs(await fetchSources());
+              srcs = await toSrcs(await fetchSources());
             }
           }
 
