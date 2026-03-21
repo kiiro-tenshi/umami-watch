@@ -2,10 +2,72 @@
 @tailwind components;
 @tailwind utilities;
 
-.video-js { background: #000; border-radius: 0; }
-.vjs-control-bar { background: linear-gradient(transparent, rgba(0,0,0,0.8)); }
-.vjs-play-progress { background: #ef4444; }
-.vjs-load-progress { background: rgba(239, 68, 68, 0.3); }
+/* ── Plyr custom theme ────────────────────────────────────────────────────── */
+:root {
+  --plyr-color-main: #f43f5e;
+  --plyr-font-family: 'DM Sans', sans-serif;
+  --plyr-font-size-base: 13px;
+  --plyr-control-icon-size: 16px;
+  --plyr-control-spacing: 10px;
+  --plyr-control-radius: 6px;
+  --plyr-range-thumb-height: 12px;
+  --plyr-range-thumb-background: #f43f5e;
+  --plyr-range-fill-background: #f43f5e;
+  --plyr-range-track-height: 3px;
+  --plyr-video-control-color: rgba(255,255,255,0.85);
+  --plyr-video-control-color-hover: #fff;
+  --plyr-video-control-background-hover: rgba(244,63,94,0.25);
+  --plyr-menu-background: rgba(20,5,5,0.95);
+  --plyr-menu-color: rgba(255,255,255,0.85);
+  --plyr-menu-border-color: rgba(244,63,94,0.2);
+  --plyr-menu-border-shadow-color: rgba(0,0,0,0.5);
+  --plyr-badge-background: #f43f5e;
+  --plyr-tooltip-background: rgba(20,5,5,0.92);
+  --plyr-tooltip-color: #fff;
+  --plyr-tooltip-radius: 6px;
+}
+
+/* Control bar — dark gradient fading up from bottom */
+.plyr--video .plyr__controls {
+  background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 60%, transparent 100%);
+  padding: 20px 12px 10px;
+  border-radius: 0;
+}
+
+/* Large play button in center */
+.plyr__control--overlaid {
+  background: rgba(244,63,94,0.85) !important;
+  border-radius: 50% !important;
+  padding: 18px !important;
+  transition: background 0.2s, transform 0.15s !important;
+}
+.plyr__control--overlaid:hover {
+  background: #f43f5e !important;
+  transform: scale(1.08) !important;
+}
+
+/* Buffered/loaded track */
+.plyr__progress__buffer {
+  background: rgba(255,255,255,0.2);
+}
+
+/* Time display */
+.plyr__time {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.8);
+}
+
+/* Captions */
+.plyr__captions {
+  font-size: 15px;
+  font-weight: 500;
+}
+.plyr__caption {
+  background: rgba(0,0,0,0.75);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
 
 /* Hide scrollbar for horizontal scrolling containers */
 .scrollbar-hide::-webkit-scrollbar {
