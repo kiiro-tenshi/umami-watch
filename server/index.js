@@ -110,7 +110,8 @@ app.get('/api/proxy/hls', async (req, res) => {
       const text   = await upstream.text();
       const urlObj = new URL(decodedUrl);
       const base   = urlObj.origin + urlObj.pathname.substring(0, urlObj.pathname.lastIndexOf('/') + 1);
-      const proxyBase = `${req.protocol}://${req.get('host')}/api/proxy/hls`;
+      const proto = req.headers['x-forwarded-proto'] || req.protocol;
+      const proxyBase = `${proto}://${req.get('host')}/api/proxy/hls`;
 
       const proxify = (raw) => {
         const abs = raw.startsWith('http') ? raw
