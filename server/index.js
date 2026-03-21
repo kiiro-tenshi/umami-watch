@@ -30,6 +30,7 @@ import userRoutes from './routes/users.js';
 import createRoomRouter from './routes/rooms.js';
 import torrentRoutes from './routes/torrent.js';
 import setupSockets from './socket/roomSocket.js';
+import requireAuth from './middleware/requireAuth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -79,10 +80,10 @@ app.post('/api/verify-turnstile', async (req, res) => {
 // ─── API Routes ────────────────────────────────────────────────────────────
 app.use('/api/me', userRoutes);
 app.use('/api/rooms', createRoomRouter(io));
-app.use('/api/torrent', torrentRoutes);
+app.use('/api/torrent', requireAuth, torrentRoutes);
 
 // ─── Aniwatch Proxy (forwards to self-hosted aniwatch-api) ─────────────────
-app.get('/api/proxy/aniwatch/*', async (req, res) => {
+app.get('/api/proxy/aniwatch/*', requireAuth, async (req, res) => {
   const base = process.env.ANIWATCH_API_URL || 'http://localhost:4000';
   const path = req.params[0];
   try {
@@ -101,7 +102,7 @@ app.get('/api/proxy/aniwatch/*', async (req, res) => {
 });
 
 // ─── HLS Proxy (adds Referer header + rewrites M3U8 URLs) ──────────────────
-app.get('/api/proxy/hls', async (req, res) => {
+app.get('/api/proxy/hls', requireAuth, async (req, res) => {
   const { url, referer } = req.query;
   if (!url) return res.status(400).send('url required');
 
