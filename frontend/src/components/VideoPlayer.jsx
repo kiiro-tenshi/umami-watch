@@ -12,44 +12,67 @@ const TEXT_COLORS = [
 
 const DEFAULT_CC = { enabled: false, activeLang: '', size: 100, bgOpacity: 75, color: '#ffffff', bold: false };
 
+// Strip VTT-specific tags but keep basic HTML formatting
+function parseCueText(text) {
+  return (text || '')
+    .replace(/<\d{2}:\d{2}:\d{2}\.\d{3}>/g, '')
+    .replace(/<c[.\w]*>(.*?)<\/c>/gs, '$1')
+    .replace(/<v[^>]*>/g, '').replace(/<\/v>/g, '')
+    .replace(/<ruby>/g, '').replace(/<\/ruby>/g, '')
+    .replace(/<rt>.*?<\/rt>/gs, '');
+}
+
 export default function VideoPlayer({ options, tracks = [], onReady, onError, token }) {
-  const videoRef   = useRef(null);
-  const playerRef  = useRef(null);
-  const hlsRef     = useRef(null);
-  const styleRef   = useRef(null);
+  const videoRef  = useRef(null);
+  const playerRef = useRef(null);
+  const hlsRef    = useRef(null);
+  const cueTrackRef = useRef(null);
 
   const [isLoading,   setIsLoading]   = useState(true);
   const [playerError, setPlayerError] = useState(null);
   const [ccOpen,      setCcOpen]      = useState(false);
   const [cc,          setCC]          = useState(DEFAULT_CC);
+  const [cueText,     setCueText]     = useState('');
 
   const updateCC = (patch) => setCC(prev => ({ ...prev, ...patch }));
 
-  // Inject ::cue styles whenever cc settings change
-  useEffect(() => {
-    if (!styleRef.current) {
-      styleRef.current = document.createElement('style');
-      styleRef.current.id = 'umami-cue-style';
-      document.head.appendChild(styleRef.current);
-    }
-    styleRef.current.textContent = `::cue {
-      font-size: ${cc.size / 100}em;
-      background-color: rgba(0,0,0,${cc.bgOpacity / 100});
-      color: ${cc.color};
-      font-weight: ${cc.bold ? '700' : '400'};
-    }`;
-  }, [cc.size, cc.bgOpacity, cc.color, cc.bold]);
-
-  useEffect(() => () => { styleRef.current?.remove(); styleRef.current = null; }, []);
-
-  // Apply active track based on cc state
+  // Apply active track and set up cue listener for custom rendering
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    Array.from(video.textTracks).forEach(t => {
-      t.mode = (cc.enabled && t.label === cc.activeLang) ? 'showing' : 'hidden';
-    });
-  }, [cc.enabled, cc.activeLang]);
+
+    // Tear down previous track listener
+    if (cueTrackRef.current) {
+      cueTrackRef.current.track.removeEventListener('cuechange', cueTrackRef.current.handler);
+      cueTrackRef.current = null;
+    }
+    setCueText('');
+
+    // Hide all tracks (suppress native rendering)
+    Array.from(video.textTracks).forEach(t => { t.mode = 'hidden'; });
+
+    if (!cc.enabled || !cc.activeLang) return;
+
+    const setup = () => {
+      const track = Array.from(video.textTracks).find(t => t.label === cc.activeLang);
+      if (!track) return;
+      // 'hidden' mode: no native rendering, but cuechange still fires and activeCues is populated
+      track.mode = 'hidden';
+      const handler = () => {
+        const cue = track.activeCues?.[0];
+        setCueText(cue ? parseCueText(cue.text) : '');
+      };
+      track.addEventListener('cuechange', handler);
+      cueTrackRef.current = { track, handler };
+    };
+
+    if (video.textTracks.length > 0) {
+      setup();
+    } else {
+      video.addEventListener('loadeddata', setup, { once: true });
+      return () => video.removeEventListener('loadeddata', setup);
+    }
+  }, [cc.enabled, cc.activeLang, options.sources]);
 
   // Main player setup
   useEffect(() => {
@@ -60,7 +83,6 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
     const srcType = options.sources?.[0]?.type;
     const isM3u8  = srcType === 'application/x-mpegURL';
 
-    // We manage captions ourselves — exclude from Plyr controls
     const defaultControls = ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'pip', 'airplay', 'fullscreen'];
     const viewerControls  = ['fullscreen', 'volume', 'mute'];
     const isViewer = options.controlBar?.playToggle === false;
@@ -72,6 +94,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
     setIsLoading(true);
     setPlayerError(null);
     setCC(DEFAULT_CC);
+    setCueText('');
 
     if (!src) { setIsLoading(false); return; }
 
@@ -142,7 +165,29 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
         ))}
       </video>
 
-      {/* CC panel — visible on hover when tracks exist */}
+      {/* Custom subtitle overlay */}
+      {cueText && cc.enabled && (
+        <div className="absolute bottom-20 left-0 right-0 flex justify-center px-8 z-10 pointer-events-none">
+          <span
+            dangerouslySetInnerHTML={{ __html: cueText }}
+            style={{
+              fontSize: `${cc.size / 100 * 1.3}em`,
+              backgroundColor: `rgba(0,0,0,${cc.bgOpacity / 100})`,
+              color: cc.color,
+              fontWeight: cc.bold ? '700' : '400',
+              padding: '3px 10px',
+              borderRadius: '4px',
+              textAlign: 'center',
+              lineHeight: 1.6,
+              whiteSpace: 'pre-line',
+              display: 'inline-block',
+              maxWidth: '80%',
+            }}
+          />
+        </div>
+      )}
+
+      {/* CC panel */}
       {hasTracks && !isLoading && !playerError && (
         <div className="absolute top-3 right-3 z-20">
           <button
@@ -160,7 +205,6 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
           {ccOpen && (
             <div className="absolute top-9 right-0 w-64 bg-black/92 border border-white/10 rounded-xl p-4 flex flex-col gap-4 shadow-2xl backdrop-blur-sm">
 
-              {/* Language */}
               <div>
                 <p className="text-[10px] text-white/40 uppercase tracking-widest mb-2 font-semibold">Language</p>
                 <div className="flex flex-wrap gap-1.5">
@@ -179,7 +223,6 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
                 </div>
               </div>
 
-              {/* Font size */}
               <div>
                 <div className="flex justify-between items-center mb-1.5">
                   <p className="text-[10px] text-white/40 uppercase tracking-widest font-semibold">Size</p>
@@ -190,7 +233,6 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
                   className="w-full accent-[#f43f5e] cursor-pointer h-1.5 rounded-full" />
               </div>
 
-              {/* Background opacity */}
               <div>
                 <div className="flex justify-between items-center mb-1.5">
                   <p className="text-[10px] text-white/40 uppercase tracking-widest font-semibold">Background</p>
@@ -201,7 +243,6 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
                   className="w-full accent-[#f43f5e] cursor-pointer h-1.5 rounded-full" />
               </div>
 
-              {/* Text color */}
               <div>
                 <p className="text-[10px] text-white/40 uppercase tracking-widest mb-2 font-semibold">Color</p>
                 <div className="flex gap-2">
@@ -216,7 +257,6 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
                 </div>
               </div>
 
-              {/* Bold toggle */}
               <div className="flex items-center justify-between">
                 <p className="text-[10px] text-white/40 uppercase tracking-widest font-semibold">Bold</p>
                 <button
