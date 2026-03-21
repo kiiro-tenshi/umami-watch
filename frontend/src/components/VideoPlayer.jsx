@@ -3,7 +3,7 @@ import Plyr from 'plyr';
 import Hls from 'hls.js';
 import 'plyr/dist/plyr.css';
 
-export default function VideoPlayer({ options, tracks = [], onReady, onError }) {
+export default function VideoPlayer({ options, tracks = [], onReady, onError, token }) {
   const videoRef = useRef(null);
   const playerRef = useRef(null);
   const hlsRef = useRef(null);
@@ -42,7 +42,13 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError }) 
     }
 
     if (isM3u8 && Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true, autoStartLoad: true });
+      const hls = new Hls({
+        enableWorker: true,
+        autoStartLoad: true,
+        xhrSetup: (xhr) => {
+          if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        },
+      });
       hlsRef.current = hls;
 
       hls.on(Hls.Events.ERROR, (_event, data) => {
@@ -115,7 +121,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError }) 
       if (playerRef.current) { playerRef.current.destroy(); playerRef.current = null; }
       if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
     };
-  }, [options.sources, options.controlBar, options.autoplay]);
+  }, [options.sources, options.controlBar, options.autoplay, token]);
 
   return (
     <div className="w-full h-full relative group bg-black">

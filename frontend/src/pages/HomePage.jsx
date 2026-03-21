@@ -72,7 +72,10 @@ export default function HomePage() {
         {/* Trending Anime */}
         {trendingAnime.length > 0 && (
           <section>
-            <h2 className="text-xl font-bold text-primary mb-4 border-l-4 border-accent-teal pl-2">Trending Anime</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-primary border-l-4 border-accent-teal pl-2">Trending Anime</h2>
+              <Link to="/anime" className="text-sm font-semibold text-accent-teal hover:underline">View More →</Link>
+            </div>
             <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-4 snap-x">
               {trendingAnime.map(anime => (
                 <ContentCard key={anime.id} id={anime.id} title={anime.title.english || anime.title.romaji} posterUrl={anime.coverImage?.large} contentType="anime" rating={anime.averageScore ? anime.averageScore / 10 : null} />
@@ -84,7 +87,10 @@ export default function HomePage() {
         {/* Trending Movies */}
         {trendingMovies.length > 0 && (
           <section>
-            <h2 className="text-xl font-bold text-primary mb-4 border-l-4 border-accent-blue pl-2">Trending Movies</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-primary border-l-4 border-accent-blue pl-2">Trending Movies</h2>
+              <Link to="/movies" className="text-sm font-semibold text-accent-blue hover:underline">View More →</Link>
+            </div>
             <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-4 snap-x">
               {trendingMovies.map(movie => (
                 <ContentCard key={movie.id} id={movie.id} title={movie.title} posterUrl={tmdbImage(movie.poster_path)} contentType="movie" rating={movie.vote_average} />
@@ -96,7 +102,10 @@ export default function HomePage() {
         {/* Trending TV Shows */}
         {trendingTV.length > 0 && (
           <section>
-            <h2 className="text-xl font-bold text-primary mb-4 border-l-4 border-accent-purple pl-2">Trending TV Shows</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-primary border-l-4 border-accent-purple pl-2">Trending TV Shows</h2>
+              <Link to="/tv" className="text-sm font-semibold text-accent-purple hover:underline">View More →</Link>
+            </div>
             <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-4 snap-x">
               {trendingTV.map(tv => (
                 <ContentCard key={tv.id} id={tv.id} title={tv.name} posterUrl={tmdbImage(tv.poster_path)} contentType="tv" rating={tv.vote_average} />

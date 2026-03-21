@@ -1,9 +1,14 @@
+import { auth } from '../firebase.js';
+
 const BASE = `${import.meta.env.VITE_API_BASE_URL || ''}/api/proxy/aniwatch`;
 
 const get = async (path, params = {}) => {
   const url = new URL(`${BASE}/${path}`, window.location.origin);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString());
+  const token = await auth.currentUser?.getIdToken();
+  const res = await fetch(url.toString(), {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   if (!res.ok) throw new Error(`Aniwatch API error: ${res.status}`);
   return res.json();
 };
