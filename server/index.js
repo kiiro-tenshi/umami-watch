@@ -82,6 +82,64 @@ app.use('/api/me', userRoutes);
 app.use('/api/rooms', createRoomRouter(io));
 app.use('/api/torrent', requireAuth, torrentRoutes);
 
+// ─── HLS Proxy (fallback when Cloudflare Worker is blocked by CDN) ──────────
+app.get('/api/proxy/hls', requireAuth, async (req, res) => {
+  const { url, referer } = req.query;
+  if (!url) return res.status(400).json({ error: 'url required' });
+
+  const decodedUrl     = decodeURIComponent(url);
+  const decodedReferer = decodeURIComponent(referer || 'https://hianime.to/');
+
+  try {
+    const upstream = await fetch(decodedUrl, {
+      headers: {
+        'Referer':    decodedReferer,
+        'Origin':     new URL(decodedReferer).origin,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    });
+
+    if (!upstream.ok) return res.status(upstream.status).send(await upstream.text());
+
+    const contentType = upstream.headers.get('content-type') || '';
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-cache');
+
+    const isM3u8 = contentType.includes('mpegurl') || decodedUrl.includes('.m3u8');
+    if (isM3u8) {
+      const text   = await upstream.text();
+      const urlObj = new URL(decodedUrl);
+      const base   = urlObj.origin + urlObj.pathname.substring(0, urlObj.pathname.lastIndexOf('/') + 1);
+      const proxyBase = `${req.protocol}://${req.get('host')}/api/proxy/hls`;
+
+      const proxify = (raw) => {
+        const abs = raw.startsWith('http') ? raw
+          : raw.startsWith('/') ? urlObj.origin + raw
+          : base + raw;
+        return `${proxyBase}?url=${encodeURIComponent(abs)}&referer=${encodeURIComponent(decodedReferer)}`;
+      };
+
+      const rewritten = text.split('\n').map(line => {
+        const t = line.trim();
+        if (!t) return line;
+        if (t.startsWith('#') && t.includes('URI="'))
+          return line.replace(/URI="([^"]+)"/g, (_, u) => `URI="${proxify(u)}"`);
+        if (t.startsWith('#')) return line;
+        return proxify(t);
+      }).join('\n');
+
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+      return res.send(rewritten);
+    }
+
+    const buf = await upstream.arrayBuffer();
+    res.setHeader('Content-Type', contentType || 'application/octet-stream');
+    res.send(Buffer.from(buf));
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ─── Aniwatch Proxy (forwards to self-hosted aniwatch-api) ─────────────────
 app.get('/api/proxy/aniwatch/*', requireAuth, async (req, res) => {
   const base = process.env.ANIWATCH_API_URL || 'http://localhost:4000';
