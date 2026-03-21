@@ -1,0 +1,7 @@
+.env
+firebase-service-account.json
+trigger-config.yaml
+mirror-aniwatch.yaml
+node_modules/
+dist/
+.claude/
