@@ -115,6 +115,7 @@ export default function setupSockets(io) {
     // Chat
     socket.on('chat:message', async (text) => {
       if (!socket.roomId) return;
+      if (typeof text !== 'string' || !text.trim() || text.length > 500) return;
       const msg = {
         uid,
         displayName: socket.displayName,

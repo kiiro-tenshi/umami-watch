@@ -34,7 +34,7 @@ function App() {
         </Routes>
       </main>
       <footer className="border-t border-border bg-surface py-4 text-center text-xs text-muted">
-        Created exclusively for Umami Dream precious member by The Boss lady
+        Created exclusively for Umami Dream precious member by The Boss Lady ©2026
       </footer>
     </BrowserRouter>
   );
