@@ -1,0 +1,11 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['pull', 'ghcr.io/ghoshritesh12/aniwatch:latest']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['tag', 'ghcr.io/ghoshritesh12/aniwatch:latest', 'gcr.io/umami-stream/aniwatch-api:latest']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/umami-stream/aniwatch-api:latest']
+images:
+  - 'gcr.io/umami-stream/aniwatch-api:latest'
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -1,0 +1,24 @@
+name: deploy-on-tag
+description: Build and deploy to Cloud Run on git tag push (v*)
+github:
+  owner: kiiro-tenshi
+  name: umami-watch
+  push:
+    tag: ^v.*$
+filename: cloudbuild.yaml
+substitutions:
+  _REGION: us-west1
+  _VITE_FIREBASE_API_KEY: AIzaSyB-GYkt9GPdKvRIMF2QKArcbO0kX-qFKzo
+  _VITE_FIREBASE_AUTH_DOMAIN: umami-watch.firebaseapp.com
+  _VITE_FIREBASE_PROJECT_ID: umami-watch
+  _VITE_FIREBASE_STORAGE_BUCKET: umami-watch.firebasestorage.app
+  _VITE_FIREBASE_MESSAGING_SENDER_ID: "638688947041"
+  _VITE_FIREBASE_APP_ID: 1:638688947041:web:9160be7d996b8229e57320
+  _VITE_TMDB_API_KEY: a19549ee79d9af8952dd0f61a5404afd
+  _VITE_CONSUMET_API_URL: https://api.consumet.org
+  _VITE_API_BASE_URL: https://umami-watch-placeholder.a.run.app
+  _ALLOWED_ORIGINS: https://umami-watch-placeholder.a.run.app
+  _ANIWATCH_API_URL: https://aniwatch-api-placeholder.a.run.app
+  _TURNSTILE_SECRET_KEY: 1x0000000000000000000000000000000AA
+includeBuildLogs: INCLUDE_BUILD_LOGS_WITH_STATUS
+serviceAccount: projects/umami-stream/serviceAccounts/338990119559-compute@developer.gserviceaccount.com
