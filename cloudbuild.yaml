@@ -48,6 +48,7 @@ steps:
           --build-arg VITE_CONSUMET_API_URL=$_VITE_CONSUMET_API_URL \
           --build-arg VITE_TMDB_API_KEY=$$VITE_TMDB_API_KEY \
           --build-arg VITE_TURNSTILE_SITE_KEY=$$VITE_TURNSTILE_SITE_KEY \
+          --build-arg VITE_HLS_PROXY_URL=$_VITE_HLS_PROXY_URL \
           .
     secretEnv:
       - VITE_FIREBASE_API_KEY

@@ -1,0 +1,6 @@
+name = "umami-hls-proxy"
+main = "hls-proxy.js"
+compatibility_date = "2024-01-01"
+
+[limits]
+cpu_ms = 50
