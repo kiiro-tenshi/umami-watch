@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.video-js { background: #000; border-radius: 0; }
+.vjs-control-bar { background: linear-gradient(transparent, rgba(0,0,0,0.8)); }
+.vjs-play-progress { background: #ef4444; }
+.vjs-load-progress { background: rgba(239, 68, 68, 0.3); }
+
+/* Hide scrollbar for horizontal scrolling containers */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
