@@ -84,8 +84,8 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
     const isM3u8  = srcType === 'application/x-mpegURL';
 
     const defaultControls = ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'pip', 'airplay', 'fullscreen'];
-    const viewerControls  = ['fullscreen', 'volume', 'mute'];
-    const isViewer = options.controlBar?.playToggle === false;
+    const viewerControls  = ['mute', 'volume', 'fullscreen'];
+    const isViewer = options.isViewer === true;
     const controls = isViewer ? viewerControls : defaultControls;
 
     if (playerRef.current) { playerRef.current.destroy(); playerRef.current = null; }
@@ -128,7 +128,9 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
           controls,
           autoplay: options.autoplay || false,
           captions: { active: false },
-          settings: ['quality', 'speed', 'loop'],
+          settings: isViewer ? [] : ['quality', 'speed', 'loop'],
+          clickToPlay: !isViewer,
+          keyboard: { focused: !isViewer, global: false },
           ...(qualityOptions && { quality: qualityOptions }),
         });
         playerRef.current = player;
@@ -142,7 +144,9 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
         controls,
         autoplay: options.autoplay || false,
         captions: { active: false },
-        settings: ['quality', 'speed', 'loop'],
+        settings: isViewer ? [] : ['quality', 'speed', 'loop'],
+        clickToPlay: !isViewer,
+        keyboard: { focused: !isViewer, global: false },
       });
       playerRef.current = player;
       video.addEventListener('loadedmetadata', () => { setIsLoading(false); if (onReady) onReady(player); }, { once: true });
@@ -153,7 +157,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       if (playerRef.current) { playerRef.current.destroy(); playerRef.current = null; }
       if (hlsRef.current)    { hlsRef.current.destroy();    hlsRef.current    = null; }
     };
-  }, [options.sources, options.controlBar, options.autoplay, token]);
+  }, [options.sources, options.isViewer, options.autoplay, token]);
 
   const hasTracks = tracks.length > 0;
 
