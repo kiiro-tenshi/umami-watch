@@ -180,7 +180,7 @@ export default function WatchPage() {
             const tracks = (res.data.subtitles || [])
               .filter(s => s.lang !== 'Thumbnails')
               .map(s => ({
-                kind: 'subtitles',
+                kind: 'metadata',
                 label: s.lang,
                 srclang: s.lang.toLowerCase().slice(0, 2),
                 src: makeUrl(s.url),
