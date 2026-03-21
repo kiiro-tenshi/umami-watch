@@ -29,7 +29,7 @@ function buildEmbedSources(type, { tmdbId, season, episode }) {
 
 export default function WatchPage() {
   const [searchParams] = useSearchParams();
-const { user } = useAuth();
+  const { user } = useAuth();
 
   const roomId = searchParams.get('roomId');
   const type = searchParams.get('type'); // anime | movie | tv
@@ -154,21 +154,20 @@ const { user } = useAuth();
           const SERVER_PROXY = `${import.meta.env.VITE_API_BASE_URL}/api/proxy/hls`;
 
           const buildSource = async (res, label) => {
-            const sources = res?.data?.sources || [];
-            if (!sources.length) return null;
-            const src = sources.find(s => s.isM3U8) || sources[0];
+            const srcList = res?.data?.sources || [];
+            if (!srcList.length) return null;
+            const src = srcList.find(s => s.isM3U8) || srcList[0];
             if (!src?.url) return null;
             const referer = res.data.headers?.Referer || 'https://hianime.to/';
 
-            // Try CF Worker first; if it's blocked (530 or HTML), fall back to Cloud Run proxy
-            let proxy = CF_PROXY;
+            // Try CF Worker — reuse the response body if it works, fall back to Server proxy if blocked
+            let proxy = SERVER_PROXY;
             try {
-              const test = await fetch(
-                `${CF_PROXY}?url=${encodeURIComponent(src.url)}&referer=${encodeURIComponent(referer)}`
-              );
-              if (!test.ok) proxy = SERVER_PROXY; // 530 = blocked by CDN
+              const cfUrl = `${CF_PROXY}?url=${encodeURIComponent(src.url)}&referer=${encodeURIComponent(referer)}`;
+              const test = await fetch(cfUrl);
+              if (test.ok) proxy = CF_PROXY;
             } catch {
-              proxy = SERVER_PROXY;
+              // CF unreachable — server proxy is already set
             }
 
             const makeUrl = (u) => `${proxy}?url=${encodeURIComponent(u)}&referer=${encodeURIComponent(referer)}`;
@@ -189,7 +188,9 @@ const { user } = useAuth();
           );
           const toSrcs = async (results) => {
             const built = await Promise.all(
-              results.map((r, i) => r.status === 'fulfilled' ? buildSource(r.value, SERVERS[i].label) : null)
+              results.map((r, i) =>
+                r.status === 'fulfilled' ? buildSource(r.value, SERVERS[i].label) : Promise.resolve(null)
+              )
             );
             return built.filter(Boolean);
           };
@@ -450,7 +451,7 @@ const { user } = useAuth();
 
   if (loading) return <LoadingSpinner fullScreen />;
 
-  const isHls = streamUrl?.includes(import.meta.env.VITE_HLS_PROXY_URL) || streamUrl?.endsWith('.m3u8');
+  const isHls = sources[activeSourceIdx]?.type === 'hls';
 
   const videoOptions = {
     autoplay: false,
