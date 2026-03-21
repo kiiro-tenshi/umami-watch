@@ -2,11 +2,13 @@ import admin from 'firebase-admin';
 
 const requireAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  // Also accept token as query param for browser resource loads (e.g. <track> subtitle elements)
+  const token = (authHeader?.startsWith('Bearer ') ? authHeader.split('Bearer ')[1] : null)
+    || req.query.token;
+
+  if (!token) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-
-  const token = authHeader.split('Bearer ')[1];
   try {
     const decodedToken = await admin.auth().verifyIdToken(token);
     req.user = decodedToken;

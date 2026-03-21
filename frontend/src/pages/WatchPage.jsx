@@ -145,47 +145,50 @@ export default function WatchPage() {
 
           const decoded = decodeURIComponent(aniwatchEpisodeId);
 
-          // Try servers in order — some episodes are only on hd-2/megacloud/vidcloud
-          const SERVERS = ['hd-1', 'hd-2', 'megacloud', 'vidcloud'];
-          let sourcesRes = null;
-          for (const server of SERVERS) {
-            try {
-              const res = await getAniwatchSources(decoded, server);
-              if (res?.data?.sources?.length > 0) {
-                sourcesRes = res;
-                break;
-              }
-            } catch (e) {
-              console.warn(`[WatchPage] server ${server} failed:`, e.message);
-            }
-          }
+          const SERVERS = [
+            { key: 'hd-1',        label: 'HD-1' },
+            { key: 'vidstreaming',label: 'Vidstreaming' },
+            { key: 'vidcloud',    label: 'Vidcloud' },
+          ];
 
-          const hlsSrc = sourcesRes?.data?.sources?.find(s => s.isM3U8);
+          const currentToken = token || await auth.currentUser?.getIdToken();
 
-          if (!hlsSrc) {
+          const buildSource = (res, label) => {
+            const hlsSrc = res?.data?.sources?.find(s => s.isM3U8);
+            if (!hlsSrc) return null;
+            const referer = res.data.headers?.Referer || 'https://hianime.to/';
+            const url = `/api/proxy/hls?url=${encodeURIComponent(hlsSrc.url)}&referer=${encodeURIComponent(referer)}`;
+            const tracks = (res.data.subtitles || [])
+              .filter(s => s.lang !== 'Thumbnails')
+              .map(s => ({
+                kind: 'subtitles',
+                label: s.lang,
+                srclang: s.lang.toLowerCase().slice(0, 2),
+                src: `/api/proxy/hls?url=${encodeURIComponent(s.url)}&referer=${encodeURIComponent(referer)}${currentToken ? `&token=${encodeURIComponent(currentToken)}` : ''}`
+              }));
+            return { label, url, type: 'hls', tracks };
+          };
+
+          // Fetch all servers in parallel, keep all that work
+          const results = await Promise.allSettled(
+            SERVERS.map(s => getAniwatchSources(decoded, s.key))
+          );
+
+          const srcs = results
+            .map((r, i) => r.status === 'fulfilled' ? buildSource(r.value, SERVERS[i].label) : null)
+            .filter(Boolean);
+          if (srcs.length === 0) {
             setError('This episode is not available on HiAnime. The anime may not be indexed there yet.');
             setLoading(false);
             return;
           }
 
-          const referer = sourcesRes.data.headers?.Referer || 'https://hianime.to/';
-          const proxiedUrl = `/api/proxy/hls?url=${encodeURIComponent(hlsSrc.url)}&referer=${encodeURIComponent(referer)}`;
-          const tracks = (sourcesRes.data.subtitles || [])
-            .filter(s => s.lang !== 'Thumbnails')
-            .map(s => ({
-              kind: 'subtitles',
-              label: s.lang,
-              srclang: s.lang.toLowerCase().slice(0, 2),
-              src: `/api/proxy/hls?url=${encodeURIComponent(s.url)}&referer=${encodeURIComponent(referer)}`
-            }));
-
-          const srcs = [{ label: 'HiAnime', url: proxiedUrl, type: 'hls', tracks }];
           if (!cancelled) {
             setSources(srcs);
             setActiveSourceIdx(0);
-            setActiveTracks(tracks);
+            setActiveTracks(srcs[0].tracks || []);
           }
-          url = proxiedUrl;
+          url = srcs[0].url;
 
         } else if (type === 'movie') {
           const data = await getMovieDetail(tmdbId);
