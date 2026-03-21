@@ -102,6 +102,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       const hls = new Hls({
         enableWorker: true,
         autoStartLoad: true,
+        maxBufferLength: 60,
         xhrSetup: (xhr) => { if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`); },
       });
       hlsRef.current = hls;

@@ -9,6 +9,7 @@ import admin from 'firebase-admin';
 
 // Firebase Admin init — prefers explicit service account file over ADC
 import { existsSync, readFileSync } from 'fs';
+import { Readable } from 'stream';
 
 const saPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 const projectId = process.env.FIREBASE_PROJECT_ID;
@@ -44,7 +45,9 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 
 const io = new Server(httpServer, { cors: { origin: allowedOrigins, methods: ['GET', 'POST'] } });
 
-app.use(compression());
+app.use(compression({
+  filter: (req, res) => req.path.startsWith('/api/proxy/hls') ? false : compression.filter(req, res),
+}));
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
@@ -133,9 +136,10 @@ app.get('/api/proxy/hls', async (req, res) => {
       return res.send(rewritten);
     }
 
-    const buf = await upstream.arrayBuffer();
     res.setHeader('Content-Type', contentType || 'application/octet-stream');
-    res.send(Buffer.from(buf));
+    const cl = upstream.headers.get('content-length');
+    if (cl) res.setHeader('Content-Length', cl);
+    Readable.fromWeb(upstream.body).pipe(res);
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
