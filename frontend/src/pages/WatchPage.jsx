@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
-import { useTorrent } from '../hooks/useTorrent';
 import { getAnimeById } from '../api/anilist';
 import { getMovieDetail, getTVDetail } from '../api/tmdb';
 import { getAniwatchSources, getAniwatchEpisodes } from '../api/aniwatch';
@@ -41,7 +40,6 @@ export default function WatchPage() {
   const tmdbId = searchParams.get('tmdbId');
   const season = searchParams.get('season');
   const episode = searchParams.get('episode');
-  const magnet = searchParams.get('magnet');
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -59,10 +57,8 @@ export default function WatchPage() {
   const playerRef = useRef(null);
   const hasJoinedRoomRef = useRef(false);
   const episodeListRef = useRef(null);
-  const torrentVideoRef = useRef(null);
 
   const { socketRef, reconnecting } = useSocket(import.meta.env.VITE_API_BASE_URL, token);
-  const torrentInfo = useTorrent(type === 'torrent' ? magnet : null, torrentVideoRef);
   const isHost = roomData?.hostId === user?.uid;
 
   // Derived: current episode index + next episode
@@ -155,25 +151,24 @@ export default function WatchPage() {
             { key: 'vidcloud',    label: 'Vidcloud' },
           ];
 
-          const currentToken = token || await auth.currentUser?.getIdToken();
+          const HLS_PROXY = import.meta.env.VITE_HLS_PROXY_URL;
 
           const buildSource = (res, label) => {
             const sources = res?.data?.sources || [];
             if (!sources.length) return null;
-            // Prefer M3U8, fall back to any source with a URL
             const src = sources.find(s => s.isM3U8) || sources[0];
             if (!src?.url) return null;
             const referer = res.data.headers?.Referer || 'https://hianime.to/';
-            const url = `/api/proxy/hls?url=${encodeURIComponent(src.url)}&referer=${encodeURIComponent(referer)}`;
+            const url = `${HLS_PROXY}?url=${encodeURIComponent(src.url)}&referer=${encodeURIComponent(referer)}`;
             const tracks = (res.data.subtitles || [])
               .filter(s => s.lang !== 'Thumbnails')
               .map(s => ({
                 kind: 'subtitles',
                 label: s.lang,
                 srclang: s.lang.toLowerCase().slice(0, 2),
-                src: `/api/proxy/hls?url=${encodeURIComponent(s.url)}&referer=${encodeURIComponent(referer)}${currentToken ? `&token=${encodeURIComponent(currentToken)}` : ''}`
+                src: `${HLS_PROXY}?url=${encodeURIComponent(s.url)}&referer=${encodeURIComponent(referer)}`
               }));
-            return { label, url, type: src.isM3U8 ? 'hls' : 'hls', tracks };
+            return { label, url, type: 'hls', tracks };
           };
 
           // Fetch all servers in parallel — auto-retry up to 2 times on cold start failures
@@ -207,16 +202,6 @@ export default function WatchPage() {
             setActiveTracks(srcs[0].tracks || []);
           }
           url = srcs[0].url;
-
-        } else if (type === 'torrent') {
-          title = magnet ? 'Torrent Stream' : 'No magnet link provided';
-          if (!magnet) {
-            setError('No magnet link provided.');
-            setLoading(false);
-            return;
-          }
-          // WebTorrent handles streaming directly in the browser via useTorrent hook
-          setLoading(false);
 
         } else if (type === 'movie') {
           const data = await getMovieDetail(tmdbId);
@@ -450,7 +435,7 @@ export default function WatchPage() {
 
   if (loading) return <LoadingSpinner fullScreen />;
 
-  const isHls = streamUrl?.includes('/api/proxy/hls') || streamUrl?.endsWith('.m3u8');
+  const isHls = streamUrl?.includes(import.meta.env.VITE_HLS_PROXY_URL) || streamUrl?.endsWith('.m3u8');
 
   const videoOptions = {
     autoplay: false,
@@ -504,29 +489,6 @@ export default function WatchPage() {
                   Retry
                 </button>
               </div>
-            ) : type === 'torrent' ? (
-                <div className="w-full h-full relative bg-black flex flex-col">
-                  <video ref={torrentVideoRef} controls playsInline className="w-full flex-1" />
-                  {!torrentInfo.ready && !torrentInfo.error && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-10 gap-3">
-                      <div className="w-10 h-10 border-4 border-white/20 border-t-[#f43f5e] rounded-full animate-spin" />
-                      <p className="text-white/70 text-sm font-medium">Connecting to peers...</p>
-                      {torrentInfo.peers > 0 && (
-                        <p className="text-white/50 text-xs">{torrentInfo.peers} peers · {(torrentInfo.downloadSpeed / 1024).toFixed(0)} KB/s</p>
-                      )}
-                    </div>
-                  )}
-                  {torrentInfo.error && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/90 z-10">
-                      <p className="text-red-400 font-semibold text-center px-8">{torrentInfo.error}</p>
-                    </div>
-                  )}
-                  {torrentInfo.ready && (
-                    <div className="absolute top-2 left-2 bg-black/60 text-white/60 text-xs px-2 py-1 rounded z-10">
-                      {torrentInfo.peers} peers · {(torrentInfo.downloadSpeed / 1024).toFixed(0)} KB/s · {torrentInfo.progress}%
-                    </div>
-                  )}
-                </div>
             ) : streamUrl ? (
               isHls ? (
                 <VideoPlayer options={videoOptions} tracks={activeTracks} onReady={handlePlayerReady} token={token} />
