@@ -83,7 +83,7 @@ app.use('/api/rooms', createRoomRouter(io));
 app.use('/api/torrent', requireAuth, torrentRoutes);
 
 // ─── HLS Proxy (fallback when Cloudflare Worker is blocked by CDN) ──────────
-app.get('/api/proxy/hls', requireAuth, async (req, res) => {
+app.get('/api/proxy/hls', async (req, res) => {
   const { url, referer } = req.query;
   if (!url) return res.status(400).json({ error: 'url required' });
 
