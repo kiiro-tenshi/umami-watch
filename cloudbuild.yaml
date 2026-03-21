@@ -1,5 +1,34 @@
 steps:
-  # Build and tag with both the git tag and :latest
+  # ── Step 1: Mirror aniwatch-api from ghcr.io → GCR (only re-pulls if changed) ──
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['pull', 'ghcr.io/ghoshritesh12/aniwatch:latest']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['tag', 'ghcr.io/ghoshritesh12/aniwatch:latest', 'gcr.io/$PROJECT_ID/aniwatch-api:latest']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/aniwatch-api:latest']
+
+  # ── Step 2: Deploy aniwatch-api to Cloud Run ──────────────────────────────────
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'aniwatch-api'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/aniwatch-api:latest'
+      - '--region'
+      - '$_REGION'
+      - '--allow-unauthenticated'
+      - '--min-instances'
+      - '0'
+      - '--max-instances'
+      - '2'
+      - '--port'
+      - '4000'
+      - '--set-env-vars'
+      - 'ANIWATCH_API_PORT=4000,ANIWATCH_API_DEPLOYMENT_ENV=production,ANIWATCH_API_CORS_ALLOWED_ORIGINS=*'
+
+  # ── Step 3: Build main app — tag with git tag + :latest ───────────────────────
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
@@ -27,11 +56,11 @@ steps:
       - 'VITE_TMDB_API_KEY=$_VITE_TMDB_API_KEY'
       - '.'
 
-  # Push both tags
+  # ── Step 4: Push both tags ────────────────────────────────────────────────────
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', '--all-tags', 'gcr.io/$PROJECT_ID/umami-watch']
 
-  # Deploy to Cloud Run
+  # ── Step 5: Deploy main app to Cloud Run ──────────────────────────────────────
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -54,6 +83,7 @@ steps:
 images:
   - 'gcr.io/$PROJECT_ID/umami-watch:$TAG_NAME'
   - 'gcr.io/$PROJECT_ID/umami-watch:latest'
+  - 'gcr.io/$PROJECT_ID/aniwatch-api:latest'
 
 options:
   logging: CLOUD_LOGGING_ONLY
