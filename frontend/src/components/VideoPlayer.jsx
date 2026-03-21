@@ -159,7 +159,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
 
   return (
     <div className="w-full h-full relative group bg-black">
-      <video ref={videoRef} playsInline className="w-full h-full">
+      <video ref={videoRef} playsInline crossOrigin="anonymous" className="w-full h-full">
         {tracks.map((t, i) => (
           <track key={i} kind={t.kind} label={t.label} srcLang={t.srclang} src={t.src} />
         ))}
