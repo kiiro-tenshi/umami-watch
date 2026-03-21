@@ -2,22 +2,22 @@ export default {
   async fetch(request) {
     const url = new URL(request.url);
 
+    const CORS = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': '*',
+    };
+
     // CORS preflight
     if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, OPTIONS',
-          'Access-Control-Allow-Headers': '*',
-        },
-      });
+      return new Response(null, { headers: CORS });
     }
 
     const targetUrl = url.searchParams.get('url');
     const referer   = url.searchParams.get('referer') || 'https://hianime.to/';
 
     if (!targetUrl) {
-      return new Response('url parameter required', { status: 400 });
+      return new Response('url parameter required', { status: 400, headers: CORS });
     }
 
     const decodedUrl     = decodeURIComponent(targetUrl);
@@ -33,18 +33,18 @@ export default {
         },
       });
     } catch (err) {
-      return new Response(err.message, { status: 502 });
+      return new Response(err.message, { status: 502, headers: CORS });
     }
 
     if (!response.ok) {
-      return new Response(await response.text(), { status: response.status });
+      return new Response(await response.text(), { status: response.status, headers: CORS });
     }
 
     const contentType = response.headers.get('content-type') || '';
     const isM3u8 = contentType.includes('mpegurl') || decodedUrl.includes('.m3u8');
 
-    const corsHeaders = {
-      'Access-Control-Allow-Origin': '*',
+    const responseHeaders = {
+      ...CORS,
       'Cache-Control': 'no-cache',
     };
 
@@ -74,17 +74,14 @@ export default {
       }).join('\n');
 
       return new Response(rewritten, {
-        headers: { ...corsHeaders, 'Content-Type': 'application/vnd.apple.mpegurl' },
+        headers: { ...responseHeaders, 'Content-Type': 'application/vnd.apple.mpegurl' },
       });
     }
 
     // Binary content: TS segments, VTT subtitles, etc.
     const body = await response.arrayBuffer();
     return new Response(body, {
-      headers: {
-        ...corsHeaders,
-        'Content-Type': contentType || 'application/octet-stream',
-      },
+      headers: { ...responseHeaders, 'Content-Type': contentType || 'application/octet-stream' },
     });
   },
 };
