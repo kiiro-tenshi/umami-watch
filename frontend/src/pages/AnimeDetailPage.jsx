@@ -20,7 +20,11 @@ function normalizeTitle(s) {
 function bestAniwatchMatch(animes, title, episodeCount) {
   if (!animes?.length) return null;
   const query = normalizeTitle(title);
-  const queryWords = query.split(' ').filter(Boolean);
+  const queryWords = new Set(query.split(' ').filter(Boolean));
+
+  // Meaningful content words — exclude common stop words that cause false positives
+  const STOP = new Set(['no', 'the', 'a', 'an', 'of', 'in', 'to', 'and', 'or', 'wa', 'ga', 'wo']);
+  const queryContent = [...queryWords].filter(w => !STOP.has(w));
 
   let best = null;
   let bestScore = -1;
@@ -28,32 +32,34 @@ function bestAniwatchMatch(animes, title, episodeCount) {
   for (let i = 0; i < animes.length; i++) {
     const anime = animes[i];
     const name = normalizeTitle(anime.name);
-    const nameWords = name.split(' ').filter(Boolean);
-    const nameWordSet = new Set(nameWords);
+    const nameWords = new Set(name.split(' ').filter(Boolean));
 
     let score = 0;
 
     if (name === query) {
       score = 10000;
     } else {
-      // Jaccard similarity on unique word sets (robust against short/partial matches)
-      const intersection = queryWords.filter(w => nameWordSet.has(w)).length;
-      const unionSize = new Set([...queryWords, ...nameWords]).size;
+      // Jaccard on content words only (ignores "no", "the", etc.)
+      const nameContent = [...nameWords].filter(w => !STOP.has(w));
+      const intersection = queryContent.filter(w => nameWords.has(w)).length;
+      const unionSize = new Set([...queryContent, ...nameContent]).size || 1;
       score = Math.round((intersection / unionSize) * 100);
 
-      // Extra bonus only when the full query appears inside the result name
-      // (e.g. name = "oshi no ko season 3 special" contains query "oshi no ko season 3")
+      // Bonus when full query appears inside the result name
       if (name.includes(query)) score += 300;
+
+      // Bonus when all content query words are present
+      if (queryContent.length > 0 && queryContent.every(w => nameWords.has(w))) score += 150;
     }
 
-    // Episode count tiebreaker (HiAnime search returns episodes.sub)
+    // Episode count tiebreaker
     if (episodeCount && anime.episodes?.sub) {
       if (anime.episodes.sub === episodeCount) score += 100;
       else if (Math.abs(anime.episodes.sub - episodeCount) <= 2) score += 20;
     }
 
     // Slight position penalty so earlier results win ties
-    score -= i;
+    score -= i * 0.5;
 
     if (score > bestScore) {
       bestScore = score;
@@ -61,7 +67,9 @@ function bestAniwatchMatch(animes, title, episodeCount) {
     }
   }
 
-  return best || animes[0];
+  // Minimum threshold — reject weak matches to avoid false positives like "No 6"
+  const MIN_SCORE = 30;
+  return bestScore >= MIN_SCORE ? best : null;
 }
 import { useAuth } from '../hooks/useAuth';
 import { useWatchlist } from '../hooks/useWatchlist';
@@ -89,18 +97,28 @@ export default function AnimeDetailPage() {
         const data = await getAnimeById(anilistId);
         setAnime(data);
 
-        const title = data.title?.english || data.title?.romaji || '';
+        const titleEn = data.title?.english || '';
+        const titleRomaji = data.title?.romaji || '';
+        const title = titleEn || titleRomaji;
 
         // Try to get real episodes from aniwatch-api (HiAnime)
+        // Search with English title first, then romaji as fallback
         let fetchedEps = null;
         try {
-          const searchRes = await searchAnimeAniwatch(title);
-          const topHit = bestAniwatchMatch(searchRes?.data?.animes, title, data.episodes);
+          const titlesToTry = [...new Set([titleEn, titleRomaji].filter(Boolean))];
+          let topHit = null;
+
+          for (const t of titlesToTry) {
+            const searchRes = await searchAnimeAniwatch(t);
+            topHit = bestAniwatchMatch(searchRes?.data?.animes, t, data.episodes);
+            if (topHit) break;
+          }
+
           if (topHit?.id) {
             const epsRes = await getAniwatchEpisodes(topHit.id);
             if (epsRes?.data?.episodes?.length > 0) {
               fetchedEps = epsRes.data.episodes.map(ep => ({
-                id: ep.episodeId,      // e.g. "one-piece-100?ep=213"  — used for HLS streaming
+                id: ep.episodeId,
                 number: ep.number,
                 title: ep.title || `Episode ${ep.number}`,
                 isFiller: ep.isFiller || false,
