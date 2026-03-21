@@ -475,7 +475,7 @@ export default function WatchPage() {
               </div>
             ) : streamUrl ? (
               isHls ? (
-                <VideoPlayer options={videoOptions} tracks={activeTracks} onReady={handlePlayerReady} />
+                <VideoPlayer options={videoOptions} tracks={activeTracks} onReady={handlePlayerReady} token={token} />
               ) : (
                 <iframe
                   key={streamUrl}

@@ -68,7 +68,7 @@ export default function AnimeBrowsePage() {
       {!query && (
         <div className="mb-8 overflow-x-auto scrollbar-hide py-2">
           <div className="flex gap-2">
-            {genres.slice(0, 15).map(g => (
+            {genres.map(g => (
               <button key={g} onClick={() => handleGenreClick(g)}
                 className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-colors border ${activeGenre === g ? 'bg-accent-teal text-white border-accent-teal' : 'bg-surface text-secondary border-border hover:bg-surface-raised'}`}>
                 {g}
