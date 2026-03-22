@@ -105,7 +105,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       captions: { active: false },
       settings: isViewer ? [] : ['quality', 'speed', 'loop'],
       clickToPlay: !isViewer,
-      keyboard: { focused: !isViewer, global: false },
+      keyboard: { focused: false, global: false },
     };
 
     // After Plyr is created: store container + insert CC mount point in controls bar
@@ -176,6 +176,38 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       setCcMountEl(null);
     };
   }, [src, isM3u8, isViewer, options.autoplay, token]);
+
+  // Global keyboard shortcuts — skip when user is typing in any input/textarea
+  useEffect(() => {
+    const onKey = (e) => {
+      const player = playerRef.current;
+      if (!player) return;
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || document.activeElement?.isContentEditable) return;
+
+      switch (e.key) {
+        case ' ':
+          if (!isViewer) { e.preventDefault(); player.togglePlay(); }
+          break;
+        case 'ArrowLeft':
+          if (!isViewer) { e.preventDefault(); player.currentTime = Math.max(0, player.currentTime - 5); }
+          break;
+        case 'ArrowRight':
+          if (!isViewer) { e.preventDefault(); player.currentTime = Math.min(player.duration || Infinity, player.currentTime + 5); }
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          player.volume = Math.min(1, Math.round((player.volume + 0.1) * 10) / 10);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          player.volume = Math.max(0, Math.round((player.volume - 0.1) * 10) / 10);
+          break;
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isViewer]);
 
   const hasTracks = tracks.length > 0;
 
