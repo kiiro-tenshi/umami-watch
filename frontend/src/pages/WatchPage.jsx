@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { getAnimeById } from '../api/anilist';
@@ -29,6 +29,7 @@ function buildEmbedSources(type, { tmdbId, season, episode }) {
 
 export default function WatchPage() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
 
   const roomId = searchParams.get('roomId');
@@ -99,7 +100,9 @@ export default function WatchPage() {
           setStreamUrl(data.streamUrl);
           // Set sources so isHls is correct for the viewer's player
           if (data.contentType === 'anime') {
-            setSources([{ type: 'hls', url: data.streamUrl, label: 'Stream', tracks: [] }]);
+            const tracks = data.tracks || [];
+            setSources([{ type: 'hls', url: data.streamUrl, label: 'Stream', tracks }]);
+            setActiveTracks(tracks);
           } else if (data.contentType) {
             setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
           }
@@ -136,6 +139,7 @@ export default function WatchPage() {
         let title = '';
         let poster = '';
         let url = null;
+        let subtitleTracks = [];
 
         if (type === 'anime') {
           const data = await getAnimeById(animeId);
@@ -223,6 +227,7 @@ export default function WatchPage() {
             setActiveSourceIdx(0);
             setActiveTracks(srcs[0].tracks || []);
           }
+          subtitleTracks = srcs[0].tracks || [];
           url = srcs[0].url;
 
         } else if (type === 'movie') {
@@ -266,7 +271,8 @@ export default function WatchPage() {
                 streamUrl: url,
                 contentId: type === 'anime' ? animeId : tmdbId,
                 contentType: type,
-                contentTitle: title
+                contentTitle: title,
+                tracks: subtitleTracks
               })
             }).catch(console.error);
           }
@@ -317,7 +323,7 @@ export default function WatchPage() {
 
     if (!hasJoinedRoomRef.current) {
       hasJoinedRoomRef.current = true;
-      socket.emit('join-room', { roomId, displayName: user?.displayName || 'Viewer' });
+      socket.emit('join-room', { roomId, displayName: user?.displayName || 'Viewer', photoURL: user?.photoURL || null });
     }
 
     // Viewer: apply sync state from server (periodic heartbeat or join event)
@@ -364,7 +370,9 @@ export default function WatchPage() {
       if (data.streamUrl) {
         setStreamUrl(data.streamUrl);
         if (data.contentType === 'anime') {
-          setSources([{ type: 'hls', url: data.streamUrl, label: 'Stream', tracks: [] }]);
+          const tracks = data.tracks || [];
+          setSources([{ type: 'hls', url: data.streamUrl, label: 'Stream', tracks }]);
+          setActiveTracks(tracks);
         } else if (data.contentType) {
           setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
         }
@@ -372,12 +380,16 @@ export default function WatchPage() {
       setRoomData(prev => prev ? { ...prev, ...data } : prev);
     };
 
+    // Room deleted by host — redirect everyone out
+    const onRoomDeleted = () => navigate('/rooms');
+
     socket.on('sync:state', onSyncState);
     socket.on('playback:play', onPlay);
     socket.on('playback:pause', onPause);
     socket.on('playback:seek', onSeek);
     socket.on('viewer-needs-sync', onViewerNeedsSync);
     socket.on('room:content-updated', onRoomContentUpdated);
+    socket.on('room:deleted', onRoomDeleted);
 
     return () => {
       socket.off('sync:state', onSyncState);
@@ -386,17 +398,24 @@ export default function WatchPage() {
       socket.off('playback:seek', onSeek);
       socket.off('viewer-needs-sync', onViewerNeedsSync);
       socket.off('room:content-updated', onRoomContentUpdated);
+      socket.off('room:deleted', onRoomDeleted);
     };
   }, [socketRef.current, roomId, !!roomData, isHost, token]);
 
-  // Reset join ref on socket reconnect so we re-join
+  // Re-join room on socket reconnect (server drops socket rooms on disconnect)
   useEffect(() => {
     const socket = socketRef.current;
-    if (!socket) return;
-    const onConnect = () => { hasJoinedRoomRef.current = false; };
+    if (!socket || !roomId) return;
+    const onConnect = () => {
+      if (hasJoinedRoomRef.current) {
+        // Reconnect — the server's socket lost its room membership, re-join immediately
+        socket.emit('join-room', { roomId, displayName: user?.displayName || 'Viewer', photoURL: user?.photoURL || null });
+      }
+      // Initial connect is handled by the main socket effect
+    };
     socket.on('connect', onConnect);
     return () => socket.off('connect', onConnect);
-  }, [socketRef.current]);
+  }, [socketRef.current, roomId, user?.displayName, user?.photoURL]);
 
   // Host: emit heartbeat every 3s so viewers auto-correct drift
   useEffect(() => {
