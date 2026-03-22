@@ -11,21 +11,20 @@ const ckFetch = async (path, params = {}) => {
 
 // Search ComicK by title. Returns array of { id, hid, slug, title, ... }
 export const searchComick = async (title) => {
-  const data = await ckFetch('/v1.0/search', { q: title, limit: 5 });
-  // api.comick.dev returns { data: [...] }
+  const data = await ckFetch('/search', { q: title, limit: 5 });
+  // comick.art returns { data: [...] }
   return Array.isArray(data) ? data : (data.data || []);
 };
 
-// Get English chapters for a ComicK manga HID, ascending order.
+// Get English chapters for a ComicK manga slug, ascending order.
 // Returns { chapters: [...], total: N }
-export const getComickChapters = async (hid, page = 1) => {
-  const data = await ckFetch(`/comic/${hid}/chapters`, {
+export const getComickChapters = async (slug, page = 1) => {
+  const data = await ckFetch(`/comics/${slug}/chapter-list`, {
     lang: 'en',
     page,
-    limit: 60,
-    'chap-order': 1,
+    chapOrder: 'asc',
   });
-  return { chapters: data.chapters || [], total: data.total || 0 };
+  return { chapters: data.data || [], total: data.pagination?.total || 0 };
 };
 
 // Get proxied image URLs for a chapter (server scrapes comick.art HTML).
