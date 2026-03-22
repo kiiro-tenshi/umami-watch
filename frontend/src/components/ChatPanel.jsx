@@ -27,8 +27,20 @@ export default function ChatPanel({ roomId, socket, user }) {
         return [...prev, msg];
       });
     };
+    const handleJoined = ({ displayName }) => {
+      setMessages(prev => [...prev, { id: `sys-join-${Date.now()}`, system: true, text: `${displayName} joined the room` }]);
+    };
+    const handleLeft = ({ displayName }) => {
+      setMessages(prev => [...prev, { id: `sys-left-${Date.now()}`, system: true, text: `${displayName} left the room` }]);
+    };
     socket.on('chat:message', handleMsg);
-    return () => socket.off('chat:message', handleMsg);
+    socket.on('user-joined', handleJoined);
+    socket.on('user-left', handleLeft);
+    return () => {
+      socket.off('chat:message', handleMsg);
+      socket.off('user-joined', handleJoined);
+      socket.off('user-left', handleLeft);
+    };
   }, [socket]);
 
   useEffect(() => {
@@ -51,6 +63,9 @@ export default function ChatPanel({ roomId, socket, user }) {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && <p className="text-center text-muted text-sm mt-10">No messages yet. Say hi!</p>}
         {messages.map((m, i) => {
+          if (m.system) return (
+            <div key={m.id || i} className="text-center text-xs text-muted py-0.5 italic">{m.text}</div>
+          );
           const isMe = m.uid === user?.uid;
           return (
             <div key={m.id || i} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>

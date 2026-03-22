@@ -2,6 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Theme color tokens ───────────────────────────────────────────────────── */
+:root {
+  --color-page: #fdfbf7;
+  --color-surface: #ffffff;
+  --color-surface-raised: #fef2f2;
+  --color-border: #fca5a5;
+  --color-border-subtle: #fee2e2;
+  --color-primary: #450a0a;
+  --color-secondary: #991b1b;
+  --color-muted: #f87171;
+  --color-accent-purple: #ef4444;
+  --color-accent-teal: #f43f5e;
+  --color-accent-blue: #dc2626;
+  --color-accent-orange: #ea580c;
+}
+
+.dark {
+  --color-page: #110809;
+  --color-surface: #1d1011;
+  --color-surface-raised: #2b1618;
+  --color-border: #7f1d1d;
+  --color-border-subtle: #3f1414;
+  --color-primary: #fef2f2;
+  --color-secondary: #fca5a5;
+  --color-muted: #f87171;
+  --color-accent-purple: #ef4444;
+  --color-accent-teal: #f43f5e;
+  --color-accent-blue: #dc2626;
+  --color-accent-orange: #ea580c;
+}
+
 /* ── Plyr custom theme ────────────────────────────────────────────────────── */
 :root {
   --plyr-color-main: #f43f5e;

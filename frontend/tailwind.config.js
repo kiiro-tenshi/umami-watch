@@ -4,22 +4,23 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        page: '#fdfbf7',
-        surface: '#ffffff',
-        'surface-raised': '#fef2f2',
-        border: '#fca5a5',
-        'border-subtle': '#fee2e2',
-        primary: '#450a0a',
-        secondary: '#991b1b',
-        muted: '#f87171',
+        page: 'var(--color-page)',
+        surface: 'var(--color-surface)',
+        'surface-raised': 'var(--color-surface-raised)',
+        border: 'var(--color-border)',
+        'border-subtle': 'var(--color-border-subtle)',
+        primary: 'var(--color-primary)',
+        secondary: 'var(--color-secondary)',
+        muted: 'var(--color-muted)',
         accent: {
-          purple: '#ef4444',
-          teal: '#f43f5e',
-          blue: '#dc2626',
-          orange: '#ea580c',
+          purple: 'var(--color-accent-purple)',
+          teal: 'var(--color-accent-teal)',
+          blue: 'var(--color-accent-blue)',
+          orange: 'var(--color-accent-orange)',
         }
       },
       fontFamily: {

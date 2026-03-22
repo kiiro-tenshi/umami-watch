@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { ThemeProvider } from './hooks/useTheme';
 import Navbar from './components/Navbar';
 import AuthPage from './pages/AuthPage';
 import HomePage from './pages/HomePage';
@@ -13,6 +14,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
+    <ThemeProvider>
     <BrowserRouter>
       <Navbar />
       <main className="pt-14 min-h-screen">
@@ -34,9 +36,10 @@ function App() {
         </Routes>
       </main>
       <footer className="border-t border-border bg-surface py-4 text-center text-xs text-muted">
-        Created exclusively for Umami Dream precious member by The Boss Lady ©2026
+        Created exclusively for Umami Dream precious members by The Boss Lady ©2026
       </footer>
     </BrowserRouter>
+    </ThemeProvider>
   );
 }
 
