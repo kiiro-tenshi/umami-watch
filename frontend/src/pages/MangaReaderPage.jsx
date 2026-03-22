@@ -46,9 +46,9 @@ export default function MangaReaderPage() {
 
     const fetchAllChapters = async () => {
       const { data } = await getMangaChapters(mangaId, 0, 500).catch(() => ({ data: [] }));
-      // Filter external-only chapters and deduplicate by chapter number
+      // Deduplicate by chapter number
       const seen = new Map();
-      data.filter(ch => (ch.attributes?.pages ?? 0) > 0).forEach(ch => {
+      data.forEach(ch => {
         const num = ch.attributes?.chapter;
         if (num && !seen.has(num)) seen.set(num, ch);
       });
@@ -63,6 +63,8 @@ export default function MangaReaderPage() {
   const currentChapterIdx = allChapters.findIndex(c => c.id === chapterId);
   const prevChapter = currentChapterIdx > 0 ? allChapters[currentChapterIdx - 1] : null;
   const nextChapter = currentChapterIdx < allChapters.length - 1 ? allChapters[currentChapterIdx + 1] : null;
+  const currentChapterData = allChapters[currentChapterIdx];
+  const externalUrl = currentChapterData?.attributes?.externalUrl;
 
   // Auto-hide UI after 3s of inactivity in page mode
   const resetUiTimer = useCallback(() => {
@@ -170,8 +172,13 @@ export default function MangaReaderPage() {
         </div>
       ) : error || pages.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-screen gap-4 text-center px-6">
-          <p className="text-red-400 font-semibold">{error || 'No pages available for this chapter.'}</p>
-          <p className="text-white/40 text-sm">{!error && 'This chapter may only be readable on an external site.'}</p>
+          <p className="text-red-400 font-semibold">{error || 'This chapter is not hosted on MangaDex.'}</p>
+          {externalUrl && (
+            <a href={externalUrl} target="_blank" rel="noopener noreferrer"
+              className="bg-accent-purple hover:opacity-90 text-white font-bold px-6 py-2.5 rounded-lg text-sm">
+              Read on official site →
+            </a>
+          )}
           {error && <button onClick={() => window.location.reload()} className="bg-white/10 hover:bg-white/20 px-4 py-2 rounded text-sm">Retry</button>}
           <Link to={`/manga/${mangaId}`} className="bg-white/10 hover:bg-white/20 px-4 py-2 rounded text-sm">← Back to chapters</Link>
         </div>

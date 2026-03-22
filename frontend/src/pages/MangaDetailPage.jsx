@@ -38,11 +38,9 @@ export default function MangaDetailPage() {
       try {
         const { data } = await getMangaChapters(mangaId, offset, PAGE_SIZE);
         setHasMoreRaw(data.length === PAGE_SIZE);
-        // Filter out external-only chapters (pages: 0 = no hosted content)
-        const readable = data.filter(ch => (ch.attributes?.pages ?? 0) > 0);
         // Deduplicate by chapter number, prefer earlier (more established) groups
         setChapters(prev => {
-          const merged = offset === 0 ? readable : [...prev, ...readable];
+          const merged = offset === 0 ? data : [...prev, ...data];
           const seen = new Map();
           merged.forEach(ch => {
             const num = ch.attributes?.chapter;
@@ -150,18 +148,23 @@ export default function MangaDetailPage() {
                   const chTitle = ch.attributes?.title;
                   const group = ch.relationships?.find(r => r.type === 'scanlation_group');
                   const groupName = group?.attributes?.name;
-                  return (
-                    <Link
-                      key={ch.id}
-                      to={`/manga/${mangaId}/chapter/${ch.id}`}
-                      className="flex items-center justify-between px-6 py-3 hover:bg-surface-raised transition-colors"
-                    >
-                      <div>
-                        <span className="font-semibold text-primary text-sm">Chapter {num || '?'}</span>
-                        {chTitle && <span className="text-muted text-sm ml-2">— {chTitle}</span>}
+                  const isExternal = (ch.attributes?.pages ?? 0) === 0;
+                  const extUrl = ch.attributes?.externalUrl;
+                  const rowClass = "flex items-center justify-between px-6 py-3 hover:bg-surface-raised transition-colors";
+                  const inner = (
+                    <>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-semibold text-primary text-sm shrink-0">Chapter {num || '?'}</span>
+                        {chTitle && <span className="text-muted text-sm truncate">— {chTitle}</span>}
+                        {isExternal && <span className="text-xs bg-orange-100 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded shrink-0">Ext</span>}
                       </div>
-                      {groupName && <span className="text-xs text-muted hidden sm:block">{groupName}</span>}
-                    </Link>
+                      {groupName && <span className="text-xs text-muted hidden sm:block shrink-0 ml-4">{groupName}</span>}
+                    </>
+                  );
+                  return isExternal && extUrl ? (
+                    <a key={ch.id} href={extUrl} target="_blank" rel="noopener noreferrer" className={rowClass}>{inner}</a>
+                  ) : (
+                    <Link key={ch.id} to={`/manga/${mangaId}/chapter/${ch.id}`} className={rowClass}>{inner}</Link>
                   );
                 })}
               </div>
