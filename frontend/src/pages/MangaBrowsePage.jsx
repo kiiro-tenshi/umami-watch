@@ -12,7 +12,7 @@ function MangaCard({ manga }) {
   return (
     <Link
       to={`/manga/${manga.id}`}
-      className="relative block w-40 h-60 shrink-0 group rounded-lg overflow-hidden border border-border bg-surface transition-transform hover:scale-[1.04]"
+      className="relative block w-full aspect-[2/3] group rounded-lg overflow-hidden border border-border bg-surface transition-transform hover:scale-[1.04]"
     >
       <img src={poster} alt={title} className="w-full h-full object-cover" loading="lazy" />
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-2">

@@ -83,7 +83,7 @@ export default function AnimeBrowsePage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {results.map(anime => (
-            <ContentCard key={anime.id} id={anime.id} title={anime.title.english || anime.title.romaji} posterUrl={anime.coverImage?.large} contentType="anime" rating={anime.averageScore ? anime.averageScore / 10 : null} />
+            <ContentCard key={anime.id} id={anime.id} title={anime.title.english || anime.title.romaji} posterUrl={anime.coverImage?.large} contentType="anime" rating={anime.averageScore ? anime.averageScore / 10 : null} className="w-full aspect-[2/3]" />
           ))}
           {results.length === 0 && <p className="col-span-full text-center text-muted p-10 font-medium">No results found.</p>}
         </div>

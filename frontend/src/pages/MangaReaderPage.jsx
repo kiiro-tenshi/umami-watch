@@ -122,43 +122,44 @@ export default function MangaReaderPage() {
       onClick={resetUiTimer}
     >
       {/* Top bar */}
-      <div className={`fixed top-0 left-0 right-0 z-50 bg-black/90 border-b border-white/10 px-4 py-2 flex items-center gap-3 transition-opacity duration-300 ${showUI || mode === 'vertical' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-        <Link to={`/manga/${mangaId}`} className="text-white/60 hover:text-white transition-colors text-sm font-semibold flex items-center gap-1">
-          ← Back
-        </Link>
-        <div className="flex-1 min-w-0">
-          <p className="text-white font-bold text-sm truncate">{mangaTitle}</p>
-          <p className="text-white/50 text-xs">{chapterNum ? `Chapter ${chapterNum}` : ''}</p>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Chapter selector */}
+      <div className={`fixed top-0 left-0 right-0 z-50 bg-black/90 border-b border-white/10 transition-opacity duration-300 ${showUI || mode === 'vertical' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+        {/* Row 1: Back + title */}
+        <div className="px-3 sm:px-4 py-2 flex items-center gap-2 sm:gap-3">
+          <Link to={`/manga/${mangaId}`} className="text-white/60 hover:text-white transition-colors text-sm font-semibold flex items-center gap-1 shrink-0">
+            ← Back
+          </Link>
+          <div className="flex-1 min-w-0">
+            <p className="text-white font-bold text-xs sm:text-sm truncate">{mangaTitle}</p>
+            <p className="text-white/50 text-xs hidden sm:block">{chapterNum ? `Chapter ${chapterNum}` : ''}</p>
+          </div>
+          {/* Chapter selector — always visible */}
           {allChapters.length > 0 && (
             <select
               value={chapterId}
               onChange={e => navigate(`/manga/${mangaId}/chapter/${e.target.value}`)}
-              className="bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white focus:outline-none"
+              className="bg-white/10 border border-white/20 rounded px-2 py-1.5 text-xs text-white focus:outline-none max-w-[110px] sm:max-w-none"
             >
               {allChapters.map(ch => (
                 <option key={ch.id} value={ch.id}>Ch. {ch.attributes?.chapter || '?'}</option>
               ))}
             </select>
           )}
-          {/* Mode toggle */}
+          {/* Mode + data saver — icon-only on very small screens */}
           <button
             onClick={toggleMode}
-            className="bg-white/10 hover:bg-white/20 border border-white/20 rounded px-2.5 py-1 text-xs font-semibold transition-colors"
+            className="bg-white/10 hover:bg-white/20 border border-white/20 rounded p-1.5 sm:px-2.5 sm:py-1 text-xs font-semibold transition-colors shrink-0"
             title="Toggle reading mode"
           >
-            {mode === 'vertical' ? '📄 Page' : '📜 Scroll'}
+            <span className="hidden sm:inline">{mode === 'vertical' ? '📄 Page' : '📜 Scroll'}</span>
+            <span className="sm:hidden">{mode === 'vertical' ? '📄' : '📜'}</span>
           </button>
-          {/* Data saver */}
           <button
             onClick={toggleDataSaver}
-            className={`border rounded px-2.5 py-1 text-xs font-semibold transition-colors ${dataSaver ? 'bg-accent-purple border-accent-purple text-white' : 'bg-white/10 border-white/20 hover:bg-white/20'}`}
+            className={`border rounded p-1.5 sm:px-2.5 sm:py-1 text-xs font-semibold transition-colors shrink-0 ${dataSaver ? 'bg-accent-purple border-accent-purple text-white' : 'bg-white/10 border-white/20 hover:bg-white/20'}`}
             title="Toggle data saver (lower quality)"
           >
-            {dataSaver ? 'HQ Off' : 'HQ On'}
+            <span className="hidden sm:inline">{dataSaver ? 'HQ Off' : 'HQ On'}</span>
+            <span className="sm:hidden">{dataSaver ? '🔋' : '✨'}</span>
           </button>
         </div>
       </div>
@@ -175,7 +176,7 @@ export default function MangaReaderPage() {
         </div>
       ) : mode === 'vertical' ? (
         // Vertical scroll mode
-        <div className="pt-14 pb-24 flex flex-col items-center">
+        <div className="pt-16 pb-24 flex flex-col items-center">
           {pages.map((url, i) => (
             <img
               key={i}

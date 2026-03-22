@@ -16,7 +16,7 @@ export default function SeasonSelector({ seasons, selectedSeason, onSeasonChange
         </select>
       </div>
 
-      <div className="max-h-[600px] overflow-y-auto divide-y divide-border-subtle">
+      <div className="max-h-[65vh] md:max-h-[600px] overflow-y-auto divide-y divide-border-subtle">
         {(!episodes || episodes.length === 0) ? (
           <p className="p-8 text-center text-muted font-medium">Select a season to view episodes.</p>
         ) : (
@@ -31,14 +31,14 @@ export default function SeasonSelector({ seasons, selectedSeason, onSeasonChange
               </div>
               <div className="flex-1 flex flex-col justify-center">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xl font-bold text-muted">E{ep.episode_number}</span>
-                  <h4 className="font-bold text-primary text-lg">{ep.name}</h4>
+                  <span className="text-base font-bold text-muted">E{ep.episode_number}</span>
+                  <h4 className="font-bold text-primary text-base">{ep.name}</h4>
                 </div>
                 <p className="text-secondary text-sm line-clamp-2 md:line-clamp-3 mb-3">{ep.overview || 'No synopsis available.'}</p>
                 <div className="mt-auto flex items-center justify-between">
                   <span className="text-xs font-semibold text-muted bg-surface border border-border px-2 py-0.5 rounded">{ep.air_date}</span>
                   <Link to={`/watch?type=tv&tmdbId=${tmdbId}&season=${selectedSeason}&episode=${ep.episode_number}`}
-                    className="bg-accent-purple hover:bg-violet-700 text-white text-sm font-bold py-1.5 px-4 rounded-lg shadow-sm transition-transform hover:scale-105">
+                    className="bg-accent-purple hover:bg-violet-700 text-white text-sm font-bold py-2.5 px-4 rounded-lg shadow-sm transition-transform hover:scale-105">
                     Watch Episode
                   </Link>
                 </div>
