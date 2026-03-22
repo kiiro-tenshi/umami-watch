@@ -1,10 +1,12 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useTheme } from '../hooks/useTheme';
 import { useState } from 'react';
 import logoImg from '../../logo.webp';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
+  const { dark, toggle } = useTheme();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -33,6 +35,15 @@ export default function Navbar() {
       </div>
 
       <div className="flex items-center gap-4">
+        {/* Dark mode toggle */}
+        <button
+          onClick={toggle}
+          className="text-secondary hover:text-primary transition-colors text-lg leading-none"
+          aria-label="Toggle dark mode"
+          title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {dark ? '☀' : '☾'}
+        </button>
         {/* Mobile menu button */}
         <button className="md:hidden text-secondary" onClick={() => setMenuOpen(!menuOpen)}>☰</button>
         

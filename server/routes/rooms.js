@@ -88,6 +88,7 @@ router.patch('/:roomId', async (req, res) => {
     if (req.body.contentType !== undefined) updates.contentType = req.body.contentType;
     if (req.body.contentTitle !== undefined) updates.contentTitle = req.body.contentTitle;
     if (req.body.episodeId !== undefined) updates.episodeId = req.body.episodeId;
+    if (req.body.tracks !== undefined) updates.tracks = req.body.tracks;
 
     await roomRef.update(updates);
     // Notify all clients in the socket room so non-hosts get the new stream URL immediately
@@ -129,7 +130,8 @@ router.delete('/:roomId', async (req, res) => {
     if (docSnap.data().ownerId !== req.user.uid) return res.status(403).json({ error: 'Forbidden' });
 
     await roomRef.delete();
-    // In a real app we'd also delete the message subcollection
+    // Kick everyone out of the socket room before they notice the doc is gone
+    io.to(req.params.roomId).emit('room:deleted');
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -17,7 +17,7 @@ export default function setupSockets(io) {
   io.on('connection', (socket) => {
     const uid = socket.user.uid;
 
-    socket.on('join-room', async ({ roomId, displayName }) => {
+    socket.on('join-room', async ({ roomId, displayName, photoURL }) => {
       const roomSnap = await admin.firestore().collection('rooms').doc(roomId).get();
       if (!roomSnap.exists || !roomSnap.data().members.includes(uid)) {
         return socket.emit('error', 'Room access denied');
@@ -26,6 +26,7 @@ export default function setupSockets(io) {
       socket.join(roomId);
       socket.roomId = roomId;
       socket.displayName = displayName;
+      socket.photoURL = photoURL || null;
 
       // Cache host status — avoids Firestore read on every playback event
       const roomData = roomSnap.data();
@@ -119,7 +120,7 @@ export default function setupSockets(io) {
       const msg = {
         uid,
         displayName: socket.displayName,
-        photoURL: socket.user.picture || null,
+        photoURL: socket.photoURL || null,
         text,
         createdAt: admin.firestore.FieldValue.serverTimestamp()
       };
