@@ -106,7 +106,6 @@ app.get('/api/proxy/hls', async (req, res) => {
 
     const contentType = upstream.headers.get('content-type') || '';
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'no-cache');
 
     const isM3u8 = contentType.includes('mpegurl') || decodedUrl.includes('.m3u8');
     if (isM3u8) {
@@ -133,10 +132,13 @@ app.get('/api/proxy/hls', async (req, res) => {
       }).join('\n');
 
       res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+      res.setHeader('Cache-Control', 'public, max-age=5');
       return res.send(rewritten);
     }
 
+    // .ts segments never change — safe to cache aggressively
     res.setHeader('Content-Type', contentType || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'public, max-age=3600, immutable');
     const cl = upstream.headers.get('content-length');
     if (cl) res.setHeader('Content-Length', cl);
     Readable.fromWeb(upstream.body).pipe(res);

@@ -4,7 +4,9 @@ import { auth } from '../firebase';
 export default function ChatPanel({ roomId, socket, user }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
+  const [typers, setTypers] = useState([]);
   const messagesContainerRef = useRef(null);
+  const typingTimersRef = useRef({});
 
   // Load message history via server API (no Firestore client rules needed)
   useEffect(() => {
@@ -33,13 +35,25 @@ export default function ChatPanel({ roomId, socket, user }) {
     const handleLeft = ({ displayName }) => {
       setMessages(prev => [...prev, { id: `sys-left-${Date.now()}`, system: true, text: `${displayName} left the room` }]);
     };
+    const handleTyping = ({ displayName }) => {
+      setTypers(prev => prev.includes(displayName) ? prev : [...prev, displayName]);
+      clearTimeout(typingTimersRef.current[displayName]);
+      typingTimersRef.current[displayName] = setTimeout(() => {
+        setTypers(prev => prev.filter(n => n !== displayName));
+        delete typingTimersRef.current[displayName];
+      }, 3000);
+    };
+
     socket.on('chat:message', handleMsg);
     socket.on('user-joined', handleJoined);
     socket.on('user-left', handleLeft);
+    socket.on('chat:typing', handleTyping);
     return () => {
       socket.off('chat:message', handleMsg);
       socket.off('user-joined', handleJoined);
       socket.off('user-left', handleLeft);
+      socket.off('chat:typing', handleTyping);
+      Object.values(typingTimersRef.current).forEach(clearTimeout);
     };
   }, [socket]);
 
@@ -48,11 +62,27 @@ export default function ChatPanel({ roomId, socket, user }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
+  const typingEmitTimerRef = useRef(null);
+
+  const handleInputChange = (e) => {
+    setInput(e.target.value);
+    if (!socket || !e.target.value) return;
+    if (!typingEmitTimerRef.current) {
+      socket.emit('chat:typing');
+    }
+    clearTimeout(typingEmitTimerRef.current);
+    typingEmitTimerRef.current = setTimeout(() => {
+      typingEmitTimerRef.current = null;
+    }, 2000);
+  };
+
   const sendMessage = (e) => {
     e.preventDefault();
     if (!input.trim() || !socket) return;
     socket.emit('chat:message', input.trim());
     setInput('');
+    clearTimeout(typingEmitTimerRef.current);
+    typingEmitTimerRef.current = null;
   };
 
   return (
@@ -88,11 +118,17 @@ export default function ChatPanel({ roomId, socket, user }) {
         })}
       </div>
 
+      {typers.length > 0 && (
+        <div className="px-4 py-1 text-xs text-muted italic flex-shrink-0">
+          {typers.join(', ')} {typers.length === 1 ? 'is' : 'are'} typing...
+        </div>
+      )}
+
       <form onSubmit={sendMessage} className="p-3 border-t border-border bg-surface-raised flex gap-2 flex-shrink-0">
         <input
           type="text"
           value={input}
-          onChange={e => setInput(e.target.value)}
+          onChange={handleInputChange}
           placeholder="Type a message..."
           className="flex-1 bg-surface border border-border rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-blue"
         />

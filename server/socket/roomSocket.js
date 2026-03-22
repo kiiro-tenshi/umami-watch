@@ -113,6 +113,12 @@ export default function setupSockets(io) {
       io.to(viewerSocketId).emit('sync:state', { position, playing });
     });
 
+    // Typing indicator
+    socket.on('chat:typing', () => {
+      if (!socket.roomId) return;
+      socket.to(socket.roomId).emit('chat:typing', { displayName: socket.displayName });
+    });
+
     // Chat
     socket.on('chat:message', async (text) => {
       if (!socket.roomId) return;

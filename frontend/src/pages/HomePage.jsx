@@ -34,6 +34,11 @@ export default function HomePage() {
 
   return (
     <div className="flex flex-col gap-8 pb-10">
+      {/* PIW motto */}
+      <div className="text-center py-2 bg-surface-raised border-b border-border-subtle">
+        <p className="text-xs text-muted font-semibold tracking-wide">Keep your watch history Pure, Innocent, and Wholesome <span className="text-primary font-bold">(PIW)</span></p>
+      </div>
+
       {/* Hero Banner */}
       {heroItem && (
         <div className="relative w-full h-[300px] md:h-[500px] bg-primary">
