@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { getChapterPages, getMangaChapters, getMangaById, getTitle } from '../api/mangadex';
-import { getComickImages, getComickChapters, searchComick } from '../api/comick';
+import { getComickImages, getComickChapters } from '../api/comick';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function MangaReaderPage() {
@@ -59,26 +59,9 @@ export default function MangaReaderPage() {
 
     (async () => {
       if (isComick) {
-        // ckSlug is already in the chapter ID. Get manga HID from localStorage.
-        let ckMangaHid;
-        try {
-          const stored = JSON.parse(localStorage.getItem(`ck_manga_${mangaId}`) || 'null');
-          ckMangaHid = stored?.hid;
-        } catch (_) {}
-        if (!ckMangaHid) {
-          // Fallback: search ComicK by manga title
-          const mangaData = await getMangaById(mangaId).catch(() => null);
-          if (mangaData) {
-            const results = await searchComick(getTitle(mangaData)).catch(() => []);
-            if (results.length) {
-              ckMangaHid = results[0].hid;
-              const ckSlugFound = results[0].slug;
-              localStorage.setItem(`ck_manga_${mangaId}`, JSON.stringify({ hid: ckMangaHid, slug: ckSlugFound }));
-            }
-          }
-        }
-        if (!ckMangaHid || dead) return;
-        const { chapters: raw } = await getComickChapters(ckMangaHid).catch(() => ({ chapters: [] }));
+        // ckSlug is already decoded from the chapter ID — use it directly
+        if (!ckSlug || dead) return;
+        const { chapters: raw } = await getComickChapters(ckSlug).catch(() => ({ chapters: [] }));
         if (dead) return;
         const seen = new Map();
         raw.forEach(ch => { if (ch.chap && !seen.has(ch.chap)) seen.set(ch.chap, ch); });

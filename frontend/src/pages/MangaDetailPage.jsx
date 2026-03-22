@@ -73,10 +73,9 @@ export default function MangaDetailPage() {
           const results = await searchComick(title);
           if (dead || !results.length) { if (!dead) setChaptersLoading(false); return; }
           const ck = results[0];
-          const ckHid = ck.hid;
           const ckSlug = ck.slug;
-          localStorage.setItem(`ck_manga_${mangaId}`, JSON.stringify({ hid: ckHid, slug: ckSlug }));
-          const { chapters: raw } = await getComickChapters(ckHid);
+          localStorage.setItem(`ck_manga_${mangaId}`, JSON.stringify({ hid: ck.hid, slug: ckSlug }));
+          const { chapters: raw } = await getComickChapters(ckSlug);
           if (dead) return;
           const mapped = mapComickChapters(raw, ckSlug);
           setChapters(mapped);
