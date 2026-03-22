@@ -63,28 +63,40 @@ export default function MangaDetailPage() {
       const { data } = await getMangaChapters(mangaId, 0, PAGE_SIZE).catch(() => ({ data: [] }));
       if (dead) return;
 
-      if (data.length > 0) {
+      const deduped = dedupByChapter(data);
+      if (deduped.length >= 10) {
         setHasMore(data.length === PAGE_SIZE);
-        setChapters(dedupByChapter(data));
-      } else {
-        // MangaDex has no English chapters — try ComicK
-        const title = getTitle(mangaData);
-        try {
-          const results = await searchComick(title);
-          if (dead || !results.length) { if (!dead) setChaptersLoading(false); return; }
+        setChapters(deduped);
+        if (!dead) setChaptersLoading(false);
+        return;
+      }
+
+      // MangaDex has fewer than 10 chapters — try ComicK for better coverage
+      const title = getTitle(mangaData);
+      try {
+        const results = await searchComick(title);
+        if (!dead && results.length) {
           const ck = results[0];
           const ckSlug = ck.slug;
           localStorage.setItem(`ck_manga_${mangaId}`, JSON.stringify({ hid: ck.hid, slug: ckSlug }));
           const { chapters: raw } = await getComickChapters(ckSlug);
           if (dead) return;
           const mapped = mapComickChapters(raw, ckSlug);
-          setChapters(mapped);
-          if (mapped.length > 0) setChaptersSource('comick');
-        } catch (e) {
-          console.error('ComicK fallback failed:', e);
+          if (mapped.length > 0) {
+            setChapters(mapped);
+            setChaptersSource('comick');
+            if (!dead) setChaptersLoading(false);
+            return;
+          }
         }
+      } catch (e) {
+        console.error('ComicK fetch failed:', e);
       }
 
+      // ComicK also failed — use whatever MangaDex returned
+      if (dead) return;
+      setHasMore(data.length === PAGE_SIZE);
+      setChapters(deduped);
       if (!dead) setChaptersLoading(false);
     })();
 

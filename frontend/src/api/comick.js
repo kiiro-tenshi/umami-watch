@@ -16,15 +16,25 @@ export const searchComick = async (title) => {
   return Array.isArray(data) ? data : (data.data || []);
 };
 
-// Get English chapters for a ComicK manga slug, ascending order.
+// Get all English chapters for a ComicK manga slug, ascending order.
+// Fetches all pages in parallel after discovering last_page from page 1.
 // Returns { chapters: [...], total: N }
-export const getComickChapters = async (slug, page = 1) => {
-  const data = await ckFetch(`/comics/${slug}/chapter-list`, {
-    lang: 'en',
-    page,
-    chapOrder: 'asc',
-  });
-  return { chapters: data.data || [], total: data.pagination?.total || 0 };
+export const getComickChapters = async (slug) => {
+  const params = { lang: 'en', chapOrder: 'asc' };
+  const first = await ckFetch(`/comics/${slug}/chapter-list`, { ...params, page: 1 });
+  const lastPage = first.pagination?.last_page || 1;
+  let all = first.data || [];
+  if (lastPage > 1) {
+    const rest = await Promise.all(
+      Array.from({ length: lastPage - 1 }, (_, i) =>
+        ckFetch(`/comics/${slug}/chapter-list`, { ...params, page: i + 2 })
+          .then(d => d.data || [])
+          .catch(() => [])
+      )
+    );
+    all = all.concat(rest.flat());
+  }
+  return { chapters: all, total: all.length };
 };
 
 // Get proxied image URLs for a chapter (server scrapes comick.art HTML).
