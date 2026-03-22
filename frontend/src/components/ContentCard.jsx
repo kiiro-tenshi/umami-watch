@@ -1,11 +1,16 @@
 import { Link } from 'react-router-dom';
 
 export default function ContentCard({ id, title, posterUrl, contentType, rating }) {
-  const badgeColor = 
+  const badgeColor =
     contentType === 'anime' ? 'bg-accent-teal' :
-    contentType === 'movie' ? 'bg-accent-blue' : 'bg-accent-orange';
+    contentType === 'movie' ? 'bg-accent-blue' :
+    contentType === 'manga' ? 'bg-accent-purple' : 'bg-accent-orange';
 
-  const linkTo = `/${contentType === 'tv' ? 'tv' : contentType === 'movie' ? 'movie' : 'anime'}/${id}`;
+  const linkTo =
+    contentType === 'tv' ? `/tv/${id}` :
+    contentType === 'movie' ? `/movie/${id}` :
+    contentType === 'manga' ? `/manga/${id}` :
+    `/anime/${id}`;
 
   return (
     <Link to={linkTo} className="relative block w-40 h-60 shrink-0 group rounded-lg overflow-hidden border border-border bg-surface transition-transform hover:scale-[1.04]">

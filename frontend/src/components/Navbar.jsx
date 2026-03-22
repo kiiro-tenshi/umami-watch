@@ -31,6 +31,7 @@ export default function Navbar() {
           <Link to="/movies" className="hover:text-accent-blue transition-colors">Movies</Link>
           <Link to="/tv" className="hover:text-accent-blue transition-colors">TV Shows</Link>
           <Link to="/rooms" className="hover:text-accent-blue transition-colors">Rooms</Link>
+          <Link to="/manga" className="hover:text-accent-blue transition-colors">Manga</Link>
         </div>
       </div>
 
@@ -73,6 +74,7 @@ export default function Navbar() {
           <Link to="/movies" onClick={() => setMenuOpen(false)}>Movies</Link>
           <Link to="/tv" onClick={() => setMenuOpen(false)}>TV Shows</Link>
           <Link to="/rooms" onClick={() => setMenuOpen(false)}>Rooms</Link>
+          <Link to="/manga" onClick={() => setMenuOpen(false)}>Manga</Link>
         </div>
       )}
     </nav>
