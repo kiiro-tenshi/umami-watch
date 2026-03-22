@@ -4,7 +4,7 @@ import { auth } from '../firebase';
 export default function ChatPanel({ roomId, socket, user }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
 
   // Load message history via server API (no Firestore client rules needed)
   useEffect(() => {
@@ -44,7 +44,8 @@ export default function ChatPanel({ roomId, socket, user }) {
   }, [socket]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = messagesContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   const sendMessage = (e) => {
@@ -60,7 +61,7 @@ export default function ChatPanel({ roomId, socket, user }) {
         <span className="text-xl">💬</span> Live Chat
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && <p className="text-center text-muted text-sm mt-10">No messages yet. Say hi!</p>}
         {messages.map((m, i) => {
           if (m.system) return (
@@ -85,7 +86,6 @@ export default function ChatPanel({ roomId, socket, user }) {
             </div>
           );
         })}
-        <div ref={messagesEndRef} />
       </div>
 
       <form onSubmit={sendMessage} className="p-3 border-t border-border bg-surface-raised flex gap-2 flex-shrink-0">
@@ -97,7 +97,7 @@ export default function ChatPanel({ roomId, socket, user }) {
           className="flex-1 bg-surface border border-border rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-blue"
         />
         <button type="submit" disabled={!input.trim()} className="bg-accent-blue text-white rounded-full p-2 disabled:opacity-50 transition-transform hover:scale-105 shadow-sm">
-          <svg className="w-5 h-5 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
           </svg>
         </button>

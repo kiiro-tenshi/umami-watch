@@ -645,7 +645,7 @@ export default function WatchPage() {
 
             {/* Episode list (anime only) */}
             {hasEpisodeSidebar && (
-              <div className="bg-surface border border-border lg:rounded-xl overflow-hidden flex flex-col" style={{ maxHeight: hasChatSidebar ? '45vh' : 'calc(100vh - 160px)' }}>
+              <div className="bg-surface border border-border lg:rounded-xl overflow-hidden flex flex-col" style={{ maxHeight: hasChatSidebar ? '28vh' : 'calc(100vh - 160px)' }}>
                 <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
                   <span className="font-bold text-sm text-primary">Episodes</span>
                   <span className="text-xs text-muted">{animeEpisodes.length} eps</span>
