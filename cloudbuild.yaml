@@ -75,7 +75,7 @@ steps:
       - '$_REGION'
       - '--allow-unauthenticated'
       - '--min-instances'
-      - '1'
+      - '0'
       - '--max-instances'
       - '5'
       - '--session-affinity'
