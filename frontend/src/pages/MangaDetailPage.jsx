@@ -1,9 +1,33 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getMangaById, getMangaChapters, coverUrl, getCoverFilename, getTitle, getDescription, getAuthor } from '../api/mangadex';
+import { searchComick, getComickChapters } from '../api/comick';
 import { useAuth } from '../hooks/useAuth';
 import { useWatchlist } from '../hooks/useWatchlist';
 import LoadingSpinner from '../components/LoadingSpinner';
+
+const PAGE_SIZE = 100;
+
+const dedupByChapter = (data) => {
+  const seen = new Map();
+  data.forEach(ch => {
+    const num = ch.attributes?.chapter;
+    if (num && !seen.has(num)) seen.set(num, ch);
+  });
+  return [...seen.values()];
+};
+
+// Chapter ID encodes slug~hid~chap so the reader can extract them without extra API calls
+const mapComickChapters = (raw, slug) => {
+  const seen = new Map();
+  raw.forEach(ch => { if (ch.chap && !seen.has(ch.chap)) seen.set(ch.chap, ch); });
+  return [...seen.values()].map(ch => ({
+    id: `ck_${slug}~${ch.hid}~${ch.chap}`,
+    _source: 'comick',
+    attributes: { chapter: ch.chap, title: ch.title || null, pages: 1, externalUrl: null },
+    relationships: [{ type: 'scanlation_group', attributes: { name: ch.group_name?.[0] || 'Unknown' } }],
+  }));
+};
 
 export default function MangaDetailPage() {
   const { mangaId } = useParams();
@@ -14,47 +38,75 @@ export default function MangaDetailPage() {
   const [chapters, setChapters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [chaptersLoading, setChaptersLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [offset, setOffset] = useState(0);
-  const [hasMoreRaw, setHasMoreRaw] = useState(false);
-  const PAGE_SIZE = 100;
+  const [chaptersSource, setChaptersSource] = useState('mangadex');
 
+  // Load manga + initial chapters (with ComicK fallback) when mangaId changes
   useEffect(() => {
-    const fetchManga = async () => {
-      setLoading(true);
-      try {
-        const data = await getMangaById(mangaId);
-        setManga(data);
-      } catch (e) {
-        console.error(e);
-      }
+    let dead = false;
+    setManga(null);
+    setChapters([]);
+    setOffset(0);
+    setHasMore(false);
+    setChaptersSource('mangadex');
+    setLoading(true);
+
+    (async () => {
+      const mangaData = await getMangaById(mangaId).catch(() => null);
+      if (dead) return;
+      setManga(mangaData);
       setLoading(false);
-    };
-    fetchManga();
+      if (!mangaData) return;
+
+      setChaptersLoading(true);
+      const { data } = await getMangaChapters(mangaId, 0, PAGE_SIZE).catch(() => ({ data: [] }));
+      if (dead) return;
+
+      if (data.length > 0) {
+        setHasMore(data.length === PAGE_SIZE);
+        setChapters(dedupByChapter(data));
+      } else {
+        // MangaDex has no English chapters — try ComicK
+        const title = getTitle(mangaData);
+        try {
+          const results = await searchComick(title);
+          if (dead || !results.length) { if (!dead) setChaptersLoading(false); return; }
+          const ck = results[0];
+          const ckHid = ck.hid;
+          const ckSlug = ck.slug;
+          localStorage.setItem(`ck_manga_${mangaId}`, JSON.stringify({ hid: ckHid, slug: ckSlug }));
+          const { chapters: raw } = await getComickChapters(ckHid);
+          if (dead) return;
+          const mapped = mapComickChapters(raw, ckSlug);
+          setChapters(mapped);
+          if (mapped.length > 0) setChaptersSource('comick');
+        } catch (e) {
+          console.error('ComicK fallback failed:', e);
+        }
+      }
+
+      if (!dead) setChaptersLoading(false);
+    })();
+
+    return () => { dead = true; };
   }, [mangaId]);
 
+  // Load more MangaDex chapters when offset advances (only for mangadex source)
   useEffect(() => {
-    const fetchChapters = async () => {
-      setChaptersLoading(true);
-      try {
-        const { data } = await getMangaChapters(mangaId, offset, PAGE_SIZE);
-        setHasMoreRaw(data.length === PAGE_SIZE);
-        // Deduplicate by chapter number, prefer earlier (more established) groups
-        setChapters(prev => {
-          const merged = offset === 0 ? data : [...prev, ...data];
-          const seen = new Map();
-          merged.forEach(ch => {
-            const num = ch.attributes?.chapter;
-            if (num && !seen.has(num)) seen.set(num, ch);
-          });
-          return [...seen.values()];
-        });
-      } catch (e) {
-        console.error(e);
-      }
-      setChaptersLoading(false);
-    };
-    fetchChapters();
-  }, [mangaId, offset]);
+    if (offset === 0 || chaptersSource !== 'mangadex') return;
+    let dead = false;
+    setChaptersLoading(true);
+    getMangaChapters(mangaId, offset, PAGE_SIZE)
+      .then(({ data }) => {
+        if (dead) return;
+        setHasMore(data.length === PAGE_SIZE);
+        setChapters(prev => dedupByChapter([...prev, ...data]));
+      })
+      .catch(console.error)
+      .finally(() => { if (!dead) setChaptersLoading(false); });
+    return () => { dead = true; };
+  }, [offset, mangaId, chaptersSource]);
 
   if (loading) return <LoadingSpinner fullScreen />;
   if (!manga) return <div className="p-8 text-center text-red-500 font-bold">Failed to load manga.</div>;
@@ -69,7 +121,6 @@ export default function MangaDetailPage() {
   const year = attr.year;
   const tags = attr.tags?.filter(t => t.attributes?.group === 'genre') || [];
   const inWatchlist = isInWatchlist(mangaId);
-  const hasMore = hasMoreRaw;
 
   return (
     <div className="pb-12">
@@ -95,6 +146,9 @@ export default function MangaDetailPage() {
               <span className="bg-surface-raised border border-border text-secondary px-2.5 py-1 rounded text-sm font-semibold">
                 {chapters.length}{hasMore ? '+' : ''} Chapters
               </span>
+              {chaptersSource === 'comick' && (
+                <span className="bg-blue-100 text-blue-700 border border-blue-200 px-2 py-0.5 rounded text-xs font-semibold">via ComicK</span>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-2 mb-5">
@@ -143,12 +197,15 @@ export default function MangaDetailPage() {
           ) : (
             <>
               <div className="divide-y divide-border">
+                {chapters.length === 0 && !chaptersLoading && (
+                  <p className="text-center text-muted p-8 font-medium">No English chapters available.</p>
+                )}
                 {chapters.map(ch => {
                   const num = ch.attributes?.chapter;
                   const chTitle = ch.attributes?.title;
                   const group = ch.relationships?.find(r => r.type === 'scanlation_group');
                   const groupName = group?.attributes?.name;
-                  const isExternal = (ch.attributes?.pages ?? 0) === 0;
+                  const isExternal = (ch.attributes?.pages ?? 1) === 0;
                   const extUrl = ch.attributes?.externalUrl;
                   const rowClass = "flex items-center justify-between px-6 py-3 hover:bg-surface-raised transition-colors";
                   const inner = (
