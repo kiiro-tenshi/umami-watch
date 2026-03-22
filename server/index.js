@@ -173,17 +173,16 @@ app.get('/api/proxy/mangadex-cover', async (req, res) => {
   }
 });
 
-// ─── ComicK API Proxy (api.comick.dev — search, chapter list) ────────────────
+// ─── ComicK API Proxy (comick.art/api — search, chapter list) ───────────────
 app.get('/api/proxy/comick/*', async (req, res) => {
   const path = req.params[0];
   const rawQuery = req.originalUrl.split('?').slice(1).join('?');
-  const targetUrl = `https://api.comick.dev/${path}${rawQuery ? '?' + rawQuery : ''}`;
+  const targetUrl = `https://comick.art/api/${path}${rawQuery ? '?' + rawQuery : ''}`;
   try {
     const response = await fetch(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'application/json',
-        'Referer': 'https://comick.art/',
       }
     });
     if (!response.ok) return res.status(response.status).json({ error: 'ComicK error', status: response.status });
