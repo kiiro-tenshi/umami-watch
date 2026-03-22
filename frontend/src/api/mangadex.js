@@ -1,4 +1,4 @@
-const BASE = 'https://api.mangadex.org';
+const BASE = `${import.meta.env.VITE_API_BASE_URL}/api/proxy/mangadex`;
 
 const mdFetch = async (path, params = {}) => {
   const url = new URL(BASE + path);
