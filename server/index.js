@@ -147,6 +147,23 @@ app.get('/api/proxy/hls', async (req, res) => {
   }
 });
 
+// ─── MangaDex Proxy (browser CORS blocks direct calls from production) ──────
+app.get('/api/proxy/mangadex/*', requireAuth, async (req, res) => {
+  const mdPath = req.params[0];
+  // Preserve raw query string intact so array params (includes[], contentRating[]) survive
+  const rawQuery = req.originalUrl.split('?').slice(1).join('?');
+  const targetUrl = `https://api.mangadex.org/${mdPath}${rawQuery ? '?' + rawQuery : ''}`;
+  try {
+    const response = await fetch(targetUrl, {
+      headers: { 'User-Agent': 'UmamiStream/1.0' }
+    });
+    if (!response.ok) return res.status(response.status).json({ error: 'MangaDex error', status: response.status });
+    res.json(await response.json());
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ─── Aniwatch Proxy (forwards to self-hosted aniwatch-api) ─────────────────
 app.get('/api/proxy/aniwatch/*', requireAuth, async (req, res) => {
   const base = process.env.ANIWATCH_API_URL || 'http://localhost:4000';
