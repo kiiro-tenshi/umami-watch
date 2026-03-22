@@ -10,6 +10,9 @@ import MovieDetailPage from './pages/MovieDetailPage';
 import WatchPage from './pages/WatchPage';
 import RoomsPage from './pages/RoomsPage';
 import ProfilePage from './pages/ProfilePage';
+import MangaBrowsePage from './pages/MangaBrowsePage';
+import MangaDetailPage from './pages/MangaDetailPage';
+import MangaReaderPage from './pages/MangaReaderPage';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -32,6 +35,9 @@ function App() {
           <Route path="/rooms" element={<ProtectedRoute><RoomsPage /></ProtectedRoute>} />
           <Route path="/join/:code" element={<ProtectedRoute><RoomsPage autoJoin={true} /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+          <Route path="/manga" element={<ProtectedRoute><MangaBrowsePage /></ProtectedRoute>} />
+          <Route path="/manga/:mangaId" element={<ProtectedRoute><MangaDetailPage /></ProtectedRoute>} />
+          <Route path="/manga/:mangaId/chapter/:chapterId" element={<ProtectedRoute><MangaReaderPage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/home" />} />
         </Routes>
       </main>
