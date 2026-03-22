@@ -12,10 +12,10 @@ export default function MangaDetailPage() {
 
   const [manga, setManga] = useState(null);
   const [chapters, setChapters] = useState([]);
-  const [totalChapters, setTotalChapters] = useState(0);
   const [loading, setLoading] = useState(true);
   const [chaptersLoading, setChaptersLoading] = useState(false);
   const [offset, setOffset] = useState(0);
+  const [hasMoreRaw, setHasMoreRaw] = useState(false);
   const PAGE_SIZE = 100;
 
   useEffect(() => {
@@ -36,8 +36,8 @@ export default function MangaDetailPage() {
     const fetchChapters = async () => {
       setChaptersLoading(true);
       try {
-        const { data, total } = await getMangaChapters(mangaId, offset, PAGE_SIZE);
-        setTotalChapters(total);
+        const { data } = await getMangaChapters(mangaId, offset, PAGE_SIZE);
+        setHasMoreRaw(data.length === PAGE_SIZE);
         // Deduplicate by chapter number, prefer earlier (more established) groups
         setChapters(prev => {
           const merged = offset === 0 ? data : [...prev, ...data];
@@ -69,7 +69,7 @@ export default function MangaDetailPage() {
   const year = attr.year;
   const tags = attr.tags?.filter(t => t.attributes?.group === 'genre') || [];
   const inWatchlist = isInWatchlist(mangaId);
-  const hasMore = chapters.length < totalChapters;
+  const hasMore = hasMoreRaw;
 
   return (
     <div className="pb-12">
@@ -93,7 +93,7 @@ export default function MangaDetailPage() {
               {status && <span className="bg-accent-purple text-white px-2.5 py-1 rounded text-sm font-bold shadow-sm capitalize">{status}</span>}
               {year && <span className="bg-surface-raised border border-border text-secondary px-2.5 py-1 rounded text-sm font-semibold">{year}</span>}
               <span className="bg-surface-raised border border-border text-secondary px-2.5 py-1 rounded text-sm font-semibold">
-                {totalChapters} Chapters
+                {chapters.length}{hasMore ? '+' : ''} Chapters
               </span>
             </div>
 

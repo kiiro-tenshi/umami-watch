@@ -148,7 +148,7 @@ app.get('/api/proxy/hls', async (req, res) => {
 });
 
 // ─── MangaDex Proxy (browser CORS blocks direct calls from production) ──────
-app.get('/api/proxy/mangadex/*', requireAuth, async (req, res) => {
+app.get('/api/proxy/mangadex/*', async (req, res) => {
   const mdPath = req.params[0];
   // Preserve raw query string intact so array params (includes[], contentRating[]) survive
   const rawQuery = req.originalUrl.split('?').slice(1).join('?');

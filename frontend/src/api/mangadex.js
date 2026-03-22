@@ -45,7 +45,7 @@ export const getTrendingManga = async (limit = 20, offset = 0) => {
     'order[followedCount]': 'desc',
     'includes[]': ['cover_art', 'author'],
     'contentRating[]': ['safe', 'suggestive'],
-    availableTranslatedLanguage: 'en',
+    'availableTranslatedLanguage[]': ['en'],
   });
   return data.data || [];
 };
@@ -57,7 +57,7 @@ export const searchManga = async (title, limit = 20, offset = 0) => {
     offset,
     'includes[]': ['cover_art', 'author'],
     'contentRating[]': ['safe', 'suggestive'],
-    availableTranslatedLanguage: 'en',
+    'availableTranslatedLanguage[]': ['en'],
   });
   return data.data || [];
 };
@@ -70,7 +70,7 @@ export const getMangaByGenre = async (tagId, limit = 20, offset = 0) => {
     'order[followedCount]': 'desc',
     'includes[]': ['cover_art', 'author'],
     'contentRating[]': ['safe', 'suggestive'],
-    availableTranslatedLanguage: 'en',
+    'availableTranslatedLanguage[]': ['en'],
   });
   return data.data || [];
 };

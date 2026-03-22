@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { getChapterPages, getMangaChapters, coverUrl, getCoverFilename, getTitle } from '../api/mangadex';
-import { getMangaById } from '../api/mangadex';
+import { getChapterPages, getMangaChapters, getMangaById, getTitle } from '../api/mangadex';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function MangaReaderPage() {
@@ -46,7 +45,7 @@ export default function MangaReaderPage() {
       .catch(() => {});
 
     const fetchAllChapters = async () => {
-      const { data } = await getMangaChapters(mangaId, 0, 100).catch(() => ({ data: [] }));
+      const { data } = await getMangaChapters(mangaId, 0, 500).catch(() => ({ data: [] }));
       // Deduplicate by chapter number
       const seen = new Map();
       data.forEach(ch => {
