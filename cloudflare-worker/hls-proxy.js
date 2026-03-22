@@ -48,11 +48,6 @@ export default {
     }
     const isM3u8 = contentType.includes('mpegurl') || decodedUrl.includes('.m3u8');
 
-    const responseHeaders = {
-      ...CORS,
-      'Cache-Control': 'no-cache',
-    };
-
     if (isM3u8) {
       const text   = await response.text();
       const urlObj = new URL(decodedUrl);
@@ -79,14 +74,14 @@ export default {
       }).join('\n');
 
       return new Response(rewritten, {
-        headers: { ...responseHeaders, 'Content-Type': 'application/vnd.apple.mpegurl' },
+        headers: { ...CORS, 'Content-Type': 'application/vnd.apple.mpegurl', 'Cache-Control': 'public, max-age=5' },
       });
     }
 
-    // Binary content: TS segments, VTT subtitles, etc.
+    // Binary content: TS segments, VTT subtitles, etc. — never change, cache aggressively
     const body = await response.arrayBuffer();
     return new Response(body, {
-      headers: { ...responseHeaders, 'Content-Type': contentType || 'application/octet-stream' },
+      headers: { ...CORS, 'Content-Type': contentType || 'application/octet-stream', 'Cache-Control': 'public, max-age=3600, immutable' },
     });
   },
 };
