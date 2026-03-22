@@ -38,9 +38,11 @@ export default function MangaDetailPage() {
       try {
         const { data } = await getMangaChapters(mangaId, offset, PAGE_SIZE);
         setHasMoreRaw(data.length === PAGE_SIZE);
+        // Filter out external-only chapters (pages: 0 = no hosted content)
+        const readable = data.filter(ch => (ch.attributes?.pages ?? 0) > 0);
         // Deduplicate by chapter number, prefer earlier (more established) groups
         setChapters(prev => {
-          const merged = offset === 0 ? data : [...prev, ...data];
+          const merged = offset === 0 ? readable : [...prev, ...readable];
           const seen = new Map();
           merged.forEach(ch => {
             const num = ch.attributes?.chapter;

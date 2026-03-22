@@ -147,6 +147,32 @@ app.get('/api/proxy/hls', async (req, res) => {
   }
 });
 
+// ─── MangaDex Cover Image Proxy (CDN requires Referer: mangadex.org) ────────
+app.get('/api/proxy/mangadex-cover', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  const decoded = decodeURIComponent(url);
+  if (!decoded.startsWith('https://uploads.mangadex.org/covers/')) {
+    return res.status(400).json({ error: 'Invalid URL' });
+  }
+  try {
+    const upstream = await fetch(decoded, {
+      headers: {
+        'Referer': 'https://mangadex.org/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    });
+    if (!upstream.ok) return res.status(upstream.status).send();
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+    const cl = upstream.headers.get('content-length');
+    if (cl) res.setHeader('Content-Length', cl);
+    Readable.fromWeb(upstream.body).pipe(res);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ─── MangaDex Proxy (browser CORS blocks direct calls from production) ──────
 app.get('/api/proxy/mangadex/*', async (req, res) => {
   const mdPath = req.params[0];
