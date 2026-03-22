@@ -41,19 +41,19 @@ export default function HomePage() {
 
       {/* Hero Banner */}
       {heroItem && (
-        <div className="relative w-full h-[300px] md:h-[500px] bg-primary">
+        <div className="relative w-full h-[220px] sm:h-[300px] md:h-[500px] bg-primary">
           <img src={heroItem.bannerImage || heroItem.coverImage?.large} alt="Banner" className="w-full h-full object-cover opacity-80" />
-          <div className="absolute inset-0 bg-gradient-to-t from-page via-page/40 to-transparent flex flex-col justify-end p-6 md:p-12">
-            <h1 className="text-3xl md:text-5xl font-bold text-primary mb-2 shadow-sm drop-shadow-md">
+          <div className="absolute inset-0 bg-gradient-to-t from-page via-page/40 to-transparent flex flex-col justify-end p-4 sm:p-6 md:p-12">
+            <h1 className="text-xl sm:text-3xl md:text-5xl font-bold text-primary mb-1 sm:mb-2 shadow-sm drop-shadow-md">
               {heroItem.title.english || heroItem.title.romaji}
             </h1>
             <p className="text-secondary max-w-2xl line-clamp-2 md:line-clamp-3 mb-6 hidden sm:block bg-page/80 p-2 rounded" dangerouslySetInnerHTML={{ __html: heroItem.description }}></p>
             <div className="flex gap-4">
-              <Link to={`/anime/${heroItem.id}`} className="bg-accent-blue hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg shadow-lg flex items-center gap-2 transition-transform hover:scale-105">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+              <Link to={`/anime/${heroItem.id}`} className="bg-accent-blue hover:bg-red-700 text-white font-bold py-2 px-4 sm:px-6 rounded-lg shadow-lg flex items-center gap-2 transition-transform hover:scale-105 text-sm sm:text-base">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
                 Watch Now
               </Link>
-              <Link to={`/anime/${heroItem.id}`} className="bg-surface/90 hover:bg-surface text-primary border border-border font-bold py-2 px-6 rounded-lg shadow-lg transition-transform hover:scale-105">
+              <Link to={`/anime/${heroItem.id}`} className="bg-surface/90 hover:bg-surface text-primary border border-border font-bold py-2 px-4 sm:px-6 rounded-lg shadow-lg transition-transform hover:scale-105 text-sm sm:text-base">
                 More Info
               </Link>
             </div>

@@ -74,19 +74,19 @@ export default function MangaDetailPage() {
   return (
     <div className="pb-12">
       {/* Banner (blurred cover) */}
-      <div className="relative w-full h-[180px] md:h-[300px] overflow-hidden bg-primary">
+      <div className="relative w-full h-[140px] sm:h-[200px] md:h-[300px] overflow-hidden bg-primary">
         <img src={poster} alt="Banner" className="w-full h-full object-cover opacity-40 blur-sm scale-110" />
         <div className="absolute inset-0 bg-gradient-to-t from-page via-page/60 to-transparent" />
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-8 -mt-20 sm:-mt-28 relative z-10">
-        <div className="flex flex-col md:flex-row gap-6 md:gap-8 bg-surface p-6 rounded-2xl shadow-xl border border-border">
-          <div className="w-36 md:w-52 shrink-0 mx-auto md:mx-0">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 -mt-14 sm:-mt-20 md:-mt-28 relative z-10">
+        <div className="flex flex-col md:flex-row gap-4 md:gap-8 bg-surface p-4 sm:p-6 rounded-2xl shadow-xl border border-border">
+          <div className="w-28 sm:w-36 md:w-52 shrink-0 mx-auto md:mx-0">
             <img src={poster} alt="Cover" className="w-full rounded-xl shadow-lg border border-border-subtle" />
           </div>
 
           <div className="flex-1">
-            <h1 className="text-2xl md:text-4xl font-bold text-primary mb-2">{title}</h1>
+            <h1 className="text-xl sm:text-2xl md:text-4xl font-bold text-primary mb-2">{title}</h1>
             {author && <p className="text-secondary font-semibold text-sm mb-4">{author}</p>}
 
             <div className="flex flex-wrap items-center gap-2 mb-4">

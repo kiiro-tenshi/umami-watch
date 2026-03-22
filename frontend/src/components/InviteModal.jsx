@@ -14,7 +14,7 @@ export default function InviteModal({ inviteCode, onClose }) {
           
           <div className="w-full bg-page border-2 border-dashed border-border rounded-xl p-4 flex flex-col items-center justify-center mb-6">
             <span className="text-xs font-bold text-muted uppercase tracking-widest mb-1">Room Code</span>
-            <span className="text-4xl font-mono font-bold text-accent-blue tracking-wider">{inviteCode}</span>
+            <span className="text-2xl sm:text-4xl font-mono font-bold text-accent-blue tracking-wider">{inviteCode}</span>
           </div>
           
           <div className="w-full flex gap-3">

@@ -53,6 +53,7 @@ export default function WatchPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showContentPicker, setShowContentPicker] = useState(false);
   const [animeEpisodes, setAnimeEpisodes] = useState([]);
+  const [mobileTab, setMobileTab] = useState('episodes'); // 'episodes' | 'chat'
 
   const playerRef = useRef(null);
   const hasJoinedRoomRef = useRef(false);
@@ -643,9 +644,30 @@ export default function WatchPage() {
         {hasSidebar && (
           <div className="w-full lg:w-80 xl:w-96 flex-shrink-0 flex flex-col gap-3 pb-6 lg:pb-0">
 
+            {/* Mobile tab bar — only when BOTH sections exist */}
+            {hasEpisodeSidebar && hasChatSidebar && (
+              <div className="flex lg:hidden border-b border-border bg-surface">
+                <button
+                  onClick={() => setMobileTab('episodes')}
+                  className={`flex-1 py-3 text-sm font-bold transition-colors ${mobileTab === 'episodes' ? 'text-accent-teal border-b-2 border-accent-teal' : 'text-muted'}`}
+                >
+                  Episodes ({animeEpisodes.length})
+                </button>
+                <button
+                  onClick={() => setMobileTab('chat')}
+                  className={`flex-1 py-3 text-sm font-bold transition-colors ${mobileTab === 'chat' ? 'text-accent-teal border-b-2 border-accent-teal' : 'text-muted'}`}
+                >
+                  Live Chat
+                </button>
+              </div>
+            )}
+
             {/* Episode list (anime only) */}
             {hasEpisodeSidebar && (
-              <div className="bg-surface border border-border lg:rounded-xl overflow-hidden flex flex-col" style={{ maxHeight: hasChatSidebar ? '28vh' : 'calc(100vh - 160px)' }}>
+              <div
+                className={`bg-surface border border-border lg:rounded-xl overflow-hidden flex flex-col ${hasEpisodeSidebar && hasChatSidebar ? (mobileTab === 'episodes' ? 'flex lg:flex' : 'hidden lg:flex') : 'flex'}`}
+                style={{ maxHeight: hasChatSidebar ? undefined : 'calc(100vh - 160px)', height: hasChatSidebar ? '60vh' : undefined }}
+              >
                 <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
                   <span className="font-bold text-sm text-primary">Episodes</span>
                   <span className="text-xs text-muted">{animeEpisodes.length} eps</span>
@@ -656,7 +678,7 @@ export default function WatchPage() {
                       key={ep.id}
                       to={buildEpUrl(ep)}
                       data-ep={ep.number}
-                      className={`flex items-center gap-3 px-4 py-2.5 border-b border-border text-sm transition-colors hover:bg-surface-raised ${ep.number === epNum ? 'bg-accent-teal/10 border-l-4 border-l-accent-teal' : 'border-l-4 border-l-transparent'}`}
+                      className={`flex items-center gap-3 px-4 py-3 border-b border-border text-sm transition-colors hover:bg-surface-raised ${ep.number === epNum ? 'bg-accent-teal/10 border-l-4 border-l-accent-teal' : 'border-l-4 border-l-transparent'}`}
                     >
                       <span className={`font-bold w-7 text-right flex-shrink-0 text-xs ${ep.number === epNum ? 'text-accent-teal' : 'text-muted'}`}>{ep.number}</span>
                       <span className={`truncate flex-1 ${ep.number === epNum ? 'text-primary font-semibold' : 'text-secondary'}`}>
@@ -672,8 +694,8 @@ export default function WatchPage() {
             {/* Chat (rooms only) */}
             {hasChatSidebar && (
               <div
-                className="bg-surface border border-border lg:rounded-xl overflow-hidden flex flex-col flex-shrink-0"
-                style={{ height: hasEpisodeSidebar ? '45vh' : '70vh' }}
+                className={`bg-surface border border-border lg:rounded-xl overflow-hidden flex-col flex-shrink-0 ${hasEpisodeSidebar && hasChatSidebar ? (mobileTab === 'chat' ? 'flex lg:flex' : 'hidden lg:flex') : 'flex'}`}
+                style={{ height: hasEpisodeSidebar ? '60vh' : '70vh' }}
               >
                 <ChatPanel roomId={roomId} socket={socketRef.current} user={user} />
               </div>
