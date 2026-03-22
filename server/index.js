@@ -180,7 +180,11 @@ app.get('/api/proxy/comick/*', async (req, res) => {
   const targetUrl = `https://api.comick.dev/${path}${rawQuery ? '?' + rawQuery : ''}`;
   try {
     const response = await fetch(targetUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Referer': 'https://comick.art/',
+      }
     });
     if (!response.ok) return res.status(response.status).json({ error: 'ComicK error', status: response.status });
     res.json(await response.json());
