@@ -46,9 +46,9 @@ export default function MangaReaderPage() {
 
     const fetchAllChapters = async () => {
       const { data } = await getMangaChapters(mangaId, 0, 500).catch(() => ({ data: [] }));
-      // Deduplicate by chapter number
+      // Filter external-only chapters and deduplicate by chapter number
       const seen = new Map();
-      data.forEach(ch => {
+      data.filter(ch => (ch.attributes?.pages ?? 0) > 0).forEach(ch => {
         const num = ch.attributes?.chapter;
         if (num && !seen.has(num)) seen.set(num, ch);
       });
@@ -168,10 +168,12 @@ export default function MangaReaderPage() {
         <div className="flex items-center justify-center h-screen">
           <LoadingSpinner />
         </div>
-      ) : error ? (
-        <div className="flex flex-col items-center justify-center h-screen gap-4">
-          <p className="text-red-400 font-semibold">{error}</p>
-          <button onClick={() => window.location.reload()} className="bg-white/10 hover:bg-white/20 px-4 py-2 rounded text-sm">Retry</button>
+      ) : error || pages.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-screen gap-4 text-center px-6">
+          <p className="text-red-400 font-semibold">{error || 'No pages available for this chapter.'}</p>
+          <p className="text-white/40 text-sm">{!error && 'This chapter may only be readable on an external site.'}</p>
+          {error && <button onClick={() => window.location.reload()} className="bg-white/10 hover:bg-white/20 px-4 py-2 rounded text-sm">Retry</button>}
+          <Link to={`/manga/${mangaId}`} className="bg-white/10 hover:bg-white/20 px-4 py-2 rounded text-sm">← Back to chapters</Link>
         </div>
       ) : mode === 'vertical' ? (
         // Vertical scroll mode

@@ -11,9 +11,11 @@ const mdFetch = async (path, params = {}) => {
   return res.json();
 };
 
-// Cover art URL helper
-export const coverUrl = (mangaId, filename, size = 256) =>
-  `https://uploads.mangadex.org/covers/${mangaId}/${filename}.${size}.jpg`;
+// Cover art URL helper — proxied through server to add required Referer header
+export const coverUrl = (mangaId, filename, size = 256) => {
+  const raw = `https://uploads.mangadex.org/covers/${mangaId}/${filename}.${size}.jpg`;
+  return `${import.meta.env.VITE_API_BASE_URL}/api/proxy/mangadex-cover?url=${encodeURIComponent(raw)}`;
+};
 
 // Extract cover filename from manga relationships
 export const getCoverFilename = (manga) => {
