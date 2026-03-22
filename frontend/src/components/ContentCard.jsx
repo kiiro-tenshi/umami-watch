@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 
-export default function ContentCard({ id, title, posterUrl, contentType, rating }) {
+export default function ContentCard({ id, title, posterUrl, contentType, rating, className }) {
   const badgeColor =
     contentType === 'anime' ? 'bg-accent-teal' :
     contentType === 'movie' ? 'bg-accent-blue' :
@@ -12,8 +12,10 @@ export default function ContentCard({ id, title, posterUrl, contentType, rating 
     contentType === 'manga' ? `/manga/${id}` :
     `/anime/${id}`;
 
+  const sizeClass = className ?? 'w-32 sm:w-40 h-48 sm:h-60 shrink-0';
+
   return (
-    <Link to={linkTo} className="relative block w-40 h-60 shrink-0 group rounded-lg overflow-hidden border border-border bg-surface transition-transform hover:scale-[1.04]">
+    <Link to={linkTo} className={`relative block ${sizeClass} group rounded-lg overflow-hidden border border-border bg-surface transition-transform hover:scale-[1.04]`}>
       <img src={posterUrl || '/placeholder.png'} alt={title} className="w-full h-full object-cover" loading="lazy" />
       
       {/* Overlay */}

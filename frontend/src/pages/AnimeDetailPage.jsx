@@ -179,20 +179,20 @@ export default function AnimeDetailPage() {
         </div>
       )}
       {/* Banner */}
-      <div className="relative w-full h-[250px] md:h-[400px] bg-primary">
+      <div className="relative w-full h-[180px] sm:h-[250px] md:h-[400px] bg-primary">
         <img src={anime.bannerImage || anime.coverImage?.large} alt="Banner" className="w-full h-full object-cover opacity-60" />
         <div className="absolute inset-0 bg-gradient-to-t from-page via-page/60 to-transparent" />
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-8 -mt-24 sm:-mt-32 relative z-10">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 -mt-16 sm:-mt-24 md:-mt-32 relative z-10">
         {/* Hero card */}
-        <div className="flex flex-col md:flex-row gap-6 md:gap-8 bg-surface p-6 rounded-2xl shadow-xl border border-border">
-          <div className="w-40 md:w-64 shrink-0 mx-auto md:mx-0">
+        <div className="flex flex-col md:flex-row gap-4 md:gap-8 bg-surface p-4 sm:p-6 rounded-2xl shadow-xl border border-border">
+          <div className="w-28 sm:w-40 md:w-64 shrink-0 mx-auto md:mx-0">
             <img src={anime.coverImage?.large} alt="Poster" className="w-full rounded-xl shadow-lg border border-border-subtle" />
           </div>
 
           <div className="flex-1">
-            <h1 className="text-3xl md:text-5xl font-bold text-primary mb-1">{anime.title.english || anime.title.romaji}</h1>
+            <h1 className="text-2xl sm:text-3xl md:text-5xl font-bold text-primary mb-1">{anime.title.english || anime.title.romaji}</h1>
             {anime.title.romaji && anime.title.english && (
               <p className="text-muted font-semibold text-sm mb-1">{anime.title.romaji}</p>
             )}
@@ -228,7 +228,7 @@ export default function AnimeDetailPage() {
               ))}
             </div>
 
-            <p className="text-secondary leading-relaxed mb-6 max-w-3xl font-medium"
+            <p className="text-secondary leading-relaxed mb-6 max-w-3xl font-medium text-sm sm:text-base line-clamp-4 sm:line-clamp-none"
               dangerouslySetInnerHTML={{ __html: anime.description }} />
 
             <button

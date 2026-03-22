@@ -102,7 +102,7 @@ export default function RoomsPage({ autoJoin }) {
           <h2 className="text-xl font-bold text-primary mb-4">Join a Room</h2>
           <form onSubmit={handleJoin}>
              <input type="text" placeholder="6-digit Invite Code" value={joinCode} onChange={e => {setJoinCode(e.target.value.toUpperCase()); setJoinError('');}} maxLength={6}
-               className="w-full bg-page border border-border font-mono text-center text-xl font-bold tracking-widest text-primary p-3 rounded-xl mb-4 focus:outline-none focus:ring-2 focus:ring-accent-teal shadow-sm" />
+               className="w-full bg-page border border-border font-mono text-center text-lg sm:text-xl font-bold tracking-widest text-primary p-3 rounded-xl mb-4 focus:outline-none focus:ring-2 focus:ring-accent-teal shadow-sm" />
              {joinError && <p className="text-red-500 text-sm font-bold mb-3 bg-red-50 p-2 rounded text-center border border-red-200">{joinError}</p>}
              <button type="submit" disabled={joinCode.length !== 6} className="w-full bg-surface-raised border border-border hover:bg-page text-primary font-bold py-3 rounded-xl disabled:opacity-50 transition-colors shadow-sm">
                Join Room
@@ -119,7 +119,7 @@ export default function RoomsPage({ autoJoin }) {
         </h1>
         
         {rooms.length === 0 ? (
-          <div className="bg-surface rounded-2xl border border-dashed border-border p-12 text-center shadow-sm">
+          <div className="bg-surface rounded-2xl border border-dashed border-border p-8 sm:p-12 text-center shadow-sm">
             <div className="text-5xl text-border mb-4">🍿</div>
             <h3 className="text-xl font-bold text-primary mb-2">No active rooms</h3>
             <p className="text-secondary max-w-sm mx-auto">You aren't a member of any watch parties. Create or join one to get started.</p>

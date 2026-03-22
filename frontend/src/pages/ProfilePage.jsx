@@ -134,14 +134,17 @@ export default function ProfilePage() {
           <p className="text-secondary text-sm text-center truncate w-full mb-4 font-medium">{user?.email}</p>
         </div>
 
-        <div className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden flex flex-col divide-y divide-border-subtle font-semibold">
-          <button onClick={() => setTab('settings')} className={`p-4 text-left transition-colors ${tab === 'settings' ? 'bg-surface-raised text-accent-blue font-bold border-l-4 border-l-accent-blue' : 'text-secondary hover:bg-page border-l-4 border-l-transparent'}`}>Settings</button>
-          <button onClick={() => setTab('watchlist')} className={`p-4 text-left transition-colors flex justify-between items-center ${tab === 'watchlist' ? 'bg-surface-raised text-accent-red font-bold border-l-4 border-l-red-500' : 'text-secondary hover:bg-page border-l-4 border-l-transparent'}`}>
-            Watchlist
-            <span className="bg-accent-red text-white text-xs px-2 py-0.5 rounded-full">{watchlist.length}</span>
-          </button>
-          <button onClick={() => setTab('history')} className={`p-4 text-left transition-colors ${tab === 'history' ? 'bg-surface-raised text-accent-orange font-bold border-l-4 border-l-accent-orange' : 'text-secondary hover:bg-page border-l-4 border-l-transparent'}`}>Watch History</button>
-          <button onClick={handleLogout} className="p-4 text-left transition-colors text-secondary hover:bg-page border-l-4 border-l-transparent">Log Out</button>
+        {/* Vertical tabs (md+) / horizontal tabs (mobile) */}
+        <div className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden font-semibold">
+          <div className="flex md:flex-col divide-x md:divide-x-0 md:divide-y divide-border-subtle overflow-x-auto scrollbar-hide">
+            <button onClick={() => setTab('settings')} className={`flex-1 md:flex-none p-3 md:p-4 text-center md:text-left transition-colors whitespace-nowrap ${tab === 'settings' ? 'bg-surface-raised text-accent-blue font-bold md:border-l-4 md:border-l-accent-blue border-b-2 border-b-accent-blue md:border-b-0' : 'text-secondary hover:bg-page md:border-l-4 md:border-l-transparent'}`}>Settings</button>
+            <button onClick={() => setTab('watchlist')} className={`flex-1 md:flex-none p-3 md:p-4 text-center md:text-left transition-colors flex justify-center md:justify-between items-center gap-1 whitespace-nowrap ${tab === 'watchlist' ? 'bg-surface-raised text-accent-red font-bold md:border-l-4 md:border-l-red-500 border-b-2 border-b-red-500 md:border-b-0' : 'text-secondary hover:bg-page md:border-l-4 md:border-l-transparent'}`}>
+              Watchlist
+              <span className="bg-accent-red text-white text-xs px-1.5 py-0.5 rounded-full">{watchlist.length}</span>
+            </button>
+            <button onClick={() => setTab('history')} className={`flex-1 md:flex-none p-3 md:p-4 text-center md:text-left transition-colors whitespace-nowrap ${tab === 'history' ? 'bg-surface-raised text-accent-orange font-bold md:border-l-4 md:border-l-accent-orange border-b-2 border-b-accent-orange md:border-b-0' : 'text-secondary hover:bg-page md:border-l-4 md:border-l-transparent'}`}>History</button>
+            <button onClick={handleLogout} className="flex-1 md:flex-none p-3 md:p-4 text-center md:text-left transition-colors text-secondary hover:bg-page whitespace-nowrap">Log Out</button>
+          </div>
         </div>
       </div>
 

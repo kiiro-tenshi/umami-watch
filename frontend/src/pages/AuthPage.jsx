@@ -117,7 +117,7 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-page">
-      <div className="bg-surface p-8 rounded-xl shadow-lg border border-border w-full max-w-md">
+      <div className="bg-surface p-5 sm:p-8 rounded-xl shadow-lg border border-border w-full max-w-md">
         <div className="flex flex-col items-center mb-8">
           <img src={logoImg} alt="UmamiStream" className="w-20 h-20 rounded-full object-cover shadow-lg mb-3" />
           <h1 className="text-2xl font-bold text-primary tracking-tight">UmamiStream</h1>

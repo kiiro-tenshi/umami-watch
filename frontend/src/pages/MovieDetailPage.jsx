@@ -52,20 +52,20 @@ export default function MovieDetailPage({ type }) {
 
   return (
     <div className="pb-12">
-      <div className="relative w-full h-[300px] md:h-[500px] bg-primary">
+      <div className="relative w-full h-[200px] sm:h-[300px] md:h-[500px] bg-primary">
         <img src={tmdbImage(data.backdrop_path, 'original')} alt="Banner" className="w-full h-full object-cover opacity-40" />
         <div className="absolute inset-0 bg-gradient-to-t from-page via-page/70 to-transparent"></div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-8 -mt-32 sm:-mt-48 relative z-10">
-        <div className="flex flex-col md:flex-row gap-6 md:gap-8">
-          <div className="w-48 md:w-72 shrink-0 mx-auto md:mx-0">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 -mt-20 sm:-mt-32 md:-mt-48 relative z-10">
+        <div className="flex flex-col md:flex-row gap-4 md:gap-8">
+          <div className="w-32 sm:w-48 md:w-72 shrink-0 mx-auto md:mx-0">
             <img src={tmdbImage(data.poster_path)} alt="Poster" className="w-full rounded-2xl shadow-2xl border border-border" />
           </div>
 
-          <div className="flex-1 pt-4 md:pt-16">
-            <h1 className="text-4xl md:text-6xl font-bold text-primary mb-3 shadow-sm">{title}</h1>
-            {data.tagline && <p className="text-lg text-secondary italic mb-4 font-medium border-l-4 border-accent-blue pl-3">&quot;{data.tagline}&quot;</p>}
+          <div className="flex-1 pt-2 md:pt-16">
+            <h1 className="text-2xl sm:text-4xl md:text-6xl font-bold text-primary mb-2 sm:mb-3 shadow-sm">{title}</h1>
+            {data.tagline && <p className="text-sm sm:text-lg text-secondary italic mb-3 sm:mb-4 font-medium border-l-4 border-accent-blue pl-3">&quot;{data.tagline}&quot;</p>}
 
             <div className="flex flex-wrap items-center gap-3 mb-6 font-semibold">
               <span className={`${isMovie ? 'bg-accent-blue' : 'bg-accent-purple'} text-white px-2.5 py-1 rounded shadow-sm text-sm uppercase`}>{type}</span>
@@ -76,11 +76,11 @@ export default function MovieDetailPage({ type }) {
               {isMovie && data.runtime && <span className="text-secondary border border-border px-2 py-1 rounded text-sm">{data.runtime}m</span>}
             </div>
 
-            <p className="text-secondary leading-relaxed mb-8 max-w-3xl text-lg">{data.overview}</p>
+            <p className="text-secondary leading-relaxed mb-6 sm:mb-8 max-w-3xl text-sm sm:text-base md:text-lg line-clamp-4 sm:line-clamp-none">{data.overview}</p>
 
             <div className="flex flex-wrap gap-4 mb-8">
               {isMovie && (
-                <Link to={`/watch?type=movie&tmdbId=${tmdbId}`} className="bg-accent-blue hover:bg-red-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg flex items-center gap-2 transition-transform hover:scale-105 text-lg">
+                <Link to={`/watch?type=movie&tmdbId=${tmdbId}`} className="bg-accent-blue hover:bg-red-700 text-white font-bold py-3 px-6 sm:px-8 rounded-xl shadow-lg flex items-center gap-2 transition-transform hover:scale-105 text-base sm:text-lg">
                   <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
                   Watch Movie
                 </Link>

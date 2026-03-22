@@ -81,7 +81,7 @@ export default function MovieBrowsePage({ type }) {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {results.map(item => (
-            <ContentCard key={item.id} id={item.id} title={isMovie ? item.title : item.name} posterUrl={tmdbImage(item.poster_path)} contentType={type} rating={item.vote_average} />
+            <ContentCard key={item.id} id={item.id} title={isMovie ? item.title : item.name} posterUrl={tmdbImage(item.poster_path)} contentType={type} rating={item.vote_average} className="w-full aspect-[2/3]" />
           ))}
           {results.length === 0 && <p className="col-span-full text-center text-muted p-10 font-medium">No results found.</p>}
         </div>
