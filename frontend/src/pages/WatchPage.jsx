@@ -53,7 +53,7 @@ export default function WatchPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showContentPicker, setShowContentPicker] = useState(false);
   const [animeEpisodes, setAnimeEpisodes] = useState([]);
-  const [mobileTab, setMobileTab] = useState('episodes'); // 'episodes' | 'chat'
+  const [mobileTab, setMobileTab] = useState('chat'); // 'chat' | 'episodes'
 
   const playerRef = useRef(null);
   const hasJoinedRoomRef = useRef(false);
@@ -640,7 +640,7 @@ export default function WatchPage() {
           </div>
         </div>
 
-        {/* Right: episode list + chat */}
+        {/* Right: chat + episode list */}
         {hasSidebar && (
           <div className="w-full lg:w-80 xl:w-96 flex-shrink-0 flex flex-col gap-3 pb-6 lg:pb-0">
 
@@ -648,17 +648,27 @@ export default function WatchPage() {
             {hasEpisodeSidebar && hasChatSidebar && (
               <div className="flex lg:hidden border-b border-border bg-surface">
                 <button
-                  onClick={() => setMobileTab('episodes')}
-                  className={`flex-1 py-3 text-sm font-bold transition-colors ${mobileTab === 'episodes' ? 'text-accent-teal border-b-2 border-accent-teal' : 'text-muted'}`}
-                >
-                  Episodes ({animeEpisodes.length})
-                </button>
-                <button
                   onClick={() => setMobileTab('chat')}
                   className={`flex-1 py-3 text-sm font-bold transition-colors ${mobileTab === 'chat' ? 'text-accent-teal border-b-2 border-accent-teal' : 'text-muted'}`}
                 >
                   Live Chat
                 </button>
+                <button
+                  onClick={() => setMobileTab('episodes')}
+                  className={`flex-1 py-3 text-sm font-bold transition-colors ${mobileTab === 'episodes' ? 'text-accent-teal border-b-2 border-accent-teal' : 'text-muted'}`}
+                >
+                  Episodes ({animeEpisodes.length})
+                </button>
+              </div>
+            )}
+
+            {/* Chat (rooms only) — positioned first so it's side-by-side with video */}
+            {hasChatSidebar && (
+              <div
+                className={`bg-surface border border-border lg:rounded-xl overflow-hidden flex-col flex-shrink-0 ${hasEpisodeSidebar && hasChatSidebar ? (mobileTab === 'chat' ? 'flex lg:flex' : 'hidden lg:flex') : 'flex'}`}
+                style={{ height: hasEpisodeSidebar ? '60vh' : '70vh' }}
+              >
+                <ChatPanel roomId={roomId} socket={socketRef.current} user={user} />
               </div>
             )}
 
@@ -688,16 +698,6 @@ export default function WatchPage() {
                     </Link>
                   ))}
                 </div>
-              </div>
-            )}
-
-            {/* Chat (rooms only) */}
-            {hasChatSidebar && (
-              <div
-                className={`bg-surface border border-border lg:rounded-xl overflow-hidden flex-col flex-shrink-0 ${hasEpisodeSidebar && hasChatSidebar ? (mobileTab === 'chat' ? 'flex lg:flex' : 'hidden lg:flex') : 'flex'}`}
-                style={{ height: hasEpisodeSidebar ? '60vh' : '70vh' }}
-              >
-                <ChatPanel roomId={roomId} socket={socketRef.current} user={user} />
               </div>
             )}
           </div>
