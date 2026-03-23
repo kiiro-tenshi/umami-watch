@@ -129,7 +129,28 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       const hls = new Hls({
         enableWorker: true,
         autoStartLoad: true,
-        maxBufferLength: 60,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        maxBufferSize: 30 * 1000 * 1000,
+        backBufferLength: 30,
+        startLevel: -1,
+        abrEwmaDefaultEstimate: 1_000_000,
+        fragLoadPolicy: {
+          default: {
+            maxTimeToFirstByteMs: 10_000,
+            maxLoadTimeMs: 60_000,
+            timeoutRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+            errorRetry:   { maxNumRetry: 4, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+          },
+        },
+        manifestLoadPolicy: {
+          default: {
+            maxTimeToFirstByteMs: 10_000,
+            maxLoadTimeMs: 20_000,
+            timeoutRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 4000 },
+            errorRetry:   { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 4000 },
+          },
+        },
       });
       hlsRef.current = hls;
 

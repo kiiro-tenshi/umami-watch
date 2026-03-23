@@ -1,5 +1,5 @@
 export default {
-  async fetch(request) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     const CORS = {
@@ -23,6 +23,17 @@ export default {
     const decodedUrl     = decodeURIComponent(targetUrl);
     const decodedReferer = decodeURIComponent(referer);
 
+    const contentType = (decodedUrl.match(/\.(m3u8|ts|vtt|srt|ass)(\?|$)/i) || [])[1] || '';
+    const isM3u8 = /m3u8/i.test(contentType) || decodedUrl.includes('.m3u8');
+    const isSegment = !isM3u8; // .ts, .vtt, etc.
+
+    // Check CF edge cache for segments (not manifests — those change frequently)
+    const cache = caches.default;
+    if (isSegment) {
+      const cached = await cache.match(request);
+      if (cached) return cached;
+    }
+
     let response;
     try {
       response = await fetch(decodedUrl, {
@@ -40,15 +51,16 @@ export default {
       return new Response(await response.text(), { status: response.status, headers: CORS });
     }
 
-    const contentType = response.headers.get('content-type') || '';
+    const upstreamCT = response.headers.get('content-type') || '';
 
     // CDN returned a Cloudflare block/challenge page — tell client to use fallback proxy
-    if (contentType.includes('text/html')) {
+    if (upstreamCT.includes('text/html')) {
       return new Response('Upstream blocked this request', { status: 530, headers: CORS });
     }
-    const isM3u8 = contentType.includes('mpegurl') || decodedUrl.includes('.m3u8');
 
-    if (isM3u8) {
+    const isManifest = upstreamCT.includes('mpegurl') || isM3u8;
+
+    if (isManifest) {
       const text   = await response.text();
       const urlObj = new URL(decodedUrl);
       const basePath = urlObj.origin + urlObj.pathname.substring(0, urlObj.pathname.lastIndexOf('/') + 1);
@@ -78,10 +90,16 @@ export default {
       });
     }
 
-    // Binary content: TS segments, VTT subtitles, etc. — never change, cache aggressively
+    // Binary content: TS segments, VTT subtitles, etc.
     const body = await response.arrayBuffer();
-    return new Response(body, {
-      headers: { ...CORS, 'Content-Type': contentType || 'application/octet-stream', 'Cache-Control': 'public, max-age=3600, immutable' },
+    const resp = new Response(body, {
+      headers: { ...CORS, 'Content-Type': upstreamCT || 'application/octet-stream', 'Cache-Control': 'public, max-age=3600, immutable' },
     });
+
+    // Store segments in CF edge cache — subsequent requests skip upstream entirely
+    ctx.waitUntil(cache.put(request, resp.clone()));
+
+    return resp;
   },
 };
+
