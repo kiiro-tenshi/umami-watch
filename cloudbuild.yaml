@@ -99,7 +99,6 @@ availableSecrets:
 images:
   - 'gcr.io/$PROJECT_ID/umami-watch:$TAG_NAME'
   - 'gcr.io/$PROJECT_ID/umami-watch:latest'
-  - 'gcr.io/$PROJECT_ID/aniwatch-api:latest'
 
 options:
   logging: CLOUD_LOGGING_ONLY
