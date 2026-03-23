@@ -336,7 +336,7 @@ export default function WatchPage() {
         pendingSyncRef.current = { position, playing };
         return;
       }
-      if (typeof position === 'number' && Math.abs(p.currentTime - position) > 1) {
+      if (typeof position === 'number' && Math.abs(p.currentTime - position) > 3) {
         p.currentTime = position;
       }
       if (playing && p.paused) p.play().catch(() => {});
@@ -345,7 +345,7 @@ export default function WatchPage() {
     const onPlay = (pos) => {
       const p = playerRef.current;
       if (!p || isHost) return;
-      if (Math.abs(p.currentTime - pos) > 1) p.currentTime = pos;
+      if (Math.abs(p.currentTime - pos) > 3) p.currentTime = pos;
       p.play().catch(() => {});
     };
     const onPause = (pos) => {
@@ -425,7 +425,7 @@ export default function WatchPage() {
       const p = playerRef.current;
       if (!p) return;
       socketRef.current?.emit('playback:heartbeat', { position: p.currentTime, playing: !p.paused });
-    }, 3000);
+    }, 5000);
     return () => clearInterval(interval);
   }, [roomId, isHost, socketRef.current]);
 
@@ -434,7 +434,7 @@ export default function WatchPage() {
     if (!roomId || isHost) return;
     const interval = setInterval(() => {
       socketRef.current?.emit('request-sync');
-    }, 10000);
+    }, 20000);
     return () => clearInterval(interval);
   }, [roomId, isHost, socketRef.current]);
 
