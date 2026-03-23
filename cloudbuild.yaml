@@ -1,11 +1,8 @@
 steps:
   # ── Step 1: Mirror aniwatch-api from ghcr.io → GCR ───────────────────────────
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['pull', 'ghcr.io/ghoshritesh12/aniwatch@sha256:07efb596f0f2e6e79f7200a9e4ce666406630ded40910e42eb51abd268f8d345']
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['tag', 'ghcr.io/ghoshritesh12/aniwatch@sha256:07efb596f0f2e6e79f7200a9e4ce666406630ded40910e42eb51abd268f8d345', 'gcr.io/$PROJECT_ID/aniwatch-api:latest']
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/aniwatch-api:latest']
+  # ── Step 1: Mirror aniwatch-api from ghcr.io → GCR (REMOVED due to DMCA) ──────
+  # The upstream repo and ghcr.io packages were deleted. We now rely solely on 
+  # our internally cached gcr.io/$PROJECT_ID/aniwatch-api image.
 
   # ── Step 2: Deploy aniwatch-api to Cloud Run ──────────────────────────────────
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
