@@ -273,7 +273,8 @@ export default function WatchPage() {
                 contentId: type === 'anime' ? animeId : tmdbId,
                 contentType: type,
                 contentTitle: title,
-                tracks: subtitleTracks
+                tracks: subtitleTracks,
+                playback: { playing: false, position: 0 }
               })
             }).catch(console.error);
           }
@@ -369,6 +370,9 @@ export default function WatchPage() {
     const onRoomContentUpdated = (data) => {
       if (isHost) return;
       if (data.streamUrl) {
+        // Reset player for new content before switching source
+        const p = playerRef.current;
+        if (p) { p.pause(); p.currentTime = 0; }
         setStreamUrl(data.streamUrl);
         if (data.contentType === 'anime') {
           const tracks = data.tracks || [];

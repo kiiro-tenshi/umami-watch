@@ -89,6 +89,7 @@ router.patch('/:roomId', async (req, res) => {
     if (req.body.contentTitle !== undefined) updates.contentTitle = req.body.contentTitle;
     if (req.body.episodeId !== undefined) updates.episodeId = req.body.episodeId;
     if (req.body.tracks !== undefined) updates.tracks = req.body.tracks;
+    if (req.body.playback !== undefined) updates.playback = req.body.playback;
 
     await roomRef.update(updates);
     // Notify all clients in the socket room so non-hosts get the new stream URL immediately

@@ -190,8 +190,16 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
     }
 
     return () => {
-      if (playerRef.current) { playerRef.current.destroy(); playerRef.current = null; }
+      // Reset the video element BEFORE destroying Plyr/HLS to prevent
+      // audio leaking from a detached element (Plyr.destroy replaces the <video>)
+      const vid = videoRef.current;
+      if (vid) {
+        vid.pause();
+        vid.removeAttribute('src');
+        vid.load();
+      }
       if (hlsRef.current)    { hlsRef.current.destroy();    hlsRef.current    = null; }
+      if (playerRef.current) { playerRef.current.destroy(); playerRef.current = null; }
       setPlyrContainer(null);
       setCcMountEl(null);
     };
@@ -233,7 +241,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
 
   return (
     <div className="w-full h-full relative bg-black">
-      <video ref={videoRef} playsInline crossOrigin="anonymous" className="w-full h-full">
+      <video key={src} ref={videoRef} playsInline crossOrigin="anonymous" className="w-full h-full">
         {tracks.map((t, i) => (
           <track key={i} kind={t.kind} label={t.label} srcLang={t.srclang} src={t.src} />
         ))}
