@@ -86,6 +86,22 @@ app.use('/api/rooms', createRoomRouter(io));
 app.use('/api/torrent', requireAuth, torrentRoutes);
 
 // ─── HLS Proxy (fallback when Cloudflare Worker is blocked by CDN) ──────────
+// In-memory LRU cache for .ts segments — avoids duplicate upstream fetches when
+// multiple watch-party viewers request the same segment within seconds.
+const _hlsSegmentCache = new Map();      // url → { buffer, contentType, size, ts }
+const _hlsPending      = new Map();      // url → Promise — coalesce concurrent requests
+const HLS_CACHE_MAX    = 50 * 1024 * 1024; // 50 MB
+let _hlsCacheSize      = 0;
+
+function _hlsCacheEvict() {
+  while (_hlsCacheSize > HLS_CACHE_MAX && _hlsSegmentCache.size > 0) {
+    const oldest = _hlsSegmentCache.keys().next().value;
+    const entry  = _hlsSegmentCache.get(oldest);
+    _hlsCacheSize -= entry.size;
+    _hlsSegmentCache.delete(oldest);
+  }
+}
+
 app.get('/api/proxy/hls', async (req, res) => {
   const { url, referer } = req.query;
   if (!url) return res.status(400).json({ error: 'url required' });
@@ -94,21 +110,19 @@ app.get('/api/proxy/hls', async (req, res) => {
   const decodedReferer = decodeURIComponent(referer || 'https://hianime.to/');
 
   try {
-    const upstream = await fetch(decodedUrl, {
-      headers: {
-        'Referer':    decodedReferer,
-        'Origin':     new URL(decodedReferer).origin,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
-    });
+    const isM3u8 = decodedUrl.includes('.m3u8');
 
-    if (!upstream.ok) return res.status(upstream.status).send(await upstream.text());
-
-    const contentType = upstream.headers.get('content-type') || '';
-    res.setHeader('Access-Control-Allow-Origin', '*');
-
-    const isM3u8 = contentType.includes('mpegurl') || decodedUrl.includes('.m3u8');
+    // ── Manifest (.m3u8) — rewrite URLs, short cache ──
     if (isM3u8) {
+      const upstream = await fetch(decodedUrl, {
+        headers: {
+          'Referer':    decodedReferer,
+          'Origin':     new URL(decodedReferer).origin,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+      });
+      if (!upstream.ok) return res.status(upstream.status).send(await upstream.text());
+
       const text   = await upstream.text();
       const urlObj = new URL(decodedUrl);
       const base   = urlObj.origin + urlObj.pathname.substring(0, urlObj.pathname.lastIndexOf('/') + 1);
@@ -131,17 +145,59 @@ app.get('/api/proxy/hls', async (req, res) => {
         return proxify(t);
       }).join('\n');
 
+      res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
       res.setHeader('Cache-Control', 'public, max-age=5');
       return res.send(rewritten);
     }
 
-    // .ts segments never change — safe to cache aggressively
-    res.setHeader('Content-Type', contentType || 'application/octet-stream');
+    // ── Segment (.ts / .vtt / etc.) — serve from cache or fetch once ──
+    const cached = _hlsSegmentCache.get(decodedUrl);
+    if (cached) {
+      // Move to end (most-recently-used)
+      _hlsSegmentCache.delete(decodedUrl);
+      _hlsSegmentCache.set(decodedUrl, cached);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Content-Type', cached.contentType);
+      res.setHeader('Cache-Control', 'public, max-age=3600, immutable');
+      res.setHeader('Content-Length', cached.size);
+      res.setHeader('X-Cache', 'HIT');
+      return res.send(cached.buffer);
+    }
+
+    // Coalesce concurrent requests for the same segment
+    let fetchPromise = _hlsPending.get(decodedUrl);
+    if (!fetchPromise) {
+      fetchPromise = (async () => {
+        const upstream = await fetch(decodedUrl, {
+          headers: {
+            'Referer':    decodedReferer,
+            'Origin':     new URL(decodedReferer).origin,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+        });
+        if (!upstream.ok) throw new Error(`Upstream ${upstream.status}`);
+        const buf = Buffer.from(await upstream.arrayBuffer());
+        const ct  = upstream.headers.get('content-type') || 'application/octet-stream';
+        return { buffer: buf, contentType: ct, size: buf.length };
+      })();
+      _hlsPending.set(decodedUrl, fetchPromise);
+    }
+
+    const result = await fetchPromise;
+    _hlsPending.delete(decodedUrl);
+
+    // Store in cache
+    _hlsSegmentCache.set(decodedUrl, { ...result, ts: Date.now() });
+    _hlsCacheSize += result.size;
+    _hlsCacheEvict();
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', result.contentType);
     res.setHeader('Cache-Control', 'public, max-age=3600, immutable');
-    const cl = upstream.headers.get('content-length');
-    if (cl) res.setHeader('Content-Length', cl);
-    Readable.fromWeb(upstream.body).pipe(res);
+    res.setHeader('Content-Length', result.size);
+    res.setHeader('X-Cache', 'MISS');
+    return res.send(result.buffer);
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
