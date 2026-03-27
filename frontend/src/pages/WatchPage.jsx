@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { getAnimeById } from '../api/anilist';
 import { getMovieDetail, getTVDetail } from '../api/tmdb';
+import { getAniwatchSources, getAniwatchEpisodes } from '../api/aniwatch';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import VideoPlayer from '../components/VideoPlayer';
@@ -98,11 +99,10 @@ export default function WatchPage() {
         // Restore stream for non-host viewers — host will re-fetch via fetchStream
         if (data.streamUrl && data.hostId !== user?.uid) {
           setStreamUrl(data.streamUrl);
-          // Set sources so isNativeVideo is correct for the viewer's player
+          // Set sources so isHls is correct for the viewer's player
           if (data.contentType === 'anime') {
             const tracks = data.tracks || [];
-            // Assume MP4 natively since we inject torrent MP4 URLs for anime
-            setSources([{ type: 'mp4', url: data.streamUrl, label: 'Stream', tracks }]);
+            setSources([{ type: 'hls', url: data.streamUrl, label: 'Stream', tracks }]);
             setActiveTracks(tracks);
           } else if (data.contentType) {
             setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
@@ -147,64 +147,78 @@ export default function WatchPage() {
           title = `${data.title?.english || data.title?.romaji || 'Anime'} — Episode ${epNum}`;
           poster = data.coverImage?.large || '';
 
-          // 1. Map AniList title to Kitsu ID
-          const searchQuery = data.title?.romaji || data.title?.english;
-          const kitsuRes = await fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(searchQuery)}`);
-          if (!kitsuRes.ok) throw new Error('Failed to resolve Kitsu metadata');
-          const kitsuData = await kitsuRes.json();
-          const kitsuId = kitsuData.data?.[0]?.id;
-
-          if (!kitsuId) {
-            setError('Content not found on Kitsu provider.');
+          if (!aniwatchEpisodeId) {
+            setError('Episode not available — no HiAnime source found.');
             setLoading(false);
             return;
           }
 
-          // 2. Fetch from Torrentio using Kitsu ID
-          const torrentioRes = await fetch(`https://torrentio.strem.fun/stream/anime/kitsu:${kitsuId}:${epNum}.json`);
-          if (!torrentioRes.ok) throw new Error('Torrentio provider currently unavailable.');
-          const tData = await torrentioRes.json();
-          const streams = tData.streams || [];
+          const decoded = decodeURIComponent(aniwatchEpisodeId);
 
-          // 3. Filter for .mp4 releases
-          const mp4Streams = streams.filter(s => 
-            (s.title || '').toLowerCase().includes('.mp4') || 
-            (s.title || '').toLowerCase().includes(' mp4') ||
-            (s.name || '').toLowerCase().includes('.mp4')
-          );
+          const SERVERS = [
+            { key: 'hd-1',        label: 'HD-1' },
+            { key: 'vidstreaming',label: 'Vidstreaming' },
+            { key: 'vidcloud',    label: 'Vidcloud' },
+          ];
 
-          if (mp4Streams.length === 0) {
-            setError('No compatible .mp4 torrents found for this episode. MKV torrents are unsupported natively.');
-            setLoading(false);
-            return;
-          }
+          const CF_PROXY     = import.meta.env.VITE_HLS_PROXY_URL;
+          const SERVER_PROXY = `${import.meta.env.VITE_API_BASE_URL}/api/proxy/hls`;
 
-          // 4. Build sources for VideoPlayer
-          const TPROXY = `${import.meta.env.VITE_API_BASE_URL}/api/torrent/stream`;
-          const srcs = mp4Streams.slice(0, 4).map((s, i) => {
-            let magnetPath = '';
-            if (s.infoHash) {
-              magnetPath = `magnet:?xt=urn:btih:${s.infoHash}`;
-              if (s.fileIdx) magnetPath += `&fileIdx=${s.fileIdx}`;
-            } else if (s.url && s.url.startsWith('magnet:')) {
-              magnetPath = s.url;
+          const buildSource = async (res, label) => {
+            const srcList = res?.data?.sources || [];
+            if (!srcList.length) return null;
+            const src = srcList.find(s => s.isM3U8) || srcList[0];
+            if (!src?.url) return null;
+            const referer = res.data.headers?.Referer || 'https://hianime.dk/';
+
+            // Try CF Worker — reuse the response body if it works, fall back to Server proxy if blocked
+            let proxy = SERVER_PROXY;
+            try {
+              const cfUrl = `${CF_PROXY}?url=${encodeURIComponent(src.url)}&referer=${encodeURIComponent(referer)}`;
+              const test = await fetch(cfUrl);
+              if (test.ok) proxy = CF_PROXY;
+            } catch {
+              // CF unreachable — server proxy is already set
             }
-            if (!magnetPath) return null;
 
-            const proxyUrl = `${TPROXY}?magnet=${encodeURIComponent(magnetPath)}`;
+            const makeUrl = (u) => `${proxy}?url=${encodeURIComponent(u)}&referer=${encodeURIComponent(referer)}`;
+            const tracks = (res.data.subtitles || [])
+              .filter(s => s.lang !== 'Thumbnails')
+              .map(s => ({
+                kind: 'metadata',
+                label: s.lang,
+                srclang: s.lang.toLowerCase().slice(0, 2),
+                src: makeUrl(s.url),
+              }));
+            return { label, url: makeUrl(src.url), type: 'hls', tracks };
+          };
 
-            let group = 'Stream';
-            const match = s.title.match(/\[(.*?)\]/);
-            if (match) group = match[1];
-            // Format size
-            const sizeMatch = s.title.match(/💾\s*([\d.]+ *[A-Z]{2})/i);
-            const sizeStr = sizeMatch ? ` (${sizeMatch[1]})` : '';
+          // Fetch all servers in parallel — auto-retry up to 2 times on cold start failures
+          const fetchSources = () => Promise.allSettled(
+            SERVERS.map(s => getAniwatchSources(decoded, s.key))
+          );
+          const toSrcs = async (results) => {
+            const built = await Promise.all(
+              results.map((r, i) =>
+                r.status === 'fulfilled' ? buildSource(r.value, SERVERS[i].label) : Promise.resolve(null)
+              )
+            );
+            return built.filter(Boolean);
+          };
 
-            return { label: `${group}${sizeStr}`, url: proxyUrl, type: 'mp4', tracks: [] };
-          }).filter(Boolean);
+          let srcs = await toSrcs(await fetchSources());
 
           if (srcs.length === 0) {
-            setError('Failed to parse magnet links from the .mp4 streams.');
+            // Aniwatch-api may be cold-starting — wait and retry up to 2 times
+            for (let attempt = 1; attempt <= 2 && srcs.length === 0; attempt++) {
+              if (cancelled) return;
+              await new Promise(r => setTimeout(r, attempt * 2000));
+              srcs = await toSrcs(await fetchSources());
+            }
+          }
+
+          if (srcs.length === 0) {
+            setError('This episode is not available on HiAnime. The anime may not be indexed there yet.');
             setLoading(false);
             return;
           }
@@ -212,8 +226,9 @@ export default function WatchPage() {
           if (!cancelled) {
             setSources(srcs);
             setActiveSourceIdx(0);
-            setActiveTracks([]);
+            setActiveTracks(srcs[0].tracks || []);
           }
+          subtitleTracks = srcs[0].tracks || [];
           url = srcs[0].url;
 
         } else if (type === 'movie') {
@@ -278,20 +293,22 @@ export default function WatchPage() {
 
   // 4. Fetch all episodes for the sidebar (anime only)
   useEffect(() => {
-    if (type !== 'anime') return;
-    getAnimeById(animeId)
-      .then(data => {
-        let count = data.episodes;
-        if (!count) count = data.nextAiringEpisode?.episode ? Math.max(1, data.nextAiringEpisode.episode - 1) : 24;
-        setAnimeEpisodes(Array.from({ length: count }, (_, i) => ({
-          id: `${i + 1}`,
-          number: i + 1,
-          title: `Episode ${i + 1}`,
-          isFiller: false,
-        })));
+    if (type !== 'anime' || !aniwatchEpisodeId) return;
+    const decoded = decodeURIComponent(aniwatchEpisodeId);
+    const showId = decoded.split('?ep=')[0];
+    getAniwatchEpisodes(showId)
+      .then(res => {
+        if (res?.data?.episodes) {
+          setAnimeEpisodes(res.data.episodes.map(ep => ({
+            id: ep.episodeId || ep.id,
+            number: ep.number,
+            title: ep.title,
+            isFiller: ep.isFiller,
+          })));
+        }
       })
       .catch(() => {});
-  }, [type, animeId]);
+  }, [type, aniwatchEpisodeId]);
 
   // 5. Auto-scroll episode list to current episode
   useEffect(() => {
@@ -355,7 +372,7 @@ export default function WatchPage() {
         setStreamUrl(data.streamUrl);
         if (data.contentType === 'anime') {
           const tracks = data.tracks || [];
-          setSources([{ type: 'mp4', url: data.streamUrl, label: 'Stream', tracks }]);
+          setSources([{ type: 'hls', url: data.streamUrl, label: 'Stream', tracks }]);
           setActiveTracks(tracks);
         } else if (data.contentType) {
           setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
@@ -478,15 +495,11 @@ export default function WatchPage() {
 
   if (loading) return <LoadingSpinner fullScreen />;
 
-  const srcType = sources[activeSourceIdx]?.type;
-  const isNativeVideo = srcType === 'hls' || srcType === 'mp4';
+  const isHls = sources[activeSourceIdx]?.type === 'hls';
 
   const videoOptions = {
     autoplay: false,
-    sources: isNativeVideo ? [{ 
-      src: streamUrl, 
-      type: srcType === 'hls' ? 'application/x-mpegURL' : 'video/mp4' 
-    }] : [],
+    sources: isHls ? [{ src: streamUrl, type: 'application/x-mpegURL' }] : [],
     isViewer: !!(roomId && !isHost),
   };
 
@@ -534,7 +547,7 @@ export default function WatchPage() {
                 </button>
               </div>
             ) : streamUrl ? (
-              isNativeVideo ? (
+              isHls ? (
                 <VideoPlayer options={videoOptions} tracks={activeTracks} onReady={handlePlayerReady} token={token} />
               ) : (
                 <iframe
@@ -580,13 +593,13 @@ export default function WatchPage() {
           )}
 
           {/* Notices */}
-          {streamUrl && !isNativeVideo && (
+          {streamUrl && !isHls && (
             <div className="mx-4 mt-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-2 rounded-lg font-medium flex items-center gap-2">
               <span>⚠️</span>
               <span>If the player is blank, disable your <strong>ad blocker</strong> for this site, or switch source above.</span>
             </div>
           )}
-          {roomId && streamUrl && !isNativeVideo && (
+          {roomId && streamUrl && !isHls && (
             <div className="mx-4 mt-2 bg-blue-50 border border-blue-200 text-blue-700 text-xs px-3 py-2 rounded-lg font-medium flex items-center gap-2">
               <span>ℹ️</span>
               <span>Embed sources don't support automatic sync. Everyone sees the same content — just start at the same time.</span>
@@ -621,7 +634,7 @@ export default function WatchPage() {
             </div>
             {roomId && !isHost && (
               <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm px-4 py-3 rounded-lg font-medium shadow-sm max-w-2xl">
-                You are a viewer. {isNativeVideo ? 'The host controls playback in sync.' : 'Start playback at the same time as the host.'}
+                You are a viewer. {isHls ? 'The host controls playback in sync.' : 'Start playback at the same time as the host.'}
               </div>
             )}
           </div>
