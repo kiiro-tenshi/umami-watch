@@ -105,11 +105,7 @@ export default function AnimeDetailPage() {
                   EP {anime.nextAiringEpisode.episode} in {daysUntilAiring}d
                 </span>
               )}
-              {episodeSource === 'aniwatch' && (
-                <span className="bg-green-50 border border-green-200 text-green-700 px-2.5 py-1 rounded text-xs font-semibold">
-                  ✓ HiAnime Episodes
-                </span>
-              )}
+
             </div>
 
             {/* Genres */}
