@@ -1,76 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { getAnimeById } from '../api/anilist';
-import { searchAnimeAniwatch, getAniwatchEpisodes } from '../api/aniwatch';
-
-// Normalize title for comparison: lowercase, strip brackets/punctuation,
-// convert ordinals ("3rd Season" → "season 3")
-function normalizeTitle(s) {
-  return (s || '')
-    .toLowerCase()
-    .replace(/[[\]]/g, '')                                          // strip bracket chars, keep content
-    .replace(/[^\w\s]/g, ' ')                                       // remove other punctuation
-    .replace(/\b(\d+)(?:st|nd|rd|th)\s+season\b/gi, 'season $1')  // "3rd Season" → "season 3"
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-// Score each HiAnime search result against the AniList title + episode count
-// Uses Jaccard word-set similarity — avoids false positives from short substring matches
-function bestAniwatchMatch(animes, title, episodeCount) {
-  if (!animes?.length) return null;
-  const query = normalizeTitle(title);
-  const queryWords = new Set(query.split(' ').filter(Boolean));
-
-  // Meaningful content words — exclude common stop words that cause false positives
-  const STOP = new Set(['no', 'the', 'a', 'an', 'of', 'in', 'to', 'and', 'or', 'wa', 'ga', 'wo']);
-  const queryContent = [...queryWords].filter(w => !STOP.has(w));
-
-  let best = null;
-  let bestScore = -1;
-
-  for (let i = 0; i < animes.length; i++) {
-    const anime = animes[i];
-    const name = normalizeTitle(anime.name);
-    const nameWords = new Set(name.split(' ').filter(Boolean));
-
-    let score = 0;
-
-    if (name === query) {
-      score = 10000;
-    } else {
-      // Jaccard on content words only (ignores "no", "the", etc.)
-      const nameContent = [...nameWords].filter(w => !STOP.has(w));
-      const intersection = queryContent.filter(w => nameWords.has(w)).length;
-      const unionSize = new Set([...queryContent, ...nameContent]).size || 1;
-      score = Math.round((intersection / unionSize) * 100);
-
-      // Bonus when full query appears inside the result name
-      if (name.includes(query)) score += 300;
-
-      // Bonus when all content query words are present
-      if (queryContent.length > 0 && queryContent.every(w => nameWords.has(w))) score += 150;
-    }
-
-    // Episode count tiebreaker
-    if (episodeCount && anime.episodes?.sub) {
-      if (anime.episodes.sub === episodeCount) score += 100;
-      else if (Math.abs(anime.episodes.sub - episodeCount) <= 2) score += 20;
-    }
-
-    // Slight position penalty so earlier results win ties
-    score -= i * 0.5;
-
-    if (score > bestScore) {
-      bestScore = score;
-      best = anime;
-    }
-  }
-
-  // Minimum threshold — reject weak matches to avoid false positives like "No 6"
-  const MIN_SCORE = 30;
-  return bestScore >= MIN_SCORE ? best : null;
-}
 import { useAuth } from '../hooks/useAuth';
 import { useWatchlist } from '../hooks/useWatchlist';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -85,7 +15,6 @@ export default function AnimeDetailPage() {
 
   const [anime, setAnime] = useState(null);
   const [episodes, setEpisodes] = useState([]);
-  const [episodeSource, setEpisodeSource] = useState('generated'); // 'aniwatch' | 'generated'
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -97,57 +26,19 @@ export default function AnimeDetailPage() {
         const data = await getAnimeById(anilistId);
         setAnime(data);
 
-        const titleEn = data.title?.english || '';
-        const titleRomaji = data.title?.romaji || '';
-        const title = titleEn || titleRomaji;
-
-        // Try to get real episodes from aniwatch-api (HiAnime)
-        // Search with English title first, then romaji as fallback
-        let fetchedEps = null;
-        try {
-          const titlesToTry = [...new Set([titleEn, titleRomaji].filter(Boolean))];
-          let topHit = null;
-
-          for (const t of titlesToTry) {
-            const searchRes = await searchAnimeAniwatch(t);
-            topHit = bestAniwatchMatch(searchRes?.data?.animes, t, data.episodes);
-            if (topHit) break;
-          }
-
-          if (topHit?.id) {
-            const epsRes = await getAniwatchEpisodes(topHit.id);
-            if (epsRes?.data?.episodes?.length > 0) {
-              fetchedEps = epsRes.data.episodes.map(ep => ({
-                id: ep.episodeId,
-                number: ep.number,
-                title: ep.title || `Episode ${ep.number}`,
-                isFiller: ep.isFiller || false,
-              }));
-              setEpisodeSource('aniwatch');
-            }
-          }
-        } catch (e) {
-          console.warn('[AnimeDetail] aniwatch episode fetch failed, using fallback:', e.message);
+        // Generate episode numbers from AniList episode count
+        let count = data.episodes;
+        if (!count) {
+          count = data.nextAiringEpisode?.episode
+            ? Math.max(1, data.nextAiringEpisode.episode - 1)
+            : 24;
         }
-
-        if (fetchedEps) {
-          setEpisodes(fetchedEps);
-        } else {
-          // Fallback: generate episode numbers from AniList episode count
-          let count = data.episodes;
-          if (!count) {
-            count = data.nextAiringEpisode?.episode
-              ? Math.max(1, data.nextAiringEpisode.episode - 1)
-              : 24;
-          }
-          setEpisodes(Array.from({ length: count }, (_, i) => ({
-            id: `${i + 1}`,
-            number: i + 1,
-            title: `Episode ${i + 1}`,
-            isFiller: false,
-          })));
-          setEpisodeSource('generated');
-        }
+        setEpisodes(Array.from({ length: count }, (_, i) => ({
+          id: `${i + 1}`,
+          number: i + 1,
+          title: `Episode ${i + 1}`,
+          isFiller: false,
+        })));
       } catch (err) {
         console.error(err);
         setError('Failed to load anime details.');
