@@ -14,7 +14,7 @@ export default {
     }
 
     const targetUrl = url.searchParams.get('url');
-    const referer   = url.searchParams.get('referer') || 'https://hianime.to/';
+    const referer   = url.searchParams.get('referer') || 'https://hianime.dk/';
 
     if (!targetUrl) {
       return new Response('url parameter required', { status: 400, headers: CORS });
