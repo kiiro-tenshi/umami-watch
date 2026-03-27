@@ -107,7 +107,7 @@ app.get('/api/proxy/hls', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'url required' });
 
   const decodedUrl     = decodeURIComponent(url);
-  const decodedReferer = decodeURIComponent(referer || 'https://hianime.to/');
+  const decodedReferer = decodeURIComponent(referer || 'https://hianime.dk/');
 
   try {
     const isM3u8 = decodedUrl.includes('.m3u8');
