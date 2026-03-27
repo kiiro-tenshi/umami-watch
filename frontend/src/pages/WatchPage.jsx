@@ -169,7 +169,7 @@ export default function WatchPage() {
             if (!srcList.length) return null;
             const src = srcList.find(s => s.isM3U8) || srcList[0];
             if (!src?.url) return null;
-            const referer = res.data.headers?.Referer || 'https://hianime.to/';
+            const referer = res.data.headers?.Referer || 'https://hianime.dk/';
 
             // Try CF Worker — reuse the response body if it works, fall back to Server proxy if blocked
             let proxy = SERVER_PROXY;
