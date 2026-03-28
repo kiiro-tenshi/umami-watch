@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getTrendingAnime } from '../api/anilist';
+import { getTrendingKitsu } from '../api/kitsu';
 import { getTrending, tmdbImage } from '../api/tmdb';
 import { useAuth } from '../hooks/useAuth';
 import { useHistory } from '../hooks/useHistory';
@@ -17,7 +17,7 @@ export default function HomePage() {
 
   useEffect(() => {
     Promise.all([
-      getTrendingAnime().catch(() => []),
+      getTrendingKitsu().catch(() => []),
       getTrending('movie').catch(() => ({ results: [] })),
       getTrending('tv').catch(() => ({ results: [] }))
     ]).then(([animeData, movieData, tvData]) => {

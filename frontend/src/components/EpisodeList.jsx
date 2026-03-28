@@ -37,7 +37,7 @@ export default function EpisodeList({ episodes, animeId, currentEpisodeId, roomI
                 <span className={`font-semibold ${isCurrent ? 'text-accent-teal' : 'text-primary'}`}>{ep.title || `Episode ${ep.number}`}</span>
                 {ep.isFiller && <span className="ml-2 text-xs bg-orange-100 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded font-semibold">Filler</span>}
               </div>
-              <Link to={`/watch?type=anime&animeId=${animeId}&aniwatchEpisodeId=${encodeURIComponent(ep.id)}&epNum=${ep.number}${roomId ? `&roomId=${roomId}` : ''}`}
+              <Link to={`/watch?type=anime&kitsuId=${animeId}&epNum=${ep.number}${roomId ? `&roomId=${roomId}` : ''}`}
                 className={`shrink-0 px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-transform hover:scale-105 ${isCurrent ? 'bg-accent-teal text-white' : 'bg-accent-blue hover:bg-red-700 text-white'}`}>
                 {isCurrent ? 'Playing' : 'Watch'}
               </Link>
