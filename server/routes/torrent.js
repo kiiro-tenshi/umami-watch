@@ -39,8 +39,12 @@ function getOrCreateEngine(magnet) {
 }
 
 function streamFile(engine, req, res) {
-  // Pick the largest file (almost always the video)
-  const file = engine.files.reduce((a, b) => a.length > b.length ? a : b);
+  // Use fileIdx if provided (Torrentio specifies the exact file within multi-file torrents).
+  // Fall back to the largest file when fileIdx is absent or out of range.
+  const requestedIdx = req.query.fileIdx != null ? parseInt(req.query.fileIdx, 10) : -1;
+  const file = (requestedIdx >= 0 && requestedIdx < engine.files.length)
+    ? engine.files[requestedIdx]
+    : engine.files.reduce((a, b) => a.length > b.length ? a : b);
   const fileSize = file.length;
   const isMkv = file.name.toLowerCase().endsWith('.mkv');
 

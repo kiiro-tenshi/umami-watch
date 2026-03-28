@@ -159,20 +159,33 @@ export default function WatchPage() {
             return;
           }
 
+          // Filter to 1080p / 720p only; fall back to all if none found
+          const hdStreams = streams.filter(s => /1080p|720p/i.test(s.title || ''));
+          const qualityFiltered = hdStreams.length > 0 ? hdStreams : streams;
+
           // Prefer .mp4 (native browser playback with seeking), then fall back to .mkv (server remuxes to fMP4)
-          const mp4Streams = streams.filter(s => s.title?.toLowerCase().includes('.mp4'));
-          const mkvStreams = streams.filter(s => s.title?.toLowerCase().includes('.mkv'));
+          const mp4Streams = qualityFiltered.filter(s => s.title?.toLowerCase().includes('.mp4'));
+          const mkvStreams = qualityFiltered.filter(s => s.title?.toLowerCase().includes('.mkv'));
           const preferred = mp4Streams.length > 0 ? mp4Streams : mkvStreams;
-          const candidates = preferred.length > 0 ? preferred : streams;
+          const candidates = preferred.length > 0 ? preferred : qualityFiltered;
 
           const API = import.meta.env.VITE_API_BASE_URL;
           const srcs = candidates.slice(0, 3).map((s, i) => {
-            const magnet = s.url?.startsWith('magnet:')
-              ? s.url
-              : `magnet:?xt=urn:btih:${s.infoHash}`;
+            // Build a proper magnet: prefer s.url if it's already a magnet,
+            // otherwise construct from infoHash + trackers from s.sources.
+            // Without trackers torrent-stream falls back to DHT-only and times out.
+            let magnet = s.url?.startsWith('magnet:') ? s.url : null;
+            if (!magnet && s.infoHash) {
+              magnet = `magnet:?xt=urn:btih:${s.infoHash}`;
+              const trackers = (s.sources || [])
+                .filter(src => src.startsWith('tracker:'))
+                .map(src => `&tr=${encodeURIComponent(src.slice(8))}`);
+              magnet += trackers.join('');
+            }
+            const fileParam = s.fileIdx != null ? `&fileIdx=${s.fileIdx}` : '';
             return {
               label: `Source ${i + 1}`,
-              url: `${API}/api/torrent/stream?magnet=${encodeURIComponent(magnet)}`,
+              url: `${API}/api/torrent/stream?magnet=${encodeURIComponent(magnet)}${fileParam}`,
               type: 'direct',
             };
           });
