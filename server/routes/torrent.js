@@ -124,6 +124,58 @@ router.get('/stream', (req, res) => {
   }
 });
 
+// Seed endpoint — serves raw file bytes with HTTP range support.
+// Browser WebTorrent uses this as a webseed (BEP 19) so it can reliably
+// download pieces even when no WebRTC peers are available.
+// No FFmpeg — the browser assembles and plays the file directly.
+router.get('/seed', (req, res) => {
+  const { magnet, fileIdx } = req.query;
+  if (!magnet) return res.status(400).send('magnet query param required');
+
+  const engine = getOrCreateEngine(magnet);
+
+  engine.on('error', (err) => {
+    if (!res.headersSent) res.status(500).send(err.message);
+  });
+
+  const serve = () => {
+    const idx = fileIdx != null ? parseInt(fileIdx, 10) : -1;
+    const file = (idx >= 0 && idx < engine.files.length)
+      ? engine.files[idx]
+      : engine.files.reduce((a, b) => a.length > b.length ? a : b);
+
+    const fileSize = file.length;
+    const range = req.headers.range;
+
+    if (!range) {
+      res.writeHead(200, {
+        'Content-Length': fileSize,
+        'Content-Type': 'application/octet-stream',
+        'Accept-Ranges': 'bytes',
+      });
+      file.createReadStream().pipe(res);
+      req.on('close', () => res.destroy());
+      return;
+    }
+
+    const [startStr, endStr] = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(startStr, 10);
+    const end = endStr ? parseInt(endStr, 10) : fileSize - 1;
+
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': end - start + 1,
+      'Content-Type': 'application/octet-stream',
+    });
+    file.createReadStream({ start, end }).pipe(res);
+    req.on('close', () => res.destroy());
+  };
+
+  if (engine._ready) serve();
+  else engine.once('ready', serve);
+});
+
 // Progress endpoint so the frontend can poll while buffering
 router.get('/status', (req, res) => {
   const { magnet } = req.query;
