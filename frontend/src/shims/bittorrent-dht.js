@@ -7,6 +7,7 @@ export class Client {
   announce() {}
   destroy(cb) { if (cb) cb(); }
   on() { return this; }
+  once() { return this; }
   off() { return this; }
   removeListener() { return this; }
   emit() {}
