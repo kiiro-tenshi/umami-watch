@@ -23,14 +23,13 @@ async function getWtClient() {
   if (!_wtClient) {
     _wtClient = new WebTorrent();
     _wtClient.on('error', err => console.error('[WebTorrent]', err));
-  }
-  if (!_wtServerReady && 'serviceWorker' in navigator) {
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      _wtClient.createServer({ controller: reg });
-      _wtServerReady = true;
-    } catch (e) {
-      console.warn('[WebTorrent] Service worker unavailable:', e);
+    // Attach SW in background — don't block client creation or fetchStream.
+    // On first page load the SW is installing and not yet controlling the page;
+    // awaiting navigator.serviceWorker.ready here would hang indefinitely.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready
+        .then(reg => { _wtClient.createServer({ controller: reg }); _wtServerReady = true; })
+        .catch(e => console.warn('[WebTorrent] SW unavailable:', e));
     }
   }
   return _wtClient;
@@ -246,7 +245,7 @@ export default function WatchPage() {
               const t = client.add(magnet, { urlList: [seedUrl] });
               t.once('ready', () => resolve(t));
               t.once('error', reject);
-              setTimeout(() => reject(new Error('Torrent timed out — no peers responded')), 60_000);
+              setTimeout(() => reject(new Error('Torrent timed out — no peers responded')), 15_000);
             });
 
             if (cancelled) { client.remove(torrent.infoHash, { destroyStore: true }).catch(() => {}); return; }
@@ -552,7 +551,14 @@ export default function WatchPage() {
     const trackers = (s.sources || [])
       .filter(src => src.startsWith('tracker:'))
       .map(src => `&tr=${encodeURIComponent(src.slice(8))}`);
-    return m + trackers.join('');
+    // Torrentio only provides UDP/HTTP trackers — unusable in browsers.
+    // Append known WebSocket trackers so browser WebTorrent can find peers.
+    const wsTrackers = [
+      'wss://tracker.btorrent.xyz',
+      'wss://tracker.openwebtorrent.com',
+      'wss://tracker.webtorrent.dev',
+    ].map(t => `&tr=${encodeURIComponent(t)}`);
+    return m + trackers.join('') + wsTrackers.join('');
   }
 
   const startViewerWebTorrent = async (magnet, fileIdx) => {
@@ -578,7 +584,7 @@ export default function WatchPage() {
         const t2 = client.add(magnet, { urlList: [seedUrl] });
         t2.once('ready', () => resolve(t2));
         t2.once('error', reject);
-        setTimeout(() => reject(new Error('Torrent timed out')), 60_000);
+        setTimeout(() => reject(new Error('Torrent timed out')), 15_000);
       });
       wtTorrentRef.current = torrent;
       const file = (fileIdx != null && torrent.files[fileIdx])
