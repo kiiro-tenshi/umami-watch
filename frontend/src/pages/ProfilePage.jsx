@@ -26,7 +26,7 @@ function resizeImage(file, maxSize) {
 
 export default function ProfilePage() {
   const { user, updateUserProfile } = useAuth();
-  const { watchlist } = useWatchlist(user?.uid);
+  const { watchlist, toggleWatchlist } = useWatchlist(user?.uid);
   const { history, setHistory } = useHistory(user?.uid);
   const [tab, setTab] = useState('settings');
 
@@ -243,7 +243,18 @@ export default function ProfilePage() {
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                 {watchlist.map(item => (
-                  <ContentCard key={item.contentId} id={item.contentId} title={item.title} posterUrl={item.posterUrl} contentType={item.contentType} />
+                  <div key={item.contentId} className="relative group/card">
+                    <ContentCard id={item.contentId} title={item.title} posterUrl={item.posterUrl} contentType={item.contentType} className="w-full h-48 sm:h-60" />
+                    <button
+                      onClick={() => toggleWatchlist({ contentId: item.contentId, contentType: item.contentType, title: item.title, posterUrl: item.posterUrl })}
+                      title="Remove from watchlist"
+                      className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full bg-black/70 text-white flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity hover:bg-red-600"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
