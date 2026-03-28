@@ -53,6 +53,7 @@ export default function WatchPage() {
   const [showContentPicker, setShowContentPicker] = useState(false);
   const [animeEpisodes, setAnimeEpisodes] = useState([]);
   const [mobileTab, setMobileTab] = useState('chat'); // 'chat' | 'episodes'
+  const [torrentStatus, setTorrentStatus] = useState(null);
 
   const playerRef = useRef(null);
   const hasJoinedRoomRef = useRef(false);
@@ -433,6 +434,38 @@ export default function WatchPage() {
     setActiveTracks(src.tracks || []);
   };
 
+  // Poll /api/torrent/status while a direct (torrent) stream is loading
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    if (sources[activeSourceIdx]?.type !== 'direct' || !streamUrl || !token) {
+      setTorrentStatus(null);
+      return;
+    }
+    let magnet;
+    try { magnet = new URL(streamUrl).searchParams.get('magnet'); } catch {}
+    if (!magnet) return;
+
+    setTorrentStatus(null);
+    let cancelled = false;
+    const API = import.meta.env.VITE_API_BASE_URL;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(
+          `${API}/api/torrent/status?magnet=${encodeURIComponent(magnet)}&token=${encodeURIComponent(token)}`
+        );
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        setTorrentStatus(data);
+        if (data.ready) cancelled = true; // stop polling once ready
+      } catch {}
+    };
+
+    poll();
+    const interval = setInterval(() => { if (!cancelled) poll(); }, 2000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [streamUrl, activeSourceIdx, token]);
+
   if (loading) return <LoadingSpinner fullScreen />;
 
   const isHls    = sources[activeSourceIdx]?.type === 'hls';
@@ -451,6 +484,13 @@ export default function WatchPage() {
         : [],
     isViewer: !!(roomId && !isHost),
   };
+
+  const torrentLoadingMessage = isDirect
+    ? torrentStatus === null        ? 'Initializing torrent engine...'
+    : !torrentStatus.known          ? 'Searching for torrent...'
+    : !torrentStatus.ready          ? 'Connecting to peers...'
+    :                                 'Peers found — buffering stream...'
+    : undefined;
 
   const hasEpisodeSidebar = type === 'anime' && animeEpisodes.length > 0;
   const hasChatSidebar = !!roomId;
@@ -497,7 +537,7 @@ export default function WatchPage() {
               </div>
             ) : streamUrl ? (
               (isHls || isDirect) ? (
-                <VideoPlayer options={videoOptions} tracks={activeTracks} onReady={handlePlayerReady} token={token} />
+                <VideoPlayer options={videoOptions} tracks={activeTracks} onReady={handlePlayerReady} token={token} loadingMessage={torrentLoadingMessage} />
               ) : (
                 <iframe
                   key={streamUrl}

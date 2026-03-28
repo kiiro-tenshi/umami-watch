@@ -47,6 +47,11 @@ export const getAnimeKitsuInfo = async (kitsuId) => {
   const res = await fetch(
     `${KITSU_BASE}/anime/${kitsuId}?fields[anime]=id,canonicalTitle,titles,synopsis,posterImage,coverImage,episodeCount,status,startDate,endDate,averageRating,ageRating,subtype`
   );
+  if (res.status === 404) {
+    const err = new Error(`Kitsu info failed: 404`);
+    err.status = 404;
+    throw err;
+  }
   if (!res.ok) throw new Error(`Kitsu info failed: ${res.status}`);
   const data = await res.json();
   return normalizeAnime(data.data);
