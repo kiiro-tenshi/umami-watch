@@ -145,9 +145,9 @@ describe('GET /api/torrent/stream', () => {
     const engine = new EventEmitter();
     engine._ready = false;
     engine.destroy = vi.fn();
-    const mainReadStream = vi.fn(() => { const pt = new PassThrough(); process.nextTick(() => pt.end(Buffer.alloc(64))); return pt; });
+    const mainReadStream = vi.fn(() => { const pt = new PassThrough(); process.nextTick(() => pt.end(Buffer.alloc(1024))); return pt; });
     engine.files = [
-      { name: 'small.mp4', length: 64, createReadStream: vi.fn(() => { const pt = new PassThrough(); process.nextTick(() => pt.end()); return pt; }) },
+      { name: 'small.mp4', length: 64, createReadStream: vi.fn(() => { const pt = new PassThrough(); process.nextTick(() => pt.end(Buffer.alloc(64))); return pt; }) },
       { name: 'main.mp4', length: 1024, createReadStream: mainReadStream },
     ];
     enginesByMagnet.set(magnet, engine);
