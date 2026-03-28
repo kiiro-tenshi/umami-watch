@@ -152,8 +152,12 @@ describe('GET /api/torrent/stream', () => {
     ];
     enginesByMagnet.set(magnet, engine);
 
+    // ECONNRESET can occur after streamFile is invoked (supertest closes the socket
+    // before all bytes arrive). Tolerate the transport error — the assertion below
+    // validates the real behaviour: that fileIdx=1 caused main.mp4 to be selected.
     await request(app)
-      .get('/stream?magnet=' + encodeURIComponent(magnet) + '&fileIdx=1');
+      .get('/stream?magnet=' + encodeURIComponent(magnet) + '&fileIdx=1')
+      .catch(() => {});
 
     expect(mainReadStream).toHaveBeenCalled();
   }, 10_000);
