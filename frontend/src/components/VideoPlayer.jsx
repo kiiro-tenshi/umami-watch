@@ -182,11 +182,14 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       });
 
     } else {
-      video.src = src;
+      // Create Plyr FIRST (without a src), then set video.src.
+      // If src is set before Plyr init, Plyr resets it to its blank.mp4
+      // placeholder which fails with CORS and prevents loadedmetadata from firing.
       const player = new Plyr(video, plyrOpts);
       initPlayer(player);
       video.addEventListener('loadedmetadata', () => { setIsLoading(false); if (onReady) onReady(player); }, { once: true });
       video.addEventListener('error', (e) => { setPlayerError('Failed to load video source.'); setIsLoading(false); if (onError) onError(e); }, { once: true });
+      video.src = src;
     }
 
     return () => {
