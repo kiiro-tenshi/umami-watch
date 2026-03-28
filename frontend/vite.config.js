@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import { copyFileSync, existsSync } from 'fs';
 
 function copyWtSw() {
@@ -9,6 +10,7 @@ function copyWtSw() {
 
 export default defineConfig({
   plugins: [
+    nodePolyfills({ include: ['events', 'path', 'crypto', 'buffer', 'stream', 'util', 'process'] }),
     react(),
     {
       name: 'copy-webtorrent-sw',
