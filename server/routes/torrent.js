@@ -1,5 +1,7 @@
 import express from 'express';
 import torrentStream from 'torrent-stream';
+import ffmpeg from 'fluent-ffmpeg';
+// FFmpeg is installed via `apk add ffmpeg` in the Dockerfile — no npm binary needed
 
 const router = express.Router();
 
@@ -40,15 +42,47 @@ function streamFile(engine, req, res) {
   // Pick the largest file (almost always the video)
   const file = engine.files.reduce((a, b) => a.length > b.length ? a : b);
   const fileSize = file.length;
-  const mimeType = file.name.endsWith('.mkv') ? 'video/x-matroska' : 'video/mp4';
+  const isMkv = file.name.toLowerCase().endsWith('.mkv');
 
-  console.log(`[Torrent] Streaming "${file.name}" (${(fileSize / 1024 / 1024).toFixed(1)} MB)`);
+  console.log(`[Torrent] Streaming "${file.name}" (${(fileSize / 1024 / 1024).toFixed(1)} MB)${isMkv ? ' — remuxing MKV→fMP4' : ''}`);
 
+  if (isMkv) {
+    // Remux MKV → fragmented MP4 (copy codecs, no re-encoding).
+    // Fragmented MP4 (frag_keyframe+empty_moov) is required for streaming
+    // because standard MP4 writes the moov atom at the end.
+    // Range requests are not supported over a piped FFmpeg process.
+    res.writeHead(200, {
+      'Content-Type': 'video/mp4',
+      'Transfer-Encoding': 'chunked',
+      'Cache-Control': 'no-cache',
+    });
+
+    const inputStream = file.createReadStream();
+
+    ffmpeg(inputStream)
+      .inputFormat('matroska')
+      .outputOptions([
+        '-c copy',
+        '-movflags frag_keyframe+empty_moov+faststart',
+        '-f mp4',
+      ])
+      .on('error', (err) => {
+        console.error('[Torrent] FFmpeg remux error:', err.message);
+        if (!res.headersSent) res.status(500).send(err.message);
+        else res.end();
+      })
+      .pipe(res, { end: true });
+
+    req.on('close', () => { try { inputStream.destroy(); } catch {} });
+    return;
+  }
+
+  // Native MP4 — serve directly with range request support for seeking
   const range = req.headers.range;
   if (!range) {
     res.writeHead(200, {
       'Content-Length': fileSize,
-      'Content-Type': mimeType,
+      'Content-Type': 'video/mp4',
       'Accept-Ranges': 'bytes',
     });
     file.createReadStream().pipe(res);
@@ -63,7 +97,7 @@ function streamFile(engine, req, res) {
     'Content-Range': `bytes ${start}-${end}/${fileSize}`,
     'Accept-Ranges': 'bytes',
     'Content-Length': (end - start) + 1,
-    'Content-Type': mimeType,
+    'Content-Type': 'video/mp4',
   });
   file.createReadStream({ start, end }).pipe(res);
 }
