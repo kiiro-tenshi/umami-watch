@@ -148,7 +148,7 @@ describe('POST /api/rooms/join', () => {
       .send({ inviteCode: 'XYZ456' });
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ id: 'room-123' });
+    expect(res.body).toMatchObject({ id: 'invite-room-99' }); // endpoint returns roomDoc.id from the query
     expect(mockFsUpdate).toHaveBeenCalledWith({ members: USER_ID });
   });
 
