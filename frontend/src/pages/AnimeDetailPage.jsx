@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { getAnimeKitsuInfo, getKitsuEpisodes } from '../api/kitsu';
 import { useAuth } from '../hooks/useAuth';
 import { useWatchlist } from '../hooks/useWatchlist';
@@ -17,6 +17,7 @@ export default function AnimeDetailPage() {
   const [episodes, setEpisodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [staleLink, setStaleLink] = useState(false);
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -43,7 +44,11 @@ export default function AnimeDetailPage() {
         }
       } catch (err) {
         console.error(err);
-        setError('Failed to load anime details.');
+        if (err.status === 404) {
+          setStaleLink(true);
+        } else {
+          setError('Failed to load anime details.');
+        }
       }
       setLoading(false);
     };
@@ -51,6 +56,14 @@ export default function AnimeDetailPage() {
   }, [kitsuId]);
 
   if (loading) return <LoadingSpinner fullScreen />;
+  if (staleLink) return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-4">
+      <div className="text-5xl">🔗</div>
+      <h2 className="text-2xl font-bold text-primary">This link is outdated</h2>
+      <p className="text-secondary max-w-md">This anime page uses an old ID that's no longer valid. Please search for the anime to find the updated page.</p>
+      <Link to="/anime" className="mt-2 px-6 py-2.5 bg-accent-teal text-white rounded-lg font-bold shadow hover:opacity-90 transition">Browse Anime</Link>
+    </div>
+  );
   if (!anime) return <div className="p-8 text-center text-red-500 font-bold">Failed to load content.</div>;
 
   const inWatchlist = isInWatchlist(kitsuId);

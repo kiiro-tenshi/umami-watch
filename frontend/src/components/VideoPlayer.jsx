@@ -22,7 +22,7 @@ function parseCueText(text) {
     .replace(/<rt>.*?<\/rt>/gs, '');
 }
 
-export default function VideoPlayer({ options, tracks = [], onReady, onError, token }) {
+export default function VideoPlayer({ options, tracks = [], onReady, onError, token, loadingMessage }) {
   const videoRef    = useRef(null);
   const playerRef   = useRef(null);
   const hlsRef      = useRef(null);
@@ -187,8 +187,25 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       // placeholder which fails with CORS and prevents loadedmetadata from firing.
       const player = new Plyr(video, plyrOpts);
       initPlayer(player);
-      video.addEventListener('loadedmetadata', () => { setIsLoading(false); if (onReady) onReady(player); }, { once: true });
-      video.addEventListener('error', (e) => { setPlayerError('Failed to load video source.'); setIsLoading(false); if (onError) onError(e); }, { once: true });
+
+      let settled = false;
+      const settle = (errMsg) => {
+        if (settled) return;
+        settled = true;
+        setIsLoading(false);
+        if (errMsg) { setPlayerError(errMsg); if (onError) onError(new Error(errMsg)); }
+        else if (onReady) onReady(player);
+      };
+
+      // 60 s timeout — torrent streams need time to connect peers / receive first pieces
+      const timeout = setTimeout(
+        () => settle('Stream timed out — peers may be unavailable. Try another source.'),
+        60_000
+      );
+
+      video.addEventListener('loadedmetadata', () => { clearTimeout(timeout); settle(null); }, { once: true });
+      video.addEventListener('error', () => { clearTimeout(timeout); settle('Failed to load video source.'); }, { once: true });
+
       video.src = src;
     }
 
@@ -353,7 +370,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       {isLoading && !playerError && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-10">
           <div className="w-10 h-10 border-4 border-white/20 border-t-white rounded-full animate-spin mb-3" />
-          <p className="text-white/60 text-sm font-medium">Loading stream...</p>
+          <p className="text-white/60 text-sm font-medium">{loadingMessage || 'Loading stream...'}</p>
         </div>
       )}
 
