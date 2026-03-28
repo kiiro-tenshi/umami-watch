@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { searchAniList, getTrendingAnime, getAnimeGenres, discoverAnimeByGenre } from '../api/anilist';
+import { searchAnimeKitsu, getTrendingKitsu, getKitsuCategories, discoverKitsuByCategory } from '../api/kitsu';
 import ContentCard from '../components/ContentCard';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -11,13 +11,13 @@ export default function AnimeBrowsePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getAnimeGenres().then(setGenres).catch(console.error);
+    getKitsuCategories().then(setGenres).catch(console.error);
     loadDefault();
   }, []);
 
   const loadDefault = async () => {
     setLoading(true);
-    const data = await getTrendingAnime();
+    const data = await getTrendingKitsu().catch(() => []);
     setResults(data || []);
     setLoading(false);
   };
@@ -29,7 +29,7 @@ export default function AnimeBrowsePage() {
       return loadDefault();
     }
     setLoading(true);
-    const data = await searchAniList(val);
+    const data = await searchAnimeKitsu(val).catch(() => []);
     setResults(data || []);
     setLoading(false);
   };
@@ -49,7 +49,7 @@ export default function AnimeBrowsePage() {
     }
     setActiveGenre(genre);
     setLoading(true);
-    const data = await discoverAnimeByGenre(genre);
+    const data = await discoverKitsuByCategory(genre).catch(() => []);
     setResults(data || []);
     setLoading(false);
   };

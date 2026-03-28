@@ -26,7 +26,7 @@ function App() {
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
           <Route path="/anime" element={<ProtectedRoute><AnimeBrowsePage /></ProtectedRoute>} />
-          <Route path="/anime/:anilistId" element={<ProtectedRoute><AnimeDetailPage /></ProtectedRoute>} />
+          <Route path="/anime/:kitsuId" element={<ProtectedRoute><AnimeDetailPage /></ProtectedRoute>} />
           <Route path="/movies" element={<ProtectedRoute><MovieBrowsePage type="movie" /></ProtectedRoute>} />
           <Route path="/tv" element={<ProtectedRoute><MovieBrowsePage type="tv" /></ProtectedRoute>} />
           <Route path="/movie/:tmdbId" element={<ProtectedRoute><MovieDetailPage type="movie" /></ProtectedRoute>} />

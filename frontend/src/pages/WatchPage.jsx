@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
-import { getAnimeById } from '../api/anilist';
+import { getAnimeKitsuInfo, getKitsuEpisodes } from '../api/kitsu';
+import { getTorrentioStreams } from '../api/torrentio';
 import { getMovieDetail, getTVDetail } from '../api/tmdb';
-import { getAniwatchSources, getAniwatchEpisodes } from '../api/aniwatch';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import VideoPlayer from '../components/VideoPlayer';
@@ -34,8 +34,7 @@ export default function WatchPage() {
 
   const roomId = searchParams.get('roomId');
   const type = searchParams.get('type'); // anime | movie | tv
-  const animeId = searchParams.get('animeId');
-  const aniwatchEpisodeId = searchParams.get('aniwatchEpisodeId');
+  const kitsuId = searchParams.get('kitsuId');
   const epNum = parseInt(searchParams.get('epNum') || '1', 10);
   const tmdbId = searchParams.get('tmdbId');
   const season = searchParams.get('season');
@@ -70,7 +69,7 @@ export default function WatchPage() {
     : null;
 
   function buildEpUrl(ep) {
-    const base = `/watch?type=anime&animeId=${animeId}&aniwatchEpisodeId=${encodeURIComponent(ep.id)}&epNum=${ep.number}`;
+    const base = `/watch?type=anime&kitsuId=${kitsuId}&epNum=${ep.number}`;
     return roomId ? `${base}&roomId=${roomId}` : base;
   }
 
@@ -99,11 +98,9 @@ export default function WatchPage() {
         // Restore stream for non-host viewers — host will re-fetch via fetchStream
         if (data.streamUrl && data.hostId !== user?.uid) {
           setStreamUrl(data.streamUrl);
-          // Set sources so isHls is correct for the viewer's player
           if (data.contentType === 'anime') {
-            const tracks = data.tracks || [];
-            setSources([{ type: 'hls', url: data.streamUrl, label: 'Stream', tracks }]);
-            setActiveTracks(tracks);
+            setSources([{ type: 'direct', url: data.streamUrl, label: 'Stream' }]);
+            setActiveTracks([]);
           } else if (data.contentType) {
             setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
           }
@@ -143,92 +140,47 @@ export default function WatchPage() {
         let subtitleTracks = [];
 
         if (type === 'anime') {
-          const data = await getAnimeById(animeId);
-          title = `${data.title?.english || data.title?.romaji || 'Anime'} — Episode ${epNum}`;
-          poster = data.coverImage?.large || '';
-
-          if (!aniwatchEpisodeId) {
-            setError('Episode not available — no HiAnime source found.');
+          if (!kitsuId) {
+            setError('No Kitsu ID provided for this episode.');
             setLoading(false);
             return;
           }
 
-          const decoded = decodeURIComponent(aniwatchEpisodeId);
+          const animeData = await getAnimeKitsuInfo(kitsuId);
+          title = `${animeData.title?.english || animeData.title?.romaji || 'Anime'} — Episode ${epNum}`;
+          poster = animeData.coverImage?.large || '';
 
-          const SERVERS = [
-            { key: 'hd-1',        label: 'HD-1' },
-            { key: 'vidstreaming',label: 'Vidstreaming' },
-            { key: 'vidcloud',    label: 'Vidcloud' },
-          ];
+          const streams = await getTorrentioStreams('anime', kitsuId, null, null, epNum);
 
-          const CF_PROXY     = import.meta.env.VITE_HLS_PROXY_URL;
-          const SERVER_PROXY = `${import.meta.env.VITE_API_BASE_URL}/api/proxy/hls`;
-
-          const buildSource = async (res, label) => {
-            const srcList = res?.data?.sources || [];
-            if (!srcList.length) return null;
-            const src = srcList.find(s => s.isM3U8) || srcList[0];
-            if (!src?.url) return null;
-            const referer = res.data.headers?.Referer || 'https://hianime.dk/';
-
-            // Try CF Worker — reuse the response body if it works, fall back to Server proxy if blocked
-            let proxy = SERVER_PROXY;
-            try {
-              const cfUrl = `${CF_PROXY}?url=${encodeURIComponent(src.url)}&referer=${encodeURIComponent(referer)}`;
-              const test = await fetch(cfUrl);
-              if (test.ok) proxy = CF_PROXY;
-            } catch {
-              // CF unreachable — server proxy is already set
-            }
-
-            const makeUrl = (u) => `${proxy}?url=${encodeURIComponent(u)}&referer=${encodeURIComponent(referer)}`;
-            const tracks = (res.data.subtitles || [])
-              .filter(s => s.lang !== 'Thumbnails')
-              .map(s => ({
-                kind: 'metadata',
-                label: s.lang,
-                srclang: s.lang.toLowerCase().slice(0, 2),
-                src: makeUrl(s.url),
-              }));
-            return { label, url: makeUrl(src.url), type: 'hls', tracks };
-          };
-
-          // Fetch all servers in parallel — auto-retry up to 2 times on cold start failures
-          const fetchSources = () => Promise.allSettled(
-            SERVERS.map(s => getAniwatchSources(decoded, s.key))
-          );
-          const toSrcs = async (results) => {
-            const built = await Promise.all(
-              results.map((r, i) =>
-                r.status === 'fulfilled' ? buildSource(r.value, SERVERS[i].label) : Promise.resolve(null)
-              )
-            );
-            return built.filter(Boolean);
-          };
-
-          let srcs = await toSrcs(await fetchSources());
-
-          if (srcs.length === 0) {
-            // Aniwatch-api may be cold-starting — wait and retry up to 2 times
-            for (let attempt = 1; attempt <= 2 && srcs.length === 0; attempt++) {
-              if (cancelled) return;
-              await new Promise(r => setTimeout(r, attempt * 2000));
-              srcs = await toSrcs(await fetchSources());
-            }
-          }
-
-          if (srcs.length === 0) {
-            setError('This episode is not available on HiAnime. The anime may not be indexed there yet.');
+          if (streams.length === 0) {
+            setError('No streams found for this episode on Torrentio.');
             setLoading(false);
             return;
           }
+
+          // Prefer .mp4 (native browser playback with seeking), then fall back to .mkv (server remuxes to fMP4)
+          const mp4Streams = streams.filter(s => s.title?.toLowerCase().includes('.mp4'));
+          const mkvStreams = streams.filter(s => s.title?.toLowerCase().includes('.mkv'));
+          const preferred = mp4Streams.length > 0 ? mp4Streams : mkvStreams;
+          const candidates = preferred.length > 0 ? preferred : streams;
+
+          const API = import.meta.env.VITE_API_BASE_URL;
+          const srcs = candidates.slice(0, 3).map((s, i) => {
+            const magnet = s.url?.startsWith('magnet:')
+              ? s.url
+              : `magnet:?xt=urn:btih:${s.infoHash}`;
+            return {
+              label: `Source ${i + 1}`,
+              url: `${API}/api/torrent/stream?magnet=${encodeURIComponent(magnet)}`,
+              type: 'direct',
+            };
+          });
 
           if (!cancelled) {
             setSources(srcs);
             setActiveSourceIdx(0);
-            setActiveTracks(srcs[0].tracks || []);
+            setActiveTracks([]);
           }
-          subtitleTracks = srcs[0].tracks || [];
           url = srcs[0].url;
 
         } else if (type === 'movie') {
@@ -258,7 +210,7 @@ export default function WatchPage() {
 
         if (cancelled) return;
 
-        setContentDetails({ title, posterUrl: poster, id: type === 'anime' ? animeId : tmdbId, type });
+        setContentDetails({ title, posterUrl: poster, id: type === 'anime' ? kitsuId : tmdbId, type });
 
         if (url) {
           setStreamUrl(url);
@@ -270,7 +222,7 @@ export default function WatchPage() {
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
               body: JSON.stringify({
                 streamUrl: url,
-                contentId: type === 'anime' ? animeId : tmdbId,
+                contentId: type === 'anime' ? kitsuId : tmdbId,
                 contentType: type,
                 contentTitle: title,
                 tracks: subtitleTracks
@@ -289,26 +241,15 @@ export default function WatchPage() {
 
     fetchStream();
     return () => { cancelled = true; };
-  }, [type, animeId, aniwatchEpisodeId, epNum, tmdbId, season, episode, isHost, roomId, roomData]);
+  }, [type, kitsuId, epNum, tmdbId, season, episode, isHost, roomId, roomData]);
 
   // 4. Fetch all episodes for the sidebar (anime only)
   useEffect(() => {
-    if (type !== 'anime' || !aniwatchEpisodeId) return;
-    const decoded = decodeURIComponent(aniwatchEpisodeId);
-    const showId = decoded.split('?ep=')[0];
-    getAniwatchEpisodes(showId)
-      .then(res => {
-        if (res?.data?.episodes) {
-          setAnimeEpisodes(res.data.episodes.map(ep => ({
-            id: ep.episodeId || ep.id,
-            number: ep.number,
-            title: ep.title,
-            isFiller: ep.isFiller,
-          })));
-        }
-      })
+    if (type !== 'anime' || !kitsuId) return;
+    getKitsuEpisodes(kitsuId)
+      .then(eps => { if (eps.length > 0) setAnimeEpisodes(eps); })
       .catch(() => {});
-  }, [type, aniwatchEpisodeId]);
+  }, [type, kitsuId]);
 
   // 5. Auto-scroll episode list to current episode
   useEffect(() => {
@@ -371,9 +312,8 @@ export default function WatchPage() {
       if (data.streamUrl) {
         setStreamUrl(data.streamUrl);
         if (data.contentType === 'anime') {
-          const tracks = data.tracks || [];
-          setSources([{ type: 'hls', url: data.streamUrl, label: 'Stream', tracks }]);
-          setActiveTracks(tracks);
+          setSources([{ type: 'direct', url: data.streamUrl, label: 'Stream' }]);
+          setActiveTracks([]);
         } else if (data.contentType) {
           setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
         }
@@ -441,7 +381,7 @@ export default function WatchPage() {
   // 7. Save watch history per episode
   useEffect(() => {
     if (!type || !user || roomId) return;
-    const histKey = type === 'anime' ? `anime_${animeId}_ep${epNum}` : (tmdbId || 'unknown');
+    const histKey = type === 'anime' ? `anime_kitsu${kitsuId}_ep${epNum}` : (tmdbId || 'unknown');
     const interval = setInterval(async () => {
       const p = playerRef.current;
       if (!p || p.paused) return;
@@ -450,7 +390,7 @@ export default function WatchPage() {
       if (pos < 5 || !dur) return;
       const histRef = doc(db, 'users', user.uid, 'history', histKey);
       await setDoc(histRef, {
-        contentId: type === 'anime' ? animeId : tmdbId,
+        contentId: type === 'anime' ? kitsuId : tmdbId,
         contentType: type,
         title: contentDetails?.title || 'Unknown',
         posterUrl: contentDetails?.posterUrl || '',
@@ -462,12 +402,12 @@ export default function WatchPage() {
       }, { merge: true }).catch(console.error);
     }, 15000);
     return () => clearInterval(interval);
-  }, [type, animeId, epNum, tmdbId, season, episode, user, contentDetails, roomId]);
+  }, [type, kitsuId, epNum, tmdbId, season, episode, user, contentDetails, roomId]);
 
   const handlePlayerReady = (player) => {
     playerRef.current = player;
-    if (!roomId && user && type === 'anime' && animeId) {
-      const histKey = `anime_${animeId}_ep${epNum}`;
+    if (!roomId && user && type === 'anime' && kitsuId) {
+      const histKey = `anime_kitsu${kitsuId}_ep${epNum}`;
       getDoc(doc(db, 'users', user.uid, 'history', histKey)).then(snap => {
         if (snap.exists() && snap.data().position) player.currentTime = snap.data().position;
       });
@@ -495,11 +435,20 @@ export default function WatchPage() {
 
   if (loading) return <LoadingSpinner fullScreen />;
 
-  const isHls = sources[activeSourceIdx]?.type === 'hls';
+  const isHls    = sources[activeSourceIdx]?.type === 'hls';
+  const isDirect = sources[activeSourceIdx]?.type === 'direct';
+
+  const directSrc = isDirect && streamUrl && token
+    ? `${streamUrl}&token=${encodeURIComponent(token)}`
+    : null;
 
   const videoOptions = {
     autoplay: false,
-    sources: isHls ? [{ src: streamUrl, type: 'application/x-mpegURL' }] : [],
+    sources: isHls
+      ? [{ src: streamUrl, type: 'application/x-mpegURL' }]
+      : isDirect && directSrc
+        ? [{ src: directSrc, type: 'video/mp4' }]
+        : [],
     isViewer: !!(roomId && !isHost),
   };
 
@@ -547,7 +496,7 @@ export default function WatchPage() {
                 </button>
               </div>
             ) : streamUrl ? (
-              isHls ? (
+              (isHls || isDirect) ? (
                 <VideoPlayer options={videoOptions} tracks={activeTracks} onReady={handlePlayerReady} token={token} />
               ) : (
                 <iframe
@@ -593,13 +542,13 @@ export default function WatchPage() {
           )}
 
           {/* Notices */}
-          {streamUrl && !isHls && (
+          {streamUrl && !isHls && !isDirect && (
             <div className="mx-4 mt-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-2 rounded-lg font-medium flex items-center gap-2">
               <span>⚠️</span>
               <span>If the player is blank, disable your <strong>ad blocker</strong> for this site, or switch source above.</span>
             </div>
           )}
-          {roomId && streamUrl && !isHls && (
+          {roomId && streamUrl && !isHls && !isDirect && (
             <div className="mx-4 mt-2 bg-blue-50 border border-blue-200 text-blue-700 text-xs px-3 py-2 rounded-lg font-medium flex items-center gap-2">
               <span>ℹ️</span>
               <span>Embed sources don't support automatic sync. Everyone sees the same content — just start at the same time.</span>
@@ -634,7 +583,7 @@ export default function WatchPage() {
             </div>
             {roomId && !isHost && (
               <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm px-4 py-3 rounded-lg font-medium shadow-sm max-w-2xl">
-                You are a viewer. {isHls ? 'The host controls playback in sync.' : 'Start playback at the same time as the host.'}
+                You are a viewer. {(isHls || isDirect) ? 'The host controls playback in sync.' : 'Start playback at the same time as the host.'}
               </div>
             )}
           </div>
