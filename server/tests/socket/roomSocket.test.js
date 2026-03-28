@@ -19,11 +19,7 @@ vi.mock('firebase-admin', () => ({
           })),
         }),
       }),
-      {
-        FieldValue: {
-          serverTimestamp: () => '__TS__',
-        },
-      }
+      { FieldValue: { serverTimestamp: () => '__TS__' } }
     ),
   },
 }));
@@ -33,6 +29,9 @@ const { default: setupSockets } = await import('../../socket/roomSocket.js');
 // ── Socket mock helpers ────────────────────────────────────────────────────
 function makeSocket(overrides = {}) {
   const listeners = {};
+  // Use a SINGLE persistent emit spy so assertions after the handler runs
+  // check the same spy that was actually called (not a fresh one).
+  const toEmit = vi.fn();
   return {
     user: { uid: 'uid-host' },
     roomId: null,
@@ -43,23 +42,13 @@ function makeSocket(overrides = {}) {
     id: 'socket-1',
     join: vi.fn(),
     leave: vi.fn(),
-    to: vi.fn(() => ({ emit: vi.fn() })),
+    to: vi.fn(() => ({ emit: toEmit })),
+    _toEmit: toEmit,   // exposed so tests can assert on it
     emit: vi.fn(),
     on: vi.fn((event, handler) => { listeners[event] = handler; }),
     _listeners: listeners,
     _trigger: (event, ...args) => listeners[event]?.(...args),
     ...overrides,
-  };
-}
-
-function makeIo(sockets = []) {
-  return {
-    use: vi.fn((fn) => { /* store middleware */ }),
-    on: vi.fn(),
-    to: vi.fn(() => ({ emit: vi.fn() })),
-    in: vi.fn(() => ({ fetchSockets: vi.fn().mockResolvedValue(sockets) })),
-    _middleware: null,
-    _connectionHandlers: [],
   };
 }
 
@@ -70,10 +59,13 @@ describe('setupSockets', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     socket = makeSocket();
+
+    let ioToEmit = vi.fn();
     io = {
       use: vi.fn((fn) => { ioMiddleware = fn; }),
       on: vi.fn((event, fn) => { if (event === 'connection') connectionHandler = fn; }),
-      to: vi.fn(() => ({ emit: vi.fn() })),
+      to: vi.fn(() => ({ emit: ioToEmit })),
+      _toEmit: ioToEmit,
       in: vi.fn(() => ({ fetchSockets: vi.fn().mockResolvedValue([socket]) })),
     };
     setupSockets(io);
@@ -85,7 +77,7 @@ describe('setupSockets', () => {
       const next = vi.fn();
       await ioMiddleware(socket, next);
       expect(socket.user).toMatchObject({ uid: 'u1' });
-      expect(next).toHaveBeenCalledWith(); // called with no error
+      expect(next).toHaveBeenCalledWith(); // no error
     });
 
     it('calls next with error when no token', async () => {
@@ -148,7 +140,7 @@ describe('setupSockets', () => {
       await socket._trigger('playback:play', 42.5);
 
       expect(socket.to).toHaveBeenCalledWith('r1');
-      expect(socket.to('r1').emit).toHaveBeenCalledWith('playback:play', 42.5);
+      expect(socket._toEmit).toHaveBeenCalledWith('playback:play', 42.5);
       expect(mockFsUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ playback: expect.objectContaining({ playing: true, position: 42.5 }) })
       );
@@ -158,7 +150,7 @@ describe('setupSockets', () => {
       await socket._trigger('playback:pause', 10);
 
       expect(socket.to).toHaveBeenCalledWith('r1');
-      expect(socket.to('r1').emit).toHaveBeenCalledWith('playback:pause', 10);
+      expect(socket._toEmit).toHaveBeenCalledWith('playback:pause', 10);
       expect(mockFsUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ playback: expect.objectContaining({ playing: false, position: 10 }) })
       );
@@ -167,14 +159,14 @@ describe('setupSockets', () => {
     it('ignores playback events from non-host sockets', () => {
       socket.isHost = false;
       socket._trigger('playback:play', 5);
-      expect(socket.to).not.toHaveBeenCalled();
+      expect(socket._toEmit).not.toHaveBeenCalled();
     });
 
     it('broadcasts heartbeat as sync:state to room', () => {
       socket._trigger('playback:heartbeat', { position: 60, playing: true });
 
       expect(socket.to).toHaveBeenCalledWith('r1');
-      expect(socket.to('r1').emit).toHaveBeenCalledWith('sync:state', { position: 60, playing: true });
+      expect(socket._toEmit).toHaveBeenCalledWith('sync:state', { position: 60, playing: true });
     });
   });
 
