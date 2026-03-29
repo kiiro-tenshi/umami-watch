@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useParams, useSearchParams, Link } from 'react-router-dom';
-import { getAnimeKitsuInfo, getKitsuEpisodes } from '../api/kitsu';
+import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
+import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
 import { useAuth } from '../hooks/useAuth';
 import { useWatchlist } from '../hooks/useWatchlist';
+import { auth } from '../firebase';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EpisodeList from '../components/EpisodeList';
 
@@ -10,6 +11,8 @@ export default function AnimeDetailPage() {
   const { kitsuId } = useParams();
   const [searchParams] = useSearchParams();
   const roomId = searchParams.get('roomId');
+  const titleHint = searchParams.get('title');
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { isInWatchlist, toggleWatchlist } = useWatchlist(user?.uid);
 
@@ -45,6 +48,37 @@ export default function AnimeDetailPage() {
       } catch (err) {
         console.error(err);
         if (err.status === 404) {
+          // Try to recover: use ?title= hint first, then fall back to room's contentTitle
+          let recoveryTitle = titleHint?.trim() || null;
+
+          if (!recoveryTitle && roomId) {
+            try {
+              const token = await auth.currentUser?.getIdToken();
+              const res = await fetch(
+                `${import.meta.env.VITE_API_BASE_URL}/api/rooms/${roomId}`,
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              if (res.ok) {
+                const roomData = await res.json();
+                recoveryTitle = roomData.contentTitle
+                  ?.replace(/\s*—\s*Episode\s*\d+.*$/i, '')
+                  .trim() || null;
+              }
+            } catch { /* fall through to staleLink */ }
+          }
+
+          if (recoveryTitle) {
+            const results = await searchAnimeKitsu(recoveryTitle).catch(() => []);
+            if (results.length > 0) {
+              const newId = results[0].id;
+              const qs = new URLSearchParams();
+              if (roomId) qs.set('roomId', roomId);
+              qs.set('title', recoveryTitle);
+              navigate(`/anime/${newId}?${qs.toString()}`, { replace: true });
+              return;
+            }
+          }
+
           setStaleLink(true);
         } else {
           setError('Failed to load anime details.');

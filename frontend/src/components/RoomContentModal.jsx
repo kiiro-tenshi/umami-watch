@@ -33,7 +33,7 @@ export default function RoomContentModal({ roomId, onClose }) {
 
   const handleSelect = (item) => {
     if (item.type === 'anime') {
-      navigate(`/anime/${item.id}?roomId=${roomId}`);
+      navigate(`/anime/${item.id}?roomId=${roomId}&title=${encodeURIComponent(item.title)}`);
     } else {
       navigate(`/watch?roomId=${roomId}&type=${item.type}&tmdbId=${item.id}`);
     }
