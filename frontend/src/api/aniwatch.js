@@ -28,9 +28,16 @@ export const getAniwatchEpisodes = (aniwatchId) =>
   get(`anime/${encodeURIComponent(aniwatchId)}/episodes`);
 
 /**
+ * Get available servers for a HiAnime episode ID.
+ * Returns: { success, data: { sub: [{serverId, serverName}], dub: [...] } }
+ */
+export const getAniwatchServers = (episodeId) =>
+  get('episode/servers', { animeEpisodeId: episodeId });
+
+/**
  * Get stream sources for a HiAnime episode ID (e.g. "one-piece-100?ep=213").
  * server options: hd-1, hd-2, megacloud, vidstreaming, vidcloud
- * Returns: { success, data: { sources: [{url, isM3U8}], subtitles: [{lang, url}], headers: {Referer} } }
+ * Returns: { success, data: { sources: [{url, isM3U8}], tracks: [{lang, url}], headers: {Referer} } }
  */
 export const getAniwatchSources = (episodeId, server = 'hd-1', category = 'sub') =>
   get('episode/sources', { animeEpisodeId: episodeId, server, category });
