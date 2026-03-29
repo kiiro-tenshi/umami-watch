@@ -43,7 +43,7 @@ router.get('/search', async (req, res) => {
   if (!q) return res.status(400).json({ error: 'q required' });
   try {
     const data = await gqlPost(
-      `query($s:SearchInput,$limit:Int,$page:Int){shows(search:$s,limit:$limit,page:$page){edges{_id,name,englishName,thumbnail,season{year,quarter}}}}`,
+      `query($s:SearchInput,$limit:Int,$page:Int){shows(search:$s,limit:$limit,page:$page){edges{_id,name,englishName,thumbnail}}}`,
       { s: { query: q }, limit: 10, page: 1 }
     );
     res.json({ shows: data.shows.edges });

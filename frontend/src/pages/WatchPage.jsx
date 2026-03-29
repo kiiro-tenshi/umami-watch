@@ -157,11 +157,22 @@ export default function WatchPage() {
           const searchData = await searchAllAnime(searchTitle);
           const shows = searchData?.shows || [];
           if (shows.length === 0) throw new Error('Anime not found on the streaming service.');
-          const kitsuYear = animeData.startDate?.year;
-          const matchedShow = kitsuYear
-            ? (shows.find(s => s.season?.year === kitsuYear) || shows[0])
-            : shows[0];
-          const showId = matchedShow._id;
+          // Pick the AllAnime show whose name best matches the search title.
+          // Normalise: lowercase, strip punctuation/extra spaces, then score by
+          // how many words from the search title appear in the show name.
+          // Prefer shorter names (base season) over ones with extra season suffixes.
+          const normalise = s => s.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+          const normSearch = normalise(searchTitle);
+          const searchWords = normSearch.split(' ');
+          const scored = shows.map(s => {
+            const normName = normalise(s.englishName || s.name || '');
+            const matchCount = searchWords.filter(w => normName.includes(w)).length;
+            // Penalise names that have more words than the search title (e.g. "Season 2" suffix)
+            const extraWords = normName.split(' ').length - searchWords.length;
+            return { show: s, score: matchCount - Math.max(0, extraWords) * 0.5 };
+          });
+          scored.sort((a, b) => b.score - a.score);
+          const showId = scored[0].show._id;
 
           // Verify the episode number exists in AllAnime's episode list
           const showData = await getAllAnimeShow(showId);
