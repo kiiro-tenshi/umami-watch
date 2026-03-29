@@ -3,7 +3,7 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { getAnimeKitsuInfo, getKitsuEpisodes } from '../api/kitsu';
-import { getTorrentioStreams } from '../api/torrentio';
+import { searchAllAnime, getAllAnimeShow, getAllAnimeSources } from '../api/allanime';
 import { getMovieDetail, getTVDetail } from '../api/tmdb';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
@@ -13,27 +13,6 @@ import ReconnectOverlay from '../components/ReconnectOverlay';
 import LoadingSpinner from '../components/LoadingSpinner';
 import InviteModal from '../components/InviteModal';
 import RoomContentModal from '../components/RoomContentModal';
-import WebTorrent from 'webtorrent';
-
-// Module-level WebTorrent singleton — one client shared across all WatchPage mounts
-let _wtClient = null;
-let _wtServerReady = false;
-
-async function getWtClient() {
-  if (!_wtClient) {
-    _wtClient = new WebTorrent();
-    _wtClient.on('error', err => console.error('[WebTorrent]', err));
-    // Attach SW in background — don't block client creation or fetchStream.
-    // On first page load the SW is installing and not yet controlling the page;
-    // awaiting navigator.serviceWorker.ready here would hang indefinitely.
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready
-        .then(reg => { _wtClient.createServer({ controller: reg }); _wtServerReady = true; })
-        .catch(e => console.warn('[WebTorrent] SW unavailable:', e));
-    }
-  }
-  return _wtClient;
-}
 
 // Only two reliable embed sources for movies/TV
 function buildEmbedSources(type, { tmdbId, season, episode }) {
@@ -74,14 +53,11 @@ export default function WatchPage() {
   const [showContentPicker, setShowContentPicker] = useState(false);
   const [animeEpisodes, setAnimeEpisodes] = useState([]);
   const [mobileTab, setMobileTab] = useState('chat'); // 'chat' | 'episodes'
-  const [wtProgress, setWtProgress] = useState(null);
-  // { peers: number, progress: number (0–100), speed: string }
 
   const playerRef = useRef(null);
   const hasJoinedRoomRef = useRef(false);
   const episodeListRef = useRef(null);
   const pendingSyncRef = useRef(null); // buffers sync:state that arrives before player is ready
-  const wtTorrentRef = useRef(null); // tracks active WebTorrent torrent for cleanup
 
   const { socketRef, reconnecting } = useSocket(import.meta.env.VITE_API_BASE_URL, token);
   const isHost = roomData?.hostId === user?.uid;
@@ -121,17 +97,14 @@ export default function WatchPage() {
         setRoomData(data);
         // Restore stream for non-host viewers — host will re-fetch via fetchStream
         if (data.streamUrl && data.hostId !== user?.uid) {
-          if (data.streamUrl.startsWith('magnet:') && data.contentType === 'anime') {
-            // Host is using WebTorrent — viewer starts their own client with the same magnet
-            startViewerWebTorrent(data.streamUrl, data.magnetFileIdx);
-          } else {
-            setStreamUrl(data.streamUrl);
-            if (data.contentType === 'anime') {
-              setSources([{ type: 'direct', url: data.streamUrl, label: 'Stream', needsToken: true }]);
-              setActiveTracks([]);
-            } else if (data.contentType) {
-              setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
-            }
+          setStreamUrl(data.streamUrl);
+          if (data.contentType === 'anime') {
+            // AllAnime sources: direct MP4 (proxy) or iframe
+            const isProxy = data.streamUrl.includes('/api/proxy/');
+            setSources([{ type: isProxy ? 'direct' : 'iframe', url: data.streamUrl, label: 'Stream' }]);
+            setActiveTracks(data.tracks || []);
+          } else if (data.contentType) {
+            setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
           }
         }
         // If no content type to fetch, we're done loading
@@ -167,8 +140,6 @@ export default function WatchPage() {
         let poster = '';
         let url = null;
         let subtitleTracks = [];
-        let animeMagnet = null;
-        let animeMagnetFileIdx = null;
 
         if (type === 'anime') {
           if (!kitsuId) {
@@ -181,113 +152,42 @@ export default function WatchPage() {
           title = `${animeData.title?.english || animeData.title?.romaji || 'Anime'} — Episode ${epNum}`;
           poster = animeData.coverImage?.large || '';
 
-          const streams = await getTorrentioStreams('anime', kitsuId, null, null, epNum);
+          // Search AllAnime by title
+          const searchTitle = animeData.title?.english || animeData.title?.romaji || '';
+          const searchData = await searchAllAnime(searchTitle);
+          const shows = searchData?.shows || [];
+          if (shows.length === 0) throw new Error('Anime not found on the streaming service.');
+          const showId = shows[0]._id;
 
-          if (streams.length === 0) {
-            setError('No streams found for this episode on Torrentio.');
-            setLoading(false);
-            return;
+          // Verify the episode number exists in AllAnime's episode list
+          const showData = await getAllAnimeShow(showId);
+          const subEps = showData?.episodes?.sub || [];
+          if (!subEps.includes(String(epNum))) {
+            throw new Error(`Episode ${epNum} not available on this source.`);
           }
 
-          // Filter to 1080p / 720p only; fall back to all if none found
-          const hdStreams = streams.filter(s => /1080p|720p/i.test(s.title || ''));
-          const qualityFiltered = hdStreams.length > 0 ? hdStreams : streams;
+          // Get stream sources for this episode
+          const sourcesData = await getAllAnimeSources(showId, epNum, 'sub');
+          const rawSources = sourcesData?.sources || [];
+          if (rawSources.length === 0) throw new Error('No stream sources found for this episode.');
 
-          // Prefer .mp4 (native browser playback with seeking), then fall back to .mkv (server remuxes to fMP4)
-          const mp4Streams = qualityFiltered.filter(s => s.title?.toLowerCase().includes('.mp4'));
-          const mkvStreams = qualityFiltered.filter(s => s.title?.toLowerCase().includes('.mkv'));
-          const preferred = mp4Streams.length > 0 ? mp4Streams : mkvStreams;
-          const candidates = preferred.length > 0 ? preferred : qualityFiltered;
-
-          const API = import.meta.env.VITE_API_BASE_URL;
-          const best = candidates[0];
-          const magnet = buildMagnet(best);
-          const isMkv = !best.title?.toLowerCase().includes('.mp4') &&
-                         best.title?.toLowerCase().includes('.mkv');
-
-          // Store for watch party room PATCH
-          animeMagnet = magnet;
-          animeMagnetFileIdx = best.fileIdx ?? null;
-
-          if (isMkv || !('serviceWorker' in navigator)) {
-            // MKV fallback: server-side FFmpeg remux
-            const fileParam = best.fileIdx != null ? `&fileIdx=${best.fileIdx}` : '';
-            const serverUrl = `${API}/api/torrent/stream?magnet=${encodeURIComponent(magnet)}${fileParam}`;
-            if (!cancelled) {
-              setSources([{ label: 'MKV Stream', url: serverUrl, type: 'direct', needsToken: true }]);
-              setActiveSourceIdx(0);
-              setActiveTracks([]);
+          // Build source list: prefer direct MP4 (proxied) over iframes
+          const API = import.meta.env.VITE_API_BASE_URL || '';
+          const animeSourceList = rawSources.map(s => {
+            if (s.type === 'direct') {
+              // Direct MP4: route through range-proxy so browser can seek
+              const proxyUrl = `${API}/api/proxy/video?url=${encodeURIComponent(s.url)}&token=${encodeURIComponent(token || '')}`;
+              return { label: s.name, url: proxyUrl, type: 'direct' };
             }
-            url = serverUrl;
+            return { label: s.name, url: s.url, type: 'iframe' };
+          });
 
-          } else {
-            // MP4: browser WebTorrent via service worker
-            const seedUrl =
-              `${API}/api/torrent/seed` +
-              `?magnet=${encodeURIComponent(magnet)}` +
-              `&fileIdx=${best.fileIdx ?? ''}` +
-              `&token=${encodeURIComponent(token)}`;
-
-            const client = await getWtClient();
-
-            // Remove previous torrent on episode change / source switch
-            if (wtTorrentRef.current) {
-              await client.remove(wtTorrentRef.current.infoHash, { destroyStore: true }).catch(() => {});
-              wtTorrentRef.current = null;
-            }
-
-            const torrent = await new Promise((resolve, reject) => {
-              const existing = client.get(magnet);
-              if (existing) {
-                existing.ready ? resolve(existing) : existing.once('ready', () => resolve(existing));
-                return;
-              }
-              const t = client.add(magnet, { urlList: [seedUrl] });
-              t.once('ready', () => resolve(t));
-              t.once('error', reject);
-              setTimeout(() => reject(new Error('Torrent timed out — no peers responded')), 15_000);
-            });
-
-            if (cancelled) { client.remove(torrent.infoHash, { destroyStore: true }).catch(() => {}); return; }
-
-            wtTorrentRef.current = torrent;
-
-            const file = (best.fileIdx != null && torrent.files[best.fileIdx])
-              ? torrent.files[best.fileIdx]
-              : torrent.files.reduce((a, b) => a.length > b.length ? a : b);
-
-            const videoUrl = file.streamURL;
-
-            if (!videoUrl) {
-              // SW not ready — fall back to server stream
-              const fileParam = best.fileIdx != null ? `&fileIdx=${best.fileIdx}` : '';
-              const serverUrl = `${API}/api/torrent/stream?magnet=${encodeURIComponent(magnet)}${fileParam}`;
-              if (!cancelled) {
-                setSources([{ label: 'Source 1', url: serverUrl, type: 'direct', needsToken: true }]);
-                setActiveSourceIdx(0);
-                setActiveTracks([]);
-              }
-              url = serverUrl;
-            } else {
-              if (!cancelled) {
-                setSources([{ label: 'Source 1', url: videoUrl, type: 'direct', local: true }]);
-                setActiveSourceIdx(0);
-                setActiveTracks([]);
-              }
-              url = videoUrl;
-
-              torrent.on('download', () => {
-                if (!cancelled) setWtProgress({
-                  peers: torrent.numPeers,
-                  progress: Math.round(torrent.progress * 100),
-                  speed: (torrent.downloadSpeed / 1024).toFixed(0),
-                });
-              });
-            }
-
-            // Override url for room PATCH: store magnet so viewers can start their own client
-            // (actual url stays as videoUrl for local playback; animeMagnet used in PATCH below)
+          if (!cancelled) {
+            setSources(animeSourceList);
+            setActiveSourceIdx(0);
+            setActiveTracks([]);
           }
+          url = animeSourceList[0]?.url;
 
         } else if (type === 'movie') {
           const data = await getMovieDetail(tmdbId);
@@ -327,10 +227,7 @@ export default function WatchPage() {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
               body: JSON.stringify({
-                // For anime WebTorrent: store magnet so viewers can start their own client.
-                // For MKV fallback or other types: store the direct URL as before.
-                streamUrl: (type === 'anime' && url?.startsWith('/webtorrent/')) ? animeMagnet : url,
-                magnetFileIdx: type === 'anime' ? animeMagnetFileIdx : null,
+                streamUrl: url,
                 contentId: type === 'anime' ? kitsuId : tmdbId,
                 contentType: type,
                 contentTitle: title,
@@ -419,14 +316,12 @@ export default function WatchPage() {
     const onRoomContentUpdated = (data) => {
       if (isHost) return;
       if (data.streamUrl) {
-        if (data.streamUrl.startsWith('magnet:') && data.contentType === 'anime') {
-          startViewerWebTorrent(data.streamUrl, data.magnetFileIdx);
-        } else if (data.contentType === 'anime') {
-          setStreamUrl(data.streamUrl);
-          setSources([{ type: 'direct', url: data.streamUrl, label: 'Stream', needsToken: true }]);
-          setActiveTracks([]);
+        setStreamUrl(data.streamUrl);
+        if (data.contentType === 'anime') {
+          const isProxy = data.streamUrl.includes('/api/proxy/');
+          setSources([{ type: isProxy ? 'direct' : 'iframe', url: data.streamUrl, label: 'Stream' }]);
+          setActiveTracks(data.tracks || []);
         } else {
-          setStreamUrl(data.streamUrl);
           setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
         }
       }
@@ -545,101 +440,21 @@ export default function WatchPage() {
     setActiveTracks(src.tracks || []);
   };
 
-  function buildMagnet(s) {
-    if (s.url?.startsWith('magnet:')) return s.url;
-    let m = `magnet:?xt=urn:btih:${s.infoHash}`;
-    const trackers = (s.sources || [])
-      .filter(src => src.startsWith('tracker:'))
-      .map(src => `&tr=${encodeURIComponent(src.slice(8))}`);
-    // Torrentio only provides UDP/HTTP trackers — unusable in browsers.
-    // Append known WebSocket trackers so browser WebTorrent can find peers.
-    const wsTrackers = [
-      'wss://tracker.btorrent.xyz',
-      'wss://tracker.openwebtorrent.com',
-      'wss://tracker.webtorrent.dev',
-    ].map(t => `&tr=${encodeURIComponent(t)}`);
-    return m + trackers.join('') + wsTrackers.join('');
-  }
-
-  const startViewerWebTorrent = async (magnet, fileIdx) => {
-    try {
-      const t = await auth.currentUser?.getIdToken();
-      if (!t) return;
-      const API = import.meta.env.VITE_API_BASE_URL;
-      const seedUrl =
-        `${API}/api/torrent/seed` +
-        `?magnet=${encodeURIComponent(magnet)}` +
-        `&fileIdx=${fileIdx ?? ''}` +
-        `&token=${encodeURIComponent(t)}`;
-      const client = await getWtClient();
-      if (wtTorrentRef.current) {
-        await client.remove(wtTorrentRef.current.infoHash, { destroyStore: true }).catch(() => {});
-      }
-      const torrent = await new Promise((resolve, reject) => {
-        const existing = client.get(magnet);
-        if (existing) {
-          existing.ready ? resolve(existing) : existing.once('ready', () => resolve(existing));
-          return;
-        }
-        const t2 = client.add(magnet, { urlList: [seedUrl] });
-        t2.once('ready', () => resolve(t2));
-        t2.once('error', reject);
-        setTimeout(() => reject(new Error('Torrent timed out')), 15_000);
-      });
-      wtTorrentRef.current = torrent;
-      const file = (fileIdx != null && torrent.files[fileIdx])
-        ? torrent.files[fileIdx]
-        : torrent.files.reduce((a, b) => a.length > b.length ? a : b);
-      if (file.streamURL) {
-        setStreamUrl(file.streamURL);
-        setSources([{ label: 'Stream', url: file.streamURL, type: 'direct', local: true }]);
-      }
-    } catch (err) {
-      console.error('[WebTorrent viewer]', err);
-      setError('Could not start torrent stream.');
-    }
-  };
-
-  // Cleanup WebTorrent when episode or content changes
-  useEffect(() => {
-    return () => {
-      if (wtTorrentRef.current && _wtClient) {
-        _wtClient.remove(wtTorrentRef.current.infoHash, { destroyStore: true }).catch(() => {});
-        wtTorrentRef.current = null;
-      }
-      setWtProgress(null);
-    };
-  }, [kitsuId, epNum]);
 
   if (loading) return <LoadingSpinner fullScreen />;
 
   const isHls    = sources[activeSourceIdx]?.type === 'hls';
   const isDirect = sources[activeSourceIdx]?.type === 'direct';
 
-  const isLocalStream = streamUrl?.startsWith('/webtorrent/');
-  const directSrc = isDirect && streamUrl
-    ? isLocalStream
-      ? streamUrl
-      : token ? `${streamUrl}&token=${encodeURIComponent(token)}` : null
-    : null;
-
   const videoOptions = {
     autoplay: false,
     sources: isHls
       ? [{ src: streamUrl, type: 'application/x-mpegURL' }]
-      : isDirect && directSrc
-        ? [{ src: directSrc, type: 'video/mp4' }]
+      : isDirect && streamUrl
+        ? [{ src: streamUrl, type: 'video/mp4' }]
         : [],
     isViewer: !!(roomId && !isHost),
   };
-
-  const torrentLoadingMessage = isDirect
-    ? isLocalStream
-      ? wtProgress === null                          ? 'Connecting to torrent peers...'
-      : wtProgress.progress === 0                    ? `Waiting for peers... (${wtProgress.peers} connected)`
-      :                                                `Buffering... ${wtProgress.progress}% at ${wtProgress.speed} KB/s`
-      : 'Loading stream from server...'
-    : undefined;
 
   const hasEpisodeSidebar = type === 'anime' && animeEpisodes.length > 0;
   const hasChatSidebar = !!roomId;
@@ -686,7 +501,7 @@ export default function WatchPage() {
               </div>
             ) : streamUrl ? (
               (isHls || isDirect) ? (
-                <VideoPlayer options={videoOptions} tracks={activeTracks} onReady={handlePlayerReady} token={token} loadingMessage={torrentLoadingMessage} />
+                <VideoPlayer options={videoOptions} tracks={activeTracks} onReady={handlePlayerReady} token={token} />
               ) : (
                 <iframe
                   key={streamUrl}
