@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
-import { getAnimeKitsuInfo, getKitsuEpisodes } from '../api/kitsu';
-import { searchAllAnime, getAllAnimeShow, getAllAnimeSources } from '../api/allanime';
+import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
+import { searchAllAnime, getAllAnimeShow, getAllAnimeSources, pickBestShow } from '../api/allanime';
 import { getMovieDetail, getTVDetail } from '../api/tmdb';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
@@ -148,7 +148,16 @@ export default function WatchPage() {
             return;
           }
 
-          const animeData = await getAnimeKitsuInfo(kitsuId);
+          let animeData = await getAnimeKitsuInfo(kitsuId).catch(async err => {
+            if (err.status !== 404) throw err;
+            // Kitsu periodically renumbers entries — fall back to a title search.
+            // roomData.contentTitle is "Anime Title — Episode N", strip the suffix.
+            const storedTitle = roomData?.contentTitle?.replace(/\s*—\s*Episode\s*\d+.*$/i, '').trim();
+            if (!storedTitle) throw new Error('Anime not found (Kitsu ID expired). Please re-open from the search page.');
+            const results = await searchAnimeKitsu(storedTitle);
+            if (!results.length) throw new Error('Anime not found (Kitsu ID expired). Please re-open from the search page.');
+            return results[0];
+          });
           title = `${animeData.title?.english || animeData.title?.romaji || 'Anime'} — Episode ${epNum}`;
           poster = animeData.coverImage?.large || '';
 
@@ -157,22 +166,8 @@ export default function WatchPage() {
           const searchData = await searchAllAnime(searchTitle);
           const shows = searchData?.shows || [];
           if (shows.length === 0) throw new Error('Anime not found on the streaming service.');
-          // Pick the AllAnime show whose name best matches the search title.
-          // Normalise: lowercase, strip punctuation/extra spaces, then score by
-          // how many words from the search title appear in the show name.
-          // Prefer shorter names (base season) over ones with extra season suffixes.
-          const normalise = s => s.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
-          const normSearch = normalise(searchTitle);
-          const searchWords = normSearch.split(' ');
-          const scored = shows.map(s => {
-            const normName = normalise(s.englishName || s.name || '');
-            const matchCount = searchWords.filter(w => normName.includes(w)).length;
-            // Penalise names that have more words than the search title (e.g. "Season 2" suffix)
-            const extraWords = normName.split(' ').length - searchWords.length;
-            return { show: s, score: matchCount - Math.max(0, extraWords) * 0.5 };
-          });
-          scored.sort((a, b) => b.score - a.score);
-          const showId = scored[0].show._id;
+          const matchedShow = pickBestShow(shows, searchTitle);
+          const showId = matchedShow._id;
 
           // Verify the episode number exists in AllAnime's episode list
           const showData = await getAllAnimeShow(showId);
