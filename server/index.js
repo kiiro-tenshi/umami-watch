@@ -29,7 +29,7 @@ if (saPath && existsSync(saPath)) {
 
 import userRoutes from './routes/users.js';
 import createRoomRouter from './routes/rooms.js';
-import torrentRoutes from './routes/torrent.js';
+import allAnimeRoutes from './routes/allanime.js';
 import setupSockets from './socket/roomSocket.js';
 import requireAuth from './middleware/requireAuth.js';
 
@@ -83,7 +83,7 @@ app.post('/api/verify-turnstile', async (req, res) => {
 // ─── API Routes ────────────────────────────────────────────────────────────
 app.use('/api/me', userRoutes);
 app.use('/api/rooms', createRoomRouter(io));
-app.use('/api/torrent', requireAuth, torrentRoutes);
+app.use('/api/anime/allanime', requireAuth, allAnimeRoutes);
 
 // ─── HLS Proxy (fallback when Cloudflare Worker is blocked by CDN) ──────────
 // In-memory LRU cache for .ts segments — avoids duplicate upstream fetches when
@@ -198,6 +198,34 @@ app.get('/api/proxy/hls', async (req, res) => {
     res.setHeader('Content-Length', result.size);
     res.setHeader('X-Cache', 'MISS');
     return res.send(result.buffer);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ─── AllAnime Video Range-Proxy (CDN has no CORS; pass-through with Range support) ─
+// Unlike the old torrent streaming, this is a short-lived request per seek/chunk.
+// Browser sends Range headers; we forward them upstream and pipe the partial response back.
+app.get('/api/proxy/video', requireAuth, async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  const decoded = decodeURIComponent(url);
+  // Only allow fast4speed CDN URLs (AllAnime video source)
+  if (!decoded.startsWith('https://tools.fast4speed.')) {
+    return res.status(400).json({ error: 'URL not allowed' });
+  }
+  const headers = {
+    'Referer': 'https://allanime.to/',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  };
+  if (req.headers.range) headers['Range'] = req.headers.range;
+  try {
+    const upstream = await fetch(decoded, { headers });
+    res.status(upstream.status);
+    const passHeaders = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control'];
+    passHeaders.forEach(h => { const v = upstream.headers.get(h); if (v) res.setHeader(h, v); });
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    Readable.fromWeb(upstream.body).pipe(res);
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
@@ -327,7 +355,8 @@ app.get('/api/proxy/mangadex/*', async (req, res) => {
 
 // ─── Aniwatch Proxy (forwards to self-hosted aniwatch-api) ─────────────────
 app.get('/api/proxy/aniwatch/*', requireAuth, async (req, res) => {
-  const base = process.env.ANIWATCH_API_URL || 'http://localhost:4000';
+  // Fallback to ShonenX public Vercel proxy (targets hianime.in) when no self-hosted instance is set
+  const base = process.env.ANIWATCH_API_URL || 'https://shonenx-aniwatch-instance.vercel.app';
   const path = req.params[0];
   try {
     const targetUrl = new URL(`/api/v2/hianime/${path}`, base);
