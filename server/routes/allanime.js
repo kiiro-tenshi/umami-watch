@@ -84,16 +84,18 @@ router.get('/sources', async (req, res) => {
     const rawSources = data.episode?.sourceUrls || [];
 
     const sources = rawSources
-      .filter(s => s.type === 'iframe' || (s.sourceUrl.startsWith('--') && !decodeUrl(s.sourceUrl).startsWith('/apivtwo')))
-      .map(s => {
-        const decodedUrl = decodeUrl(s.sourceUrl);
-        return {
-          name: s.sourceName,
-          priority: s.priority,
-          type: s.type === 'iframe' ? 'iframe' : 'direct',
-          url: decodedUrl,
-        };
-      })
+      .map(s => ({ ...s, decodedUrl: decodeUrl(s.sourceUrl) }))
+      // Drop internal allanime clock URLs (relative paths starting with /apivtwo)
+      .filter(s => !s.decodedUrl.startsWith('/apivtwo'))
+      // Keep only https:// direct URLs or proper iframe sources
+      .filter(s => s.decodedUrl.startsWith('https://') || s.decodedUrl.startsWith('//'))
+      .map(s => ({
+        name: s.sourceName,
+        priority: s.priority,
+        // Yt-mp4 and similar encoded sources have type 'player'; iframes have type 'iframe'
+        type: s.type === 'player' ? 'direct' : 'iframe',
+        url: s.decodedUrl,
+      }))
       .sort((a, b) => b.priority - a.priority);
 
     res.json({ sources });

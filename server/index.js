@@ -206,7 +206,7 @@ app.get('/api/proxy/hls', async (req, res) => {
 // ─── AllAnime Video Range-Proxy (CDN has no CORS; pass-through with Range support) ─
 // Unlike the old torrent streaming, this is a short-lived request per seek/chunk.
 // Browser sends Range headers; we forward them upstream and pipe the partial response back.
-app.get('/api/proxy/video', requireAuth, async (req, res) => {
+app.get('/api/proxy/video', async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'url required' });
   const decoded = decodeURIComponent(url);
