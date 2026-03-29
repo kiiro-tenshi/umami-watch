@@ -48,6 +48,21 @@ jobs:
       - name: Run frontend tests
         run: npm test
 
+  # ── Python logic tests ──────────────────────────────────────────────────
+  test-python:
+    name: Python Logic Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run Python tests
+        run: python3 tests/run_all.py
+
   # ── Build check ─────────────────────────────────────────────────────────
   build-check:
     name: Frontend Build

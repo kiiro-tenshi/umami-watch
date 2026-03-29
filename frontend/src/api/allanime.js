@@ -36,6 +36,26 @@ export const getAllAnimeSources = (showId, ep, type = 'sub') =>
   get('sources', { showId, ep: String(ep), type });
 
 /**
+ * Pick the AllAnime show from a search result list that best matches a given title.
+ * Scores each show by how many words from the search title appear in the show name,
+ * penalising names that have more words (e.g. "Season 2" suffix) by 0.5 per extra word.
+ * Falls back to shows[0] if the list is empty.
+ */
+export function pickBestShow(shows, searchTitle) {
+  if (!shows || shows.length === 0) return null;
+  const normalise = s => s.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+  const searchWords = normalise(searchTitle).split(' ');
+  const scored = shows.map(s => {
+    const normName = normalise(s.englishName || s.name || '');
+    const matchCount = searchWords.filter(w => normName.includes(w)).length;
+    const extraWords = normName.split(' ').length - searchWords.length;
+    return { show: s, score: matchCount - Math.max(0, extraWords) * 0.5 };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0].show;
+}
+
+/**
  * Build a proxied video URL for direct MP4 sources (AllAnime CDN has no CORS).
  * The backend range-proxy passes Range headers through for seeking support.
  */
