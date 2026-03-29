@@ -59,7 +59,7 @@ export default function WatchPage() {
   const episodeListRef = useRef(null);
   const pendingSyncRef = useRef(null); // buffers sync:state that arrives before player is ready
 
-  const { socketRef, reconnecting } = useSocket(import.meta.env.VITE_API_BASE_URL, token);
+  const { socketRef, connected, reconnecting } = useSocket(import.meta.env.VITE_API_BASE_URL, token);
   const isHost = roomData?.hostId === user?.uid;
 
   // Derived: current episode index + next episode
@@ -277,7 +277,7 @@ export default function WatchPage() {
   // 6. Socket: join room + playback sync
   useEffect(() => {
     const socket = socketRef.current;
-    if (!socket || !roomId || !roomData || !token) return;
+    if (!connected || !socket || !roomId || !roomData || !token) return;
 
     if (!hasJoinedRoomRef.current) {
       hasJoinedRoomRef.current = true;
@@ -358,12 +358,12 @@ export default function WatchPage() {
       socket.off('room:content-updated', onRoomContentUpdated);
       socket.off('room:deleted', onRoomDeleted);
     };
-  }, [socketRef.current, roomId, !!roomData, isHost, token]);
+  }, [connected, roomId, !!roomData, isHost, token]);
 
   // Re-join room on socket reconnect (server drops socket rooms on disconnect)
   useEffect(() => {
     const socket = socketRef.current;
-    if (!socket || !roomId) return;
+    if (!connected || !socket || !roomId) return;
     const onConnect = () => {
       if (hasJoinedRoomRef.current) {
         // Reconnect — the server's socket lost its room membership, re-join immediately
@@ -373,7 +373,7 @@ export default function WatchPage() {
     };
     socket.on('connect', onConnect);
     return () => socket.off('connect', onConnect);
-  }, [socketRef.current, roomId, user?.displayName, user?.photoURL]);
+  }, [connected, roomId, user?.displayName, user?.photoURL]);
 
   // Host: emit heartbeat every 3s so viewers auto-correct drift
   useEffect(() => {
@@ -384,7 +384,7 @@ export default function WatchPage() {
       socketRef.current?.emit('playback:heartbeat', { position: p.currentTime, playing: !p.paused });
     }, 5000);
     return () => clearInterval(interval);
-  }, [roomId, isHost, socketRef.current]);
+  }, [roomId, isHost, connected]);
 
   // Viewer: request a fresh sync every 10s (catches buffering drift)
   useEffect(() => {
@@ -393,7 +393,7 @@ export default function WatchPage() {
       socketRef.current?.emit('request-sync');
     }, 20000);
     return () => clearInterval(interval);
-  }, [roomId, isHost, socketRef.current]);
+  }, [roomId, isHost, connected]);
 
   // 7. Save watch history per episode
   useEffect(() => {
