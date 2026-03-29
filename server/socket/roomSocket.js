@@ -37,6 +37,17 @@ export default function setupSockets(io) {
       // Send current playback state to the joining viewer
       socket.emit('sync:state', roomData.playback);
 
+      // Send current stream info so viewers who join after the host already
+      // loaded a source don't get a white screen (they missed room:content-updated)
+      if (roomData.streamUrl) {
+        socket.emit('room:content-updated', {
+          streamUrl:    roomData.streamUrl,
+          contentType:  roomData.contentType,
+          contentTitle: roomData.contentTitle,
+          tracks:       roomData.tracks || [],
+        });
+      }
+
       const hostSockets = await io.in(roomId).fetchSockets();
       const hostConnected = hostSockets.some(s => s.user.uid === roomData.hostId);
       if (!hostConnected && !socket.isHost) {

@@ -16,7 +16,11 @@ export default function ChatPanel({ roomId, socket, user }) {
         headers: { Authorization: `Bearer ${token}` }
       })
     ).then(r => r?.ok ? r.json() : [])
-      .then(msgs => setMessages(msgs))
+      .then(msgs => setMessages(prev => {
+        const existingIds = new Set(prev.map(m => m.id));
+        const fresh = msgs.filter(m => !existingIds.has(m.id));
+        return [...fresh, ...prev]; // history first (older), socket msgs preserved
+      }))
       .catch(() => {});
   }, [roomId]);
 
