@@ -152,12 +152,16 @@ export default function WatchPage() {
           title = `${animeData.title?.english || animeData.title?.romaji || 'Anime'} — Episode ${epNum}`;
           poster = animeData.coverImage?.large || '';
 
-          // Search AllAnime by title
+          // Search AllAnime by title, pick the entry whose season year matches Kitsu's start year
           const searchTitle = animeData.title?.english || animeData.title?.romaji || '';
           const searchData = await searchAllAnime(searchTitle);
           const shows = searchData?.shows || [];
           if (shows.length === 0) throw new Error('Anime not found on the streaming service.');
-          const showId = shows[0]._id;
+          const kitsuYear = animeData.startDate?.year;
+          const matchedShow = kitsuYear
+            ? (shows.find(s => s.season?.year === kitsuYear) || shows[0])
+            : shows[0];
+          const showId = matchedShow._id;
 
           // Verify the episode number exists in AllAnime's episode list
           const showData = await getAllAnimeShow(showId);
