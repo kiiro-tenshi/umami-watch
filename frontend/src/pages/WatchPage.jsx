@@ -176,7 +176,7 @@ export default function WatchPage() {
           const animeSourceList = rawSources.map(s => {
             if (s.type === 'direct') {
               // Direct MP4: route through range-proxy so browser can seek
-              const proxyUrl = `${API}/api/proxy/video?url=${encodeURIComponent(s.url)}&token=${encodeURIComponent(token || '')}`;
+              const proxyUrl = `${API}/api/proxy/video?url=${encodeURIComponent(s.url)}`;
               return { label: s.name, url: proxyUrl, type: 'direct' };
             }
             return { label: s.name, url: s.url, type: 'iframe' };
