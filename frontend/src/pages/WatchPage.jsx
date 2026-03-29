@@ -363,7 +363,7 @@ export default function WatchPage() {
   // Re-join room on socket reconnect (server drops socket rooms on disconnect)
   useEffect(() => {
     const socket = socketRef.current;
-    if (!connected || !socket || !roomId) return;
+    if (!socket || !roomId) return;
     const onConnect = () => {
       if (hasJoinedRoomRef.current) {
         // Reconnect — the server's socket lost its room membership, re-join immediately
@@ -432,7 +432,11 @@ export default function WatchPage() {
     if (roomId && isHost) {
       player.on('play', () => socketRef.current?.emit('playback:play', player.currentTime));
       player.on('pause', () => socketRef.current?.emit('playback:pause', player.currentTime));
-      player.on('seeked', () => socketRef.current?.emit('playback:seek', player.currentTime));
+      let seekTimer = null;
+      player.on('seeked', () => {
+        clearTimeout(seekTimer);
+        seekTimer = setTimeout(() => socketRef.current?.emit('playback:seek', player.currentTime), 150);
+      });
     }
     // Apply buffered sync:state that arrived before player was ready
     if (roomId && !isHost && pendingSyncRef.current) {

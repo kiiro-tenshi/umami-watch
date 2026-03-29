@@ -95,8 +95,14 @@ export default function setupSockets(io) {
     socket.on('playback:seek', (pos) => {
       if (!guardHost()) return;
       socket.to(socket.roomId).emit('playback:seek', pos);
+      // Use dot-notation to update only position — never clobber the playing state.
+      // Overwriting playing:true here would corrupt the heartbeat when seeking while paused.
       admin.firestore().collection('rooms').doc(socket.roomId)
-        .update({ playback: { playing: true, position: pos, updatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedBy: uid } })
+        .update({
+          'playback.position':  pos,
+          'playback.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+          'playback.updatedBy': uid,
+        })
         .catch(() => {});
     });
 
