@@ -68,7 +68,7 @@ export default function CreateRoomModal({ onClose, defaultContent = null }) {
         let url;
         if (selectedContent?.contentType === 'anime') {
           // For anime: go to detail page so host can pick an episode
-          url = `/anime/${selectedContent.contentId}?roomId=${data.id}`;
+          url = `/anime/${selectedContent.contentId}?roomId=${data.id}&title=${encodeURIComponent(selectedContent.contentTitle)}`;
         } else if (selectedContent) {
           url = `/watch?roomId=${data.id}&type=${selectedContent.contentType}&tmdbId=${selectedContent.contentId}`;
         } else {

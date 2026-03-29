@@ -10,7 +10,7 @@ export default function ContentCard({ id, title, posterUrl, contentType, rating,
     contentType === 'tv' ? `/tv/${id}` :
     contentType === 'movie' ? `/movie/${id}` :
     contentType === 'manga' ? `/manga/${id}` :
-    `/anime/${id}`;
+    `/anime/${id}${title ? `?title=${encodeURIComponent(title)}` : ''}`;
 
   const sizeClass = className ?? 'w-32 sm:w-40 h-48 sm:h-60 shrink-0';
 
