@@ -1,175 +1,163 @@
-# UmamiStream
+# 🎥 UmamiWatch
 
-A private anime & movies streaming portal with synchronized watch party rooms.
+A premium, private anime & movies portal with real-time synchronized watch party rooms. Designed for high-performance streaming with minimal infrastructure overhead.
 
-*Created exclusively for Umami Dream precious member by The Boss Lady ©2026*
-
----
-
-## Features
-
-- **Anime** — Browse and stream anime episodes via HiAnime (self-hosted aniwatch-api)
-- **Movies & TV** — Browse with TMDB metadata, stream via VidSrc embeds
-- **Watch Rooms** — Create a room, invite friends via code, watch in sync
-- **Playback Sync** — Host controls play/pause/seek; viewers stay in lockstep via Socket.IO
-- **Live Chat** — Per-room chat stored in Firestore
-- **Watch History** — Per-episode continue-watching, saved to Firestore
-- **Watchlist** — Personal saved content list
-- **Avatar Upload** — Canvas-resized base64 avatar, no Storage bucket needed
-- **Bot Protection** — Cloudflare Turnstile on login
+*Created exclusively for Umami Dream precious members by The Boss Lady ©2026*
 
 ---
 
-## Tech Stack
+## 🏗️ System Architecture
+
+UmamiWatch is built as a highly-distributed, cloud-native streaming platform. It utilizes a multi-layered proxying system to ensure high availability and bypass CDN restrictions.
+
+### 🌐 System Overview
+```mermaid
+graph TD
+    User([User Browser]) --> CF[Cloudflare DNS/SSL]
+    CF --> CR_Main[Cloud Run: umami-watch]
+    
+    subgraph CR_Main_Sub [Main Express Service]
+        Express[Express Middlewares]
+        HLS_Proxy[HLS Proxy & Segment Cache]
+        SocketIO[Socket.IO Server]
+        AdminSDK[Firebase Admin SDK]
+        Frontend[React SPA Bundle]
+    end
+    
+    Express --> CR_Aniwatch[Cloud Run: aniwatch-api]
+    CR_Main_Sub --> Firestore[(Firestore DB)]
+    CR_Main_Sub --> Auth{Firebase Auth}
+    
+    CR_Aniwatch --> HiAnime[HiAnime Scraper]
+    HiAnime --> CDNs[Stream CDNs: MegaCloud, VidCloud]
+    HLS_Proxy -.->|Proxies & Rewrites| CDNs
+    
+    User --> TMDB[TMDB API: Movies/TV Meta]
+    User --> AniList[AniList API: Anime Meta]
+    User --> VidSrc[VidSrc: Movie embeds]
+```
+
+### ⚡ Real-time Synchronization Flow
+UmamiWatch uses a **Distributed Sync Strategy** to ensure all viewers stay within **< 1s** of the host's playback position.
+
+```mermaid
+sequenceDiagram
+    participant H as Host Browser
+    participant S as Socket.IO Server
+    participant V as Viewer Browser
+    participant F as Firestore
+
+    H->>S: 🔘 playback:play (position)
+    S->>V: 🔘 playback:play (position)
+    S->>F: Update playback state (async)
+    
+    loop Heartbeat (Every 3s)
+        H->>S: 💓 playback:heartbeat
+        S->>V: 🔁 sync:state (drift correction)
+    end
+    
+    V->>S: ❓ request-sync (after buffer/lag)
+    S->>H: ❓ viewer-needs-sync
+    H->>S: 📡 sync-response (current pos)
+    S->>V: 🔁 sync:state
+```
+
+---
+
+## 🔥 Key Features
+
+- **🏯 Anime Portal** — Search and stream thousands of anime via the self-hosted `aniwatch-api` (HiAnime scraper).
+- **🎬 Movies & TV** — Metadata provided by TMDB with multiple embed sources (VidSrc CC/Net).
+- **🏰 Watch Party Rooms** — Create private rooms with 6-char invite codes.
+- **🔄 Sync Playback** — Host-controlled play/pause/seek with automated drift correction for viewers.
+- **💬 Live Chat** — Real-time room chat with history persisted in Firestore.
+- **📂 Personal Hub** — Continue-watching history, personal watchlist, and custom avatar upload (Base64).
+- **🛡️ Bot Protection** — Cloudflare Turnstile integrated at the auth layer.
+- **📚 Manga & Comics (Beta)** — Proxied metadata via MangaDex and ComicK with image bypassing.
+
+---
+
+## 🛠️ Technical Deep Dive
+
+### 1. Zero-CORS HLS Proxying
+Standard streaming CDNs (MegaCloud, VidCloud) block direct requests from unknown origins via `Referer` and `Origin` headers. UmamiWatch implements a custom **HLS Proxy** in Node.js that:
+- **Rewrites Manifests**: Parses `.m3u8` files on-the-fly to redirect all `.ts` segment requests through the backend.
+- **Segment Caching**: Implements an in-memory **LRU cache** for video segments to reduce upstream latency and bandwidth during watch parties.
+- **Header Injection**: Transparently injects required `Referer` and `Origin` headers to the CDN to bypass CORS blocks.
+
+### 2. Distributed Playback Sync
+Synchronization is handled via **Socket.IO** with a specialized drift-correction algorithm:
+- **Heartbeat**: The host emits a heartbeat every 3 seconds. Viewers receive this and calculate their drift. If the difference is **> 1 second**, the viewer's player automatically seeks to match the host.
+- **State Persistence**: Room playback state is written to Firestore asynchronously, allowing users to resume deep-linked rooms even if the host disconnects.
+
+### 3. Security Model
+- **Firebase Admin SDK**: The frontend never talks to Firestore directly. All database operations are proxied through the Express backend, ensuring **zero client-side security rules** are exposed.
+- **JWT Auth**: Every API request and socket connection requires a valid Firebase ID token verified server-side.
+- **Turnstile Verification**: Cloudflare Turnstile tokens are verified on the server before granting access, effectively blocking automated bot attacks.
+
+---
+
+## 🚀 Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Frontend | React 18, Vite, Tailwind CSS, HLS.js, Plyr |
-| Backend | Node.js, Express, Socket.IO |
-| Auth | Firebase Authentication |
-| Database | Firestore |
-| Anime API | [aniwatch-api](https://github.com/ghoshritesh12/aniwatch) (self-hosted) |
-| Movie metadata | TMDB API |
-| Infra | Google Cloud Run, Cloud Build, Secret Manager |
-| CI/CD | Cloud Build tag triggers → auto deploy on `git tag` |
+|---|---|
+| **Frontend** | React 18, Vite, Tailwind CSS, HLS.js, Video.js |
+| **Backend** | Node.js, Express, Socket.IO |
+| **Database** | Google Firestore |
+| **Auth** | Firebase Authentication |
+| **Compute** | Google Cloud Run (Serverless) |
+| **Metadata** | TMDB API, AniList GraphQL, MangaDex API |
+| **CI/CD** | Cloud Build (Auto-deploy on `git tag`) |
 
 ---
 
-## Project Structure
+## ⚙️ Environment Variables
 
-```
-umami-watch/
-├── frontend/          # React + Vite SPA
-│   └── src/
-│       ├── pages/     # AuthPage, HomePage, WatchPage, RoomsPage, ...
-│       ├── components/
-│       └── api/       # aniwatch.js, tmdb.js, ...
-├── server/            # Express + Socket.IO backend
-│   ├── routes/        # users.js, rooms.js, torrent.js
-│   ├── socket/        # roomSocket.js
-│   └── middleware/    # requireAuth.js
-├── Dockerfile         # Multi-stage: build frontend → serve with Node
-├── cloudbuild.yaml    # CI/CD pipeline
-└── docker-compose.yml # Local dev
-```
+> [!IMPORTANT]
+> All sensitive keys must be stored in **Google Cloud Secret Manager** and never committed to the repository.
 
----
-
-## Local Development
-
-### Prerequisites
-- Node.js 20+
-- Firebase project (Auth + Firestore enabled)
-- A Firebase service account JSON file
-
-### 1. Frontend
-
+### Frontend (`.env.local`)
 ```bash
-cd frontend
-cp .env.example .env.local   # fill in your Firebase + API keys
-npm install
-npm run dev                  # http://localhost:5173
-```
-
-Required `.env.local` vars:
-```
-VITE_FIREBASE_API_KEY=
-VITE_FIREBASE_AUTH_DOMAIN=
-VITE_FIREBASE_PROJECT_ID=
-VITE_FIREBASE_STORAGE_BUCKET=
-VITE_FIREBASE_MESSAGING_SENDER_ID=
-VITE_FIREBASE_APP_ID=
+VITE_FIREBASE_API_KEY=your_key
+VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your_project_id
+VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+VITE_TMDB_API_KEY=your_tmdb_key
+VITE_TURNSTILE_SITE_KEY=your_cloudflare_site_key
 VITE_API_BASE_URL=http://localhost:8080
-VITE_TMDB_API_KEY=
-VITE_TURNSTILE_SITE_KEY=       # use Cloudflare test key for localhost
 ```
 
-### 2. Backend
-
+### Backend (`server/.env`)
 ```bash
-cd server
-cp .env.example .env           # fill in your config
-npm install
-npm run dev                    # http://localhost:8080
-```
-
-Required `.env` vars:
-```
 GOOGLE_APPLICATION_CREDENTIALS=../firebase-service-account.json
-FIREBASE_PROJECT_ID=
-FIREBASE_STORAGE_BUCKET=
+FIREBASE_PROJECT_ID=your_id
+FIREBASE_STORAGE_BUCKET=your_bucket
 ALLOWED_ORIGINS=http://localhost:5173
 ANIWATCH_API_URL=http://localhost:4000
-TURNSTILE_SECRET_KEY=          # use Cloudflare test secret for localhost
+TURNSTILE_SECRET_KEY=your_cloudflare_secret
 ```
 
-### 3. aniwatch-api (optional, for anime streaming)
+---
 
-```bash
-docker run -p 4000:4000 ghcr.io/ghoshritesh12/aniwatch:latest
-```
+## 📦 Deployment (Google Cloud Run)
 
-Or use `docker-compose up`.
+Deployments are fully automated via **Cloud Build tag triggers**.
+
+1. **Tag your release:**
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+2. **What happens next?**
+   - Cloud Build mirrors the `aniwatch-api` image to your GCR.
+   - The main app Docker image is built (baking in build-time VITE_* vars).
+   - Both services are deployed to Cloud Run in the specified region.
+   - Secrets are automatically mounted at runtime from Secret Manager.
+
+> [!TIP]
+> Cloud Run **Session Affinity** must be enabled for the main service to ensure WebSocket stability.
 
 ---
 
-## Deployment (Google Cloud Run)
-
-Deployments are fully automated via **Cloud Build tag triggers**. Push a git tag to deploy.
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-This triggers `cloudbuild.yaml` which:
-1. Mirrors `aniwatch-api` from ghcr.io → GCR and deploys it to Cloud Run
-2. Builds the main app Docker image (baking VITE_* vars from Secret Manager)
-3. Pushes the image tagged with both `$TAG_NAME` and `latest`
-4. Deploys the main app to Cloud Run with runtime secrets mounted from Secret Manager
-
-### Required GCP Setup
-
-1. **Enable APIs**: Cloud Run, Cloud Build, Container Registry, Secret Manager
-2. **Create secrets** in Secret Manager (one per env var — see `cloudbuild.yaml`)
-3. **Grant IAM**: the Compute Engine service account needs `Secret Manager Secret Accessor` on all secrets
-4. **Create Cloud Build trigger**: tag trigger pointing to `cloudbuild.yaml`, with substitutions:
-   - `_REGION` — e.g. `us-west1`
-   - `_VITE_FIREBASE_AUTH_DOMAIN` — e.g. `your-project.firebaseapp.com`
-   - `_VITE_FIREBASE_PROJECT_ID`
-   - `_VITE_FIREBASE_STORAGE_BUCKET`
-   - `_VITE_CONSUMET_API_URL`
-
-All sensitive values (API keys, Firebase SA, etc.) live in **Secret Manager only** — never in the repo.
-
----
-
-## Architecture Notes
-
-- **Single service**: frontend and backend are served from the same Cloud Run container. Express serves the Vite build as static files and handles the SPA catch-all.
-- **Socket.IO**: Cloud Run `--session-affinity` is required so WebSocket connections stick to one instance.
-- **aniwatch-api**: deployed as a separate Cloud Run service (0 min instances to save cost); the main app proxies requests to it via `/api/proxy/aniwatch/*`.
-- **HLS proxy**: `/api/proxy/hls` rewrites M3U8 URLs so the browser never directly contacts the upstream CDN (bypasses CORS + Referer restrictions).
-- **Auth everywhere**: all API routes and socket connections require a valid Firebase ID token.
-
----
-
-## Firestore Collections
-
-| Collection | Purpose |
-|------------|---------|
-| `users/{uid}` | Profile (displayName, photoURL, watchlist) |
-| `users/{uid}/history/{contentId}` | Per-episode watch progress |
-| `rooms/{roomId}` | Room metadata, members, playback state |
-| `rooms/{roomId}/messages` | Chat messages |
-
----
-
-## Security
-
-- Firebase Auth tokens verified server-side on every request and socket connection
-- All proxy endpoints require authentication (`requireAuth` middleware)
-- Chat messages validated: non-empty string, max 500 chars
-- Playback control events restricted to the room host only
-- All secrets stored in GCP Secret Manager — zero plaintext credentials in the repo
-- Cloudflare Turnstile protects login against bots
+*UmamiWatch — Sharing moments, frame by frame.*
