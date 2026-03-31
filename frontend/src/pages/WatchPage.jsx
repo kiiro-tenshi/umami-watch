@@ -325,6 +325,10 @@ export default function WatchPage() {
     // Non-host: receive real-time content updates when host patches the room
     const onRoomContentUpdated = (data) => {
       if (isHost) return;
+      // Clear stale player ref so sync events during VideoPlayer remount buffer
+      // in pendingSyncRef rather than being lost on the destroyed (zombie) Plyr.
+      playerRef.current = null;
+      setActiveSourceIdx(0);
       if (data.streamUrl) {
         setStreamUrl(data.streamUrl);
         if (data.contentType === 'anime') {
@@ -444,6 +448,10 @@ export default function WatchPage() {
       pendingSyncRef.current = null;
       if (typeof position === 'number') player.currentTime = position;
       if (playing) player.play().catch(() => {});
+    } else if (roomId && !isHost) {
+      // No buffered sync — request one immediately so we don't wait up to
+      // 5 s for the next host heartbeat after a content change.
+      socketRef.current?.emit('request-sync');
     }
   };
 
@@ -515,7 +523,7 @@ export default function WatchPage() {
               </div>
             ) : streamUrl ? (
               (isHls || isDirect) ? (
-                <VideoPlayer options={videoOptions} tracks={activeTracks} onReady={handlePlayerReady} token={token} />
+                <VideoPlayer key={streamUrl} options={videoOptions} tracks={activeTracks} onReady={handlePlayerReady} token={token} />
               ) : (
                 <iframe
                   key={streamUrl}
