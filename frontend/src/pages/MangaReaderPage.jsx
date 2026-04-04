@@ -1,12 +1,16 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { getChapterPages, getMangaChapters, getMangaById, getTitle } from '../api/mangadex';
+import { getChapterPages, getMangaChapters, getMangaById, getTitle, coverUrl, getCoverFilename } from '../api/mangadex';
 import { getComickImages, getComickChapters } from '../api/comick';
+import { useAuth } from '../hooks/useAuth';
+import { db } from '../firebase';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function MangaReaderPage() {
   const { mangaId, chapterId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const isComick = chapterId.startsWith('ck_');
   // Chapter ID format for ComicK: ck_{slug}~{chapterHid}~{chap}
@@ -19,6 +23,7 @@ export default function MangaReaderPage() {
   const [currentPage, setCurrentPage] = useState(0);
   const [allChapters, setAllChapters] = useState([]);
   const [mangaTitle, setMangaTitle] = useState('');
+  const [mangaPoster, setMangaPoster] = useState('');
   const [chapterNum, setChapterNum] = useState('');
   const [dataSaver, setDataSaver] = useState(() => localStorage.getItem('manga-data-saver') === 'true');
   const [showUI, setShowUI] = useState(true);
@@ -55,7 +60,13 @@ export default function MangaReaderPage() {
   // Fetch manga title + chapter list for navigation
   useEffect(() => {
     let dead = false;
-    getMangaById(mangaId).then(m => { if (!dead) setMangaTitle(getTitle(m)); }).catch(() => {});
+    getMangaById(mangaId).then(m => {
+      if (!dead) {
+        setMangaTitle(getTitle(m));
+        const filename = getCoverFilename(m);
+        setMangaPoster(filename ? coverUrl(m.id, filename, 512) : '');
+      }
+    }).catch(() => {});
 
     (async () => {
       if (isComick) {
@@ -89,6 +100,41 @@ export default function MangaReaderPage() {
 
     return () => { dead = true; };
   }, [mangaId, chapterId, isComick]);
+
+  // Save chapter entry to history (3s debounce to avoid saves on fast navigation)
+  useEffect(() => {
+    if (!user || !mangaTitle || !chapterId) return;
+    const timer = setTimeout(() => {
+      setDoc(
+        doc(db, 'users', user.uid, 'history', `manga_${mangaId}`),
+        {
+          contentId: mangaId,
+          contentType: 'manga',
+          title: mangaTitle,
+          posterUrl: mangaPoster,
+          chapterId,
+          chapterNum,
+          pageNum: currentPage + 1,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      ).catch(console.error);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [chapterId, mangaTitle, user]);
+
+  // Update current page in history (2s debounce)
+  useEffect(() => {
+    if (!user || !mangaTitle || !chapterId) return;
+    const timer = setTimeout(() => {
+      setDoc(
+        doc(db, 'users', user.uid, 'history', `manga_${mangaId}`),
+        { pageNum: currentPage + 1, updatedAt: serverTimestamp() },
+        { merge: true }
+      ).catch(console.error);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [currentPage, user, chapterId, mangaTitle]);
 
   const currentChapterIdx = allChapters.findIndex(c => c.id === chapterId);
   const prevChapter = currentChapterIdx > 0 ? allChapters[currentChapterIdx - 1] : null;

@@ -67,9 +67,27 @@ export default function HomePage() {
           <section>
             <h2 className="text-xl font-bold text-primary mb-4 border-l-4 border-accent-orange pl-2">Continue Watching</h2>
             <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-4 snap-x">
-              {history.map(item => (
-                <ContentCard key={item.id} id={item.contentId} title={item.title} posterUrl={item.posterUrl} contentType={item.contentType} />
-              ))}
+              {history.map(item => {
+                const progress = item.duration > 0
+                  ? Math.min(100, Math.round((item.position / item.duration) * 100))
+                  : null;
+                let continueUrl = null;
+                if (item.contentType === 'anime') continueUrl = `/watch?type=anime&kitsuId=${item.contentId}&epNum=${item.epNum || 1}`;
+                else if (item.contentType === 'movie') continueUrl = `/watch?type=movie&tmdbId=${item.contentId}`;
+                else if (item.contentType === 'tv') continueUrl = `/watch?type=tv&tmdbId=${item.contentId}&season=${item.seasonNum || 1}&episode=${item.episodeNum || 1}`;
+                else if (item.contentType === 'manga' && item.chapterId) continueUrl = `/manga/${item.contentId}/chapter/${item.chapterId}`;
+                return (
+                  <ContentCard
+                    key={item.id}
+                    id={item.contentId}
+                    title={item.title}
+                    posterUrl={item.posterUrl}
+                    contentType={item.contentType}
+                    progress={progress}
+                    continueUrl={continueUrl}
+                  />
+                );
+              })}
             </div>
           </section>
         )}

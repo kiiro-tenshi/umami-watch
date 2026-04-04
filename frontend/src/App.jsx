@@ -14,13 +14,14 @@ import MangaBrowsePage from './pages/MangaBrowsePage';
 import MangaDetailPage from './pages/MangaDetailPage';
 import MangaReaderPage from './pages/MangaReaderPage';
 import ProtectedRoute from './components/ProtectedRoute';
+import BottomNav from './components/BottomNav';
 
 function App() {
   return (
     <ThemeProvider>
     <BrowserRouter>
       <Navbar />
-      <main className="pt-14 min-h-screen">
+      <main className="pt-14 min-h-screen pb-16 md:pb-0">
         <Routes>
           <Route path="/" element={<Navigate to="/home" />} />
           <Route path="/auth" element={<AuthPage />} />
@@ -41,7 +42,8 @@ function App() {
           <Route path="*" element={<Navigate to="/home" />} />
         </Routes>
       </main>
-      <footer className="border-t border-border bg-surface py-4 text-center text-xs text-muted">
+      <BottomNav />
+      <footer className="hidden md:block border-t border-border bg-surface py-4 text-center text-xs text-muted">
         Created exclusively for Umami Dream precious members by The Boss Lady ©2026
       </footer>
     </BrowserRouter>

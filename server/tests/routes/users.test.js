@@ -116,12 +116,36 @@ describe('PATCH /api/me', () => {
     expect(res.status).toBe(200);
     expect(mockFsUpdate).toHaveBeenCalledWith({ displayName: 'Charlie' });
   });
+
+  it('returns 401 when no auth token is provided', async () => {
+    const res = await request(app).patch('/').send({ displayName: 'Hacker' });
+    expect(res.status).toBe(401);
+    expect(mockFsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('calls update with empty object when body has no recognised fields', async () => {
+    mockFsUpdate.mockResolvedValueOnce(undefined);
+
+    const res = await request(app)
+      .patch('/')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ hackedField: 'nope' });
+
+    expect(res.status).toBe(200);
+    expect(mockFsUpdate).toHaveBeenCalledWith({});
+  });
 });
 
 describe('DELETE /api/me/history', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockVerifyIdToken.mockResolvedValue({ uid: 'uid-1' });
+  });
+
+  it('returns 401 when no auth token is provided', async () => {
+    const res = await request(app).delete('/history');
+    expect(res.status).toBe(401);
+    expect(mockBatchCommit).not.toHaveBeenCalled();
   });
 
   it('deletes all history docs and returns count', async () => {

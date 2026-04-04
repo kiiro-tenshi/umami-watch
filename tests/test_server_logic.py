@@ -221,5 +221,155 @@ class TestFilterRoomPatchFields(unittest.TestCase):
         self.assertEqual(result, body)
 
 
+# ── Replicated logic from server/routes/allanime.js ──────────────────────────
+
+def decode_url(encoded):
+    """
+    Port of decodeUrl() from server/routes/allanime.js.
+    XOR-decodes a '--<hex>' encoded URL; passes plain URLs through unchanged.
+    """
+    if not encoded.startswith('--'):
+        return encoded
+    hex_str = encoded[2:]
+    chars = []
+    for i in range(0, len(hex_str), 2):
+        byte = int(hex_str[i:i + 2], 16) ^ 56
+        chars.append(chr(byte))
+    return ''.join(chars)
+
+
+def xor_encode_url(url):
+    """Reverse of decode_url — encodes a plain URL into the '--<hex>' format."""
+    return '--' + ''.join(f'{ord(c) ^ 56:02x}' for c in url)
+
+
+def process_allanime_sources(raw_sources):
+    """
+    Port of the source-processing pipeline in GET /api/anime/allanime/sources.
+    Decodes, filters, maps type, and sorts by priority descending.
+    """
+    decoded = []
+    for s in raw_sources:
+        decoded_url = decode_url(s.get('sourceUrl', ''))
+        decoded.append({
+            'sourceName': s.get('sourceName'),
+            'priority':   s.get('priority', 0),
+            'type':       s.get('type'),
+            'decodedUrl': decoded_url,
+        })
+
+    # Drop internal /apivtwo URLs
+    filtered = [s for s in decoded if not s['decodedUrl'].startswith('/apivtwo')]
+    # Keep only https:// or // URLs
+    filtered = [s for s in filtered if s['decodedUrl'].startswith('https://') or s['decodedUrl'].startswith('//')]
+
+    mapped = [
+        {
+            'name':     s['sourceName'],
+            'priority': s['priority'],
+            'type':     'direct' if s['type'] == 'player' else 'iframe',
+            'url':      s['decodedUrl'],
+        }
+        for s in filtered
+    ]
+    mapped.sort(key=lambda x: -x['priority'])
+    return mapped
+
+
+# ── Tests: decodeUrl ──────────────────────────────────────────────────────────
+
+class TestDecodeUrl(unittest.TestCase):
+
+    def test_plain_url_returned_unchanged(self):
+        url = 'https://cdn.example.com/video.mp4'
+        self.assertEqual(decode_url(url), url)
+
+    def test_protocol_relative_url_returned_unchanged(self):
+        url = '//cdn.example.com/embed.html'
+        self.assertEqual(decode_url(url), url)
+
+    def test_encoded_url_decoded_correctly(self):
+        plain = 'https://stream.allanime.co/ep1.m3u8'
+        encoded = xor_encode_url(plain)
+        self.assertTrue(encoded.startswith('--'))
+        self.assertEqual(decode_url(encoded), plain)
+
+    def test_roundtrip_preserves_arbitrary_https_url(self):
+        plain = 'https://cdn.allanime.to/apivtwo/clock/hls/1080p/episode1.m3u8'
+        self.assertEqual(decode_url(xor_encode_url(plain)), plain)
+
+    def test_double_dash_prefix_triggers_decoding(self):
+        # Only strings starting with '--' are decoded
+        not_encoded = '-notencoded'
+        self.assertEqual(decode_url(not_encoded), not_encoded)
+
+    def test_empty_string_returned_unchanged(self):
+        self.assertEqual(decode_url(''), '')
+
+
+# ── Tests: AllAnime source processing ────────────────────────────────────────
+
+class TestAllAnimeSourceProcessing(unittest.TestCase):
+
+    def test_apivtwo_urls_filtered_out(self):
+        raw = [
+            {'sourceUrl': xor_encode_url('/apivtwo/clock?id=x'), 'sourceName': 'Internal', 'type': 'player', 'priority': 10},
+            {'sourceUrl': 'https://cdn.example.com/v.mp4',       'sourceName': 'Valid',    'type': 'player', 'priority': 5},
+        ]
+        result = process_allanime_sources(raw)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['name'], 'Valid')
+
+    def test_relative_url_without_protocol_filtered_out(self):
+        raw = [
+            {'sourceUrl': '/path/to/video.mp4',       'sourceName': 'Relative', 'type': 'player', 'priority': 5},
+            {'sourceUrl': 'https://ok.example.com/v', 'sourceName': 'Absolute', 'type': 'player', 'priority': 3},
+        ]
+        result = process_allanime_sources(raw)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['name'], 'Absolute')
+
+    def test_protocol_relative_url_kept(self):
+        raw = [{'sourceUrl': '//cdn.example.com/embed.html', 'sourceName': 'Embed', 'type': 'iframe', 'priority': 4}]
+        result = process_allanime_sources(raw)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['url'], '//cdn.example.com/embed.html')
+
+    def test_player_type_mapped_to_direct(self):
+        raw = [{'sourceUrl': 'https://cdn.example.com/v.mp4', 'sourceName': 'MP4', 'type': 'player', 'priority': 1}]
+        result = process_allanime_sources(raw)
+        self.assertEqual(result[0]['type'], 'direct')
+
+    def test_non_player_type_mapped_to_iframe(self):
+        raw = [
+            {'sourceUrl': 'https://embed1.com/', 'sourceName': 'IFrame', 'type': 'iframe',  'priority': 2},
+            {'sourceUrl': 'https://embed2.com/', 'sourceName': 'Embed',  'type': 'embed',   'priority': 1},
+            {'sourceUrl': 'https://embed3.com/', 'sourceName': 'Other',  'type': 'unknown', 'priority': 3},
+        ]
+        result = process_allanime_sources(raw)
+        self.assertTrue(all(s['type'] == 'iframe' for s in result))
+
+    def test_sources_sorted_by_priority_descending(self):
+        raw = [
+            {'sourceUrl': 'https://a.com/1', 'sourceName': 'Low',  'type': 'player', 'priority': 1},
+            {'sourceUrl': 'https://a.com/2', 'sourceName': 'High', 'type': 'player', 'priority': 9},
+            {'sourceUrl': 'https://a.com/3', 'sourceName': 'Mid',  'type': 'player', 'priority': 5},
+        ]
+        result = process_allanime_sources(raw)
+        priorities = [s['priority'] for s in result]
+        self.assertEqual(priorities, sorted(priorities, reverse=True))
+
+    def test_empty_source_list_returns_empty(self):
+        self.assertEqual(process_allanime_sources([]), [])
+
+    def test_encoded_url_decoded_before_filtering(self):
+        # An encoded URL that decodes to a valid https:// URL must survive filtering
+        plain = 'https://cdn.allanime.co/hls/episode1.m3u8'
+        raw = [{'sourceUrl': xor_encode_url(plain), 'sourceName': 'Encoded', 'type': 'player', 'priority': 8}]
+        result = process_allanime_sources(raw)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['url'], plain)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
