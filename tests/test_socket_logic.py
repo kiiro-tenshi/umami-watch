@@ -132,6 +132,71 @@ class TestResolveIsHost(unittest.TestCase):
     def test_missing_host_id_returns_false(self):
         self.assertFalse(resolve_is_host({}, 'uid-1'))
 
+    def test_none_host_id_returns_false(self):
+        self.assertFalse(resolve_is_host({'hostId': None}, 'uid-1'))
+
+
+# ── Additional edge-case tests ────────────────────────────────────────────────
+
+class TestGuardHostEdgeCases(unittest.TestCase):
+
+    def test_empty_string_room_id_treated_as_falsy(self):
+        # Empty string is falsy in JS, same as None
+        self.assertFalse(guard_host('', True))
+
+    def test_zero_string_room_id_is_truthy(self):
+        # '0' is a non-empty string — truthy in both JS and Python
+        self.assertTrue(guard_host('0', True))
+
+
+class TestCheckRoomAccessEdgeCases(unittest.TestCase):
+
+    def test_missing_members_key_denies_access(self):
+        # Room document with no 'members' field at all
+        self.assertFalse(check_room_access({}, 'uid-1'))
+
+    def test_none_uid_not_in_members(self):
+        room = {'members': ['uid-1', 'uid-2']}
+        self.assertFalse(check_room_access(room, None))
+
+
+class TestChatMessageEdgeCases(unittest.TestCase):
+
+    def test_exactly_499_chars_accepted(self):
+        self.assertTrue(validate_chat_message('x' * 499))
+
+    def test_single_character_accepted(self):
+        self.assertTrue(validate_chat_message('!'))
+
+    def test_unicode_message_accepted(self):
+        self.assertTrue(validate_chat_message('こんにちは世界'))
+
+    def test_newline_only_rejected(self):
+        self.assertFalse(validate_chat_message('\n'))
+
+    def test_message_with_embedded_newline_accepted(self):
+        self.assertTrue(validate_chat_message('Line one\nLine two'))
+
+
+class TestPlaybackSyncLogic(unittest.TestCase):
+    """
+    Port of the playback-event guard logic used in roomSocket.js:
+        socket.on('playback:seek', pos => { if (!guardHost()) return; ... })
+    """
+
+    def _would_seek_broadcast(self, room_id, is_host):
+        """Returns True if the seek event would be broadcast (guard passes)."""
+        return guard_host(room_id, is_host)
+
+    def test_host_in_room_seek_would_broadcast(self):
+        self.assertTrue(self._would_seek_broadcast('r1', True))
+
+    def test_viewer_seek_would_not_broadcast(self):
+        self.assertFalse(self._would_seek_broadcast('r1', False))
+
+    def test_host_outside_room_seek_would_not_broadcast(self):
+        self.assertFalse(self._would_seek_broadcast(None, True))
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
