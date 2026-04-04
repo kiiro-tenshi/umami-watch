@@ -197,4 +197,212 @@ describe('setupSockets', () => {
       expect(mockFsAdd).not.toHaveBeenCalled();
     });
   });
+
+  describe('chat:typing', () => {
+    beforeEach(() => {
+      socket.user = { uid: 'uid-1' };
+      socket.displayName = 'TypingUser';
+      connectionHandler(socket);
+    });
+
+    it('broadcasts typing indicator to room when socket is in a room', () => {
+      socket.roomId = 'room-typing';
+      socket._trigger('chat:typing');
+
+      expect(socket.to).toHaveBeenCalledWith('room-typing');
+      expect(socket._toEmit).toHaveBeenCalledWith('chat:typing', { displayName: 'TypingUser' });
+    });
+
+    it('does nothing when socket has no roomId', () => {
+      socket.roomId = null;
+      socket._trigger('chat:typing');
+
+      expect(socket._toEmit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('playback:seek', () => {
+    beforeEach(() => {
+      socket.user = { uid: 'uid-host' };
+      socket.roomId = 'r1';
+      socket.isHost = true;
+      connectionHandler(socket);
+    });
+
+    it('broadcasts seek position and updates Firestore position field only', async () => {
+      await socket._trigger('playback:seek', 123.4);
+
+      expect(socket.to).toHaveBeenCalledWith('r1');
+      expect(socket._toEmit).toHaveBeenCalledWith('playback:seek', 123.4);
+      expect(mockFsUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ 'playback.position': 123.4 })
+      );
+      // Must NOT overwrite the playing state
+      expect(mockFsUpdate).not.toHaveBeenCalledWith(
+        expect.objectContaining({ playback: expect.anything() })
+      );
+    });
+
+    it('ignores seek from non-host sockets', () => {
+      socket.isHost = false;
+      socket._trigger('playback:seek', 50);
+
+      expect(socket._toEmit).not.toHaveBeenCalled();
+      expect(mockFsUpdate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('leave-room', () => {
+    beforeEach(() => {
+      socket.user = { uid: 'uid-1' };
+      socket.roomId = 'room-leave';
+      socket.isHost = true;
+      socket.displayName = 'Leaver';
+      connectionHandler(socket);
+    });
+
+    it('broadcasts user-left, calls socket.leave, and clears roomId/isHost', () => {
+      socket._trigger('leave-room');
+
+      expect(socket.to).toHaveBeenCalledWith('room-leave');
+      expect(socket._toEmit).toHaveBeenCalledWith('user-left', { uid: 'uid-1', displayName: 'Leaver' });
+      expect(socket.leave).toHaveBeenCalledWith('room-leave');
+      expect(socket.roomId).toBeNull();
+      expect(socket.isHost).toBe(false);
+    });
+
+    it('does nothing when socket is not in a room', () => {
+      socket.roomId = null;
+      socket._trigger('leave-room');
+
+      expect(socket._toEmit).not.toHaveBeenCalled();
+      expect(socket.leave).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('disconnect', () => {
+    beforeEach(() => {
+      socket.user = { uid: 'uid-1' };
+      socket.displayName = 'Disconnecter';
+      connectionHandler(socket);
+    });
+
+    it('broadcasts user-left to room when socket had a roomId', () => {
+      socket.roomId = 'room-disc';
+      socket._trigger('disconnect');
+
+      expect(socket.to).toHaveBeenCalledWith('room-disc');
+      expect(socket._toEmit).toHaveBeenCalledWith('user-left', { uid: 'uid-1', displayName: 'Disconnecter' });
+    });
+
+    it('does nothing when socket was not in a room', () => {
+      socket.roomId = null;
+      socket._trigger('disconnect');
+
+      expect(socket._toEmit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('request-sync', () => {
+    it('finds the host socket in the room and emits viewer-needs-sync to it', async () => {
+      const hostSocket = makeSocket({ isHost: true, user: { uid: 'uid-host' } });
+      hostSocket.emit = vi.fn();
+
+      io.in = vi.fn(() => ({ fetchSockets: vi.fn().mockResolvedValue([hostSocket, socket]) }));
+
+      socket.user = { uid: 'uid-viewer' };
+      socket.roomId = 'r1';
+      socket.isHost = false;
+      socket.id = 'viewer-socket-id';
+      connectionHandler(socket);
+
+      await socket._trigger('request-sync');
+
+      expect(hostSocket.emit).toHaveBeenCalledWith('viewer-needs-sync', 'viewer-socket-id');
+    });
+
+    it('does nothing when socket is the host', async () => {
+      socket.user = { uid: 'uid-host' };
+      socket.roomId = 'r1';
+      socket.isHost = true;
+      connectionHandler(socket);
+
+      const fetchSockets = vi.fn();
+      io.in = vi.fn(() => ({ fetchSockets }));
+
+      await socket._trigger('request-sync');
+
+      expect(fetchSockets).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('sync-response', () => {
+    it('emits sync:state directly to the requesting viewer socket', () => {
+      socket.user = { uid: 'uid-host' };
+      socket.roomId = 'r1';
+      socket.isHost = true;
+      connectionHandler(socket);
+
+      socket._trigger('sync-response', { viewerSocketId: 'viewer-id-99', position: 42, playing: true });
+
+      expect(io.to).toHaveBeenCalledWith('viewer-id-99');
+      expect(io._toEmit).toHaveBeenCalledWith('sync:state', { position: 42, playing: true });
+    });
+
+    it('ignores sync-response from non-host sockets', () => {
+      socket.user = { uid: 'uid-viewer' };
+      socket.roomId = 'r1';
+      socket.isHost = false;
+      connectionHandler(socket);
+
+      socket._trigger('sync-response', { viewerSocketId: 'viewer-id-99', position: 0, playing: false });
+
+      expect(io._toEmit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('join-room — content-updated and host-offline warning', () => {
+    beforeEach(() => {
+      socket.user = { uid: 'uid-viewer' };
+      connectionHandler(socket);
+    });
+
+    it('emits room:content-updated when room already has a streamUrl', async () => {
+      const roomData = {
+        members: ['uid-viewer'],
+        hostId: 'uid-host',
+        playback: { playing: false, position: 0 },
+        streamUrl: 'https://cdn.example.com/video.mp4',
+        contentType: 'anime',
+        contentTitle: 'Frieren Ep 1',
+        tracks: [],
+      };
+      mockFsGet.mockResolvedValueOnce({ exists: true, data: () => roomData });
+      io.in = vi.fn(() => ({
+        fetchSockets: vi.fn().mockResolvedValue([
+          makeSocket({ user: { uid: 'uid-host' }, isHost: true }),
+        ]),
+      }));
+
+      await socket._trigger('join-room', { roomId: 'r1', displayName: 'Viewer', photoURL: null });
+
+      expect(socket.emit).toHaveBeenCalledWith(
+        'room:content-updated',
+        expect.objectContaining({ streamUrl: 'https://cdn.example.com/video.mp4', contentType: 'anime' })
+      );
+    });
+
+    it('emits warning when host is not connected', async () => {
+      mockFsGet.mockResolvedValueOnce({
+        exists: true,
+        data: () => ({ members: ['uid-viewer'], hostId: 'uid-host', playback: {} }),
+      });
+      // No host socket in the room
+      io.in = vi.fn(() => ({ fetchSockets: vi.fn().mockResolvedValue([socket]) }));
+
+      await socket._trigger('join-room', { roomId: 'r1', displayName: 'Viewer', photoURL: null });
+
+      expect(socket.emit).toHaveBeenCalledWith('warning', expect.stringContaining('Host is not connected'));
+    });
+  });
 });

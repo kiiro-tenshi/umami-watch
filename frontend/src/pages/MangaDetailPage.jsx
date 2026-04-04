@@ -4,6 +4,8 @@ import { getMangaById, getMangaChapters, coverUrl, getCoverFilename, getTitle, g
 import { searchComick, getComickChapters } from '../api/comick';
 import { useAuth } from '../hooks/useAuth';
 import { useWatchlist } from '../hooks/useWatchlist';
+import { db } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 const PAGE_SIZE = 100;
@@ -41,6 +43,7 @@ export default function MangaDetailPage() {
   const [hasMore, setHasMore] = useState(false);
   const [offset, setOffset] = useState(0);
   const [chaptersSource, setChaptersSource] = useState('mangadex');
+  const [mangaProgress, setMangaProgress] = useState(null); // { chapterId, chapterNum, pageNum }
 
   // Load manga + initial chapters (with ComicK fallback) when mangaId changes
   useEffect(() => {
@@ -119,6 +122,14 @@ export default function MangaDetailPage() {
     return () => { dead = true; };
   }, [offset, mangaId, chaptersSource]);
 
+  // Load manga reading progress
+  useEffect(() => {
+    if (!user) return;
+    getDoc(doc(db, 'users', user.uid, 'history', `manga_${mangaId}`))
+      .then(snap => { if (snap.exists()) setMangaProgress(snap.data()); })
+      .catch(() => {});
+  }, [mangaId, user]);
+
   if (loading) return <LoadingSpinner fullScreen />;
   if (!manga) return <div className="p-8 text-center text-red-500 font-bold">Failed to load manga.</div>;
 
@@ -174,17 +185,29 @@ export default function MangaDetailPage() {
               <p className="text-secondary leading-relaxed mb-6 max-w-3xl font-medium line-clamp-4">{description}</p>
             )}
 
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
               {chapters.length > 0 && (
-                <Link
-                  to={`/manga/${mangaId}/chapter/${chapters[0].id}`}
-                  className="bg-accent-purple hover:opacity-90 text-white font-bold py-2.5 px-6 rounded-lg shadow-md flex items-center gap-2 transition-transform hover:scale-105"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                  </svg>
-                  Start Reading
-                </Link>
+                mangaProgress?.chapterId ? (
+                  <Link
+                    to={`/manga/${mangaId}/chapter/${mangaProgress.chapterId}`}
+                    className="bg-accent-purple hover:opacity-90 text-white font-bold py-2.5 px-6 rounded-lg shadow-md flex items-center gap-2 transition-transform hover:scale-105"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                    Continue Ch. {mangaProgress.chapterNum}
+                  </Link>
+                ) : (
+                  <Link
+                    to={`/manga/${mangaId}/chapter/${chapters[0].id}`}
+                    className="bg-accent-purple hover:opacity-90 text-white font-bold py-2.5 px-6 rounded-lg shadow-md flex items-center gap-2 transition-transform hover:scale-105"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                    Start Reading
+                  </Link>
+                )
               )}
               <button
                 onClick={() => toggleWatchlist({ contentId: mangaId, contentType: 'manga', title, posterUrl: poster })}
@@ -211,30 +234,43 @@ export default function MangaDetailPage() {
                 {chapters.length === 0 && !chaptersLoading && (
                   <p className="text-center text-muted p-8 font-medium">No English chapters available.</p>
                 )}
-                {chapters.map(ch => {
-                  const num = ch.attributes?.chapter;
-                  const chTitle = ch.attributes?.title;
-                  const group = ch.relationships?.find(r => r.type === 'scanlation_group');
-                  const groupName = group?.attributes?.name;
-                  const isExternal = (ch.attributes?.pages ?? 1) === 0;
-                  const extUrl = ch.attributes?.externalUrl;
-                  const rowClass = "flex items-center justify-between px-6 py-3 hover:bg-surface-raised transition-colors";
-                  const inner = (
-                    <>
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="font-semibold text-primary text-sm shrink-0">Chapter {num || '?'}</span>
-                        {chTitle && <span className="text-muted text-sm truncate">— {chTitle}</span>}
-                        {isExternal && <span className="text-xs bg-orange-100 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded shrink-0">Ext</span>}
-                      </div>
-                      {groupName && <span className="text-xs text-muted hidden sm:block shrink-0 ml-4">{groupName}</span>}
-                    </>
-                  );
-                  return isExternal && extUrl ? (
-                    <a key={ch.id} href={extUrl} target="_blank" rel="noopener noreferrer" className={rowClass}>{inner}</a>
-                  ) : (
-                    <Link key={ch.id} to={`/manga/${mangaId}/chapter/${ch.id}`} className={rowClass}>{inner}</Link>
-                  );
-                })}
+                {(() => {
+                  const lastReadNum = mangaProgress?.chapterNum ? parseFloat(mangaProgress.chapterNum) : null;
+                  const currentChId = mangaProgress?.chapterId;
+                  return chapters.map(ch => {
+                    const num = ch.attributes?.chapter;
+                    const chNum = num ? parseFloat(num) : null;
+                    const isRead = lastReadNum != null && chNum != null && chNum < lastReadNum;
+                    const isCurrent = ch.id === currentChId;
+                    const chTitle = ch.attributes?.title;
+                    const group = ch.relationships?.find(r => r.type === 'scanlation_group');
+                    const groupName = group?.attributes?.name;
+                    const isExternal = (ch.attributes?.pages ?? 1) === 0;
+                    const extUrl = ch.attributes?.externalUrl;
+                    const rowClass = `flex items-center justify-between px-6 py-3 hover:bg-surface-raised transition-colors ${isCurrent ? 'bg-accent-purple/10 border-l-4 border-l-accent-purple' : isRead ? 'opacity-50' : ''}`;
+                    const inner = (
+                      <>
+                        <div className="flex items-center gap-2 min-w-0">
+                          {isRead && (
+                            <svg className="w-3.5 h-3.5 text-accent-purple shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                          <span className={`font-semibold text-sm shrink-0 ${isCurrent ? 'text-accent-purple' : 'text-primary'}`}>Chapter {num || '?'}</span>
+                          {isCurrent && <span className="text-xs bg-accent-purple text-white px-1.5 py-0.5 rounded shrink-0">Reading</span>}
+                          {chTitle && <span className="text-muted text-sm truncate">— {chTitle}</span>}
+                          {isExternal && <span className="text-xs bg-orange-100 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded shrink-0">Ext</span>}
+                        </div>
+                        {groupName && <span className="text-xs text-muted hidden sm:block shrink-0 ml-4">{groupName}</span>}
+                      </>
+                    );
+                    return isExternal && extUrl ? (
+                      <a key={ch.id} href={extUrl} target="_blank" rel="noopener noreferrer" className={rowClass}>{inner}</a>
+                    ) : (
+                      <Link key={ch.id} to={`/manga/${mangaId}/chapter/${ch.id}`} className={rowClass}>{inner}</Link>
+                    );
+                  });
+                })()}
               </div>
 
               {hasMore && (

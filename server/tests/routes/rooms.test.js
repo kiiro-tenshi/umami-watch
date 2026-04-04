@@ -298,6 +298,52 @@ describe('GET /api/rooms/:roomId/messages', () => {
     expect(res.body[0].text).toBe('World');
     expect(res.body[1].text).toBe('Hello');
   });
+
+  it('returns 403 when user is not a room member', async () => {
+    mockFsGet.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ members: ['someone-else'] }),
+    });
+
+    const res = await request(app).get('/room-123/messages').set(AUTH);
+
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('PATCH /api/rooms/:roomId — edge cases', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockVerifyIdToken.mockResolvedValue({ uid: USER_ID });
+  });
+
+  it('returns 404 when room does not exist', async () => {
+    mockFsGet.mockResolvedValueOnce({ exists: false });
+
+    const res = await request(app)
+      .patch('/nonexistent-room')
+      .set(AUTH)
+      .send({ streamUrl: 'https://example.com' });
+
+    expect(res.status).toBe(404);
+    expect(mockFsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('strips unknown fields from the update', async () => {
+    mockFsGet.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({ ownerId: USER_ID }),
+    });
+
+    await request(app)
+      .patch('/room-123')
+      .set(AUTH)
+      .send({ streamUrl: 'https://example.com', dangerousField: 'ignored' });
+
+    expect(mockFsUpdate).toHaveBeenCalledWith(
+      expect.not.objectContaining({ dangerousField: 'ignored' })
+    );
+  });
 });
 
 describe('DELETE /api/rooms/:roomId', () => {
@@ -330,6 +376,15 @@ describe('DELETE /api/rooms/:roomId', () => {
     const res = await request(app).delete('/room-123').set(AUTH);
 
     expect(res.status).toBe(403);
+    expect(mockFsDelete).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when room does not exist', async () => {
+    mockFsGet.mockResolvedValueOnce({ exists: false });
+
+    const res = await request(app).delete('/nonexistent').set(AUTH);
+
+    expect(res.status).toBe(404);
     expect(mockFsDelete).not.toHaveBeenCalled();
   });
 });

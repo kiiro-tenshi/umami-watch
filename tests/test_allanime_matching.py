@@ -83,6 +83,58 @@ class TestPickBestShow(unittest.TestCase):
         result = pick_best_show(shows, 'Sousou no Frieren')
         self.assertEqual(result['_id'], 'jp_only')
 
+    def test_missing_english_name_key_falls_back_to_name(self):
+        # Shows where 'englishName' key is absent entirely (not just None)
+        shows = [
+            {'_id': 'no_key',  'name': 'Sousou no Frieren'},
+            {'_id': 'has_key', 'name': 'Other', 'englishName': 'Other'},
+        ]
+        result = pick_best_show(shows, 'Sousou no Frieren')
+        self.assertEqual(result['_id'], 'no_key')
+
+    def test_partial_word_match_scores_lower_than_full_match(self):
+        shows = [
+            {'_id': 'full',    'name': 'Naruto Shippuden',   'englishName': 'Naruto Shippuden'},
+            {'_id': 'partial', 'name': 'Naruto',             'englishName': 'Naruto'},
+        ]
+        # Searching for full title should prefer the full match
+        result = pick_best_show(shows, 'Naruto Shippuden')
+        self.assertEqual(result['_id'], 'full')
+
+    def test_extra_word_penalty_discourages_verbose_titles(self):
+        shows = [
+            {'_id': 'short',   'name': 'One Piece',                             'englishName': 'One Piece'},
+            {'_id': 'verbose', 'name': 'One Piece: The Movie Extra Special Cut', 'englishName': 'One Piece: The Movie Extra Special Cut'},
+        ]
+        # Short title should win when searching plain "One Piece"
+        result = pick_best_show(shows, 'One Piece')
+        self.assertEqual(result['_id'], 'short')
+
+    def test_whitespace_normalization_in_show_name(self):
+        shows = [
+            {'_id': 'spaces', 'name': 'Dragon  Ball   Z', 'englishName': None},
+        ]
+        # Multiple internal spaces collapsed — should still match
+        result = pick_best_show(shows, 'Dragon Ball Z')
+        self.assertIsNotNone(result)
+        self.assertEqual(result['_id'], 'spaces')
+
+    def test_score_tie_returns_first_show_in_list(self):
+        # Both shows have identical normalised names → equal scores → first wins
+        shows = [
+            {'_id': 'first',  'name': 'Test Show', 'englishName': 'Test Show'},
+            {'_id': 'second', 'name': 'Test Show', 'englishName': 'Test Show'},
+        ]
+        result = pick_best_show(shows, 'Test Show')
+        self.assertEqual(result['_id'], 'first')
+
+    def test_case_insensitive_matching(self):
+        shows = [
+            {'_id': 'upper', 'name': 'BLEACH', 'englishName': 'BLEACH'},
+        ]
+        result = pick_best_show(shows, 'bleach')
+        self.assertEqual(result['_id'], 'upper')
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -1,15 +1,21 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import logoImg from '../../logo.webp';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+    setDropdownOpen(false);
+  }, [location.pathname]);
 
   if (!user) return null;
 
@@ -52,9 +58,12 @@ export default function Navbar() {
           <button onClick={() => setDropdownOpen(!dropdownOpen)} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <img src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName}`} alt="Avatar" className="w-8 h-8 rounded-full border border-border" />
           </button>
-          
+
           {dropdownOpen && (
-            <div className="absolute right-0 mt-2 w-48 bg-surface rounded-xl shadow-lg border border-border-subtle py-2 overflow-hidden">
+            <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
+          )}
+          {dropdownOpen && (
+            <div className="absolute right-0 mt-2 w-48 bg-surface rounded-xl shadow-lg border border-border-subtle py-2 overflow-hidden z-50">
               <div className="px-4 py-2 border-b border-border-subtle text-sm">
                 <p className="font-bold text-primary">{user.displayName}</p>
                 <p className="text-xs text-muted truncate">{user.email}</p>
@@ -67,8 +76,9 @@ export default function Navbar() {
       </div>
 
       {/* Mobile Drawer */}
+      {menuOpen && <div className="md:hidden fixed inset-0 z-30 bg-black/20" onClick={() => setMenuOpen(false)} />}
       {menuOpen && (
-        <div className="md:hidden absolute top-14 left-0 w-full bg-surface border-b border-border shadow-lg flex flex-col p-4 gap-4 font-semibold text-secondary text-lg">
+        <div className="md:hidden absolute top-14 left-0 w-full bg-surface border-b border-border shadow-lg flex flex-col p-4 gap-4 font-semibold text-secondary text-lg z-40">
           <Link to="/home" onClick={() => setMenuOpen(false)}>Home</Link>
           <Link to="/anime" onClick={() => setMenuOpen(false)}>Anime</Link>
           <Link to="/movies" onClick={() => setMenuOpen(false)}>Movies</Link>
