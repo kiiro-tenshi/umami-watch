@@ -322,9 +322,11 @@ export default function WatchPage() {
       if (!p || !isHost) return;
       socket.emit('sync-response', { viewerSocketId, position: p.currentTime, playing: !p.paused });
     };
-    // Non-host: receive real-time content updates when host patches the room
+    // Receive real-time content updates when host patches the room
     const onRoomContentUpdated = (data) => {
-      if (isHost) return;
+      // Always update room metadata (title, contentType, etc.) so "Now Watching" stays current for everyone
+      setRoomData(prev => prev ? { ...prev, ...data } : prev);
+      if (isHost) return; // host already has the new stream; skip player/source updates
       // Clear stale player ref so sync events during VideoPlayer remount buffer
       // in pendingSyncRef rather than being lost on the destroyed (zombie) Plyr.
       playerRef.current = null;
@@ -339,7 +341,6 @@ export default function WatchPage() {
           setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
         }
       }
-      setRoomData(prev => prev ? { ...prev, ...data } : prev);
     };
 
     // Room deleted by host — redirect everyone out
