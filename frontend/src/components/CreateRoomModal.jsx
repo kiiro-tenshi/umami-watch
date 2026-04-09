@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { auth } from '../firebase';
-import { searchAniList } from '../api/anilist';
+import { searchAnimeKitsu } from '../api/kitsu';
 import { searchContent, tmdbImage } from '../api/tmdb';
 
 export default function CreateRoomModal({ onClose, defaultContent = null }) {
@@ -25,13 +25,13 @@ export default function CreateRoomModal({ onClose, defaultContent = null }) {
       setIsSearching(true);
       try {
         const [anime, movies, tv] = await Promise.all([
-          searchAniList(query, 1, 3).catch(() => []),
+          searchAnimeKitsu(query).catch(() => []),
           searchContent(query, 'movie').catch(() => ({ results: [] })),
           searchContent(query, 'tv').catch(() => ({ results: [] }))
         ]);
-        
+
         const combined = [
-          ...anime.map(a => ({ contentId: String(a.id), contentType: 'anime', contentTitle: a.title.english || a.title.romaji, posterUrl: a.coverImage?.large })),
+          ...anime.slice(0, 3).map(a => ({ contentId: String(a.id), contentType: 'anime', contentTitle: a.title.english || a.title.romaji, posterUrl: a.coverImage?.large })),
           ...(movies.results || []).slice(0, 3).map(m => ({ contentId: String(m.id), contentType: 'movie', contentTitle: m.title, posterUrl: tmdbImage(m.poster_path, 'w92') })),
           ...(tv.results || []).slice(0, 3).map(t => ({ contentId: String(t.id), contentType: 'tv', contentTitle: t.name, posterUrl: tmdbImage(t.poster_path, 'w92') }))
         ];
