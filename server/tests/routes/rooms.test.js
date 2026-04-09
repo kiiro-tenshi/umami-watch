@@ -51,14 +51,18 @@ vi.mock('firebase-admin', () => ({
           serverTimestamp: () => '__TS__',
           arrayUnion: (...args) => args[0],
         },
+        Timestamp: {
+          now: vi.fn(() => ({ toMillis: () => Date.now() })),
+          fromDate: vi.fn(d => ({ toMillis: () => d.getTime() })),
+        },
       }
     ),
   },
 }));
 
 vi.mock('crypto', () => ({
-  default: { randomBytes: (n) => ({ toString: () => 'ABC123' }) },
-  randomBytes: (n) => ({ toString: () => 'ABC123' }),
+  default: { randomBytes: () => ({ toString: () => 'ABC123' }) },
+  randomBytes: () => ({ toString: () => 'ABC123' }),
 }));
 
 // ── App setup ──────────────────────────────────────────────────────────────
@@ -75,7 +79,7 @@ const USER_ID = 'user-owner-1';
 // ── Tests ──────────────────────────────────────────────────────────────────
 describe('GET /api/rooms', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockVerifyIdToken.mockResolvedValue({ uid: USER_ID });
   });
 
@@ -107,7 +111,7 @@ describe('GET /api/rooms', () => {
 
 describe('POST /api/rooms', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockVerifyIdToken.mockResolvedValue({ uid: USER_ID });
   });
 
@@ -132,7 +136,7 @@ describe('POST /api/rooms', () => {
 
 describe('POST /api/rooms/join', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockVerifyIdToken.mockResolvedValue({ uid: USER_ID });
   });
 
@@ -173,7 +177,7 @@ describe('POST /api/rooms/join', () => {
 
 describe('GET /api/rooms/:roomId', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockVerifyIdToken.mockResolvedValue({ uid: USER_ID });
   });
 
@@ -213,7 +217,7 @@ describe('GET /api/rooms/:roomId', () => {
 
 describe('PATCH /api/rooms/:roomId', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockVerifyIdToken.mockResolvedValue({ uid: USER_ID });
   });
 
@@ -272,7 +276,7 @@ describe('PATCH /api/rooms/:roomId', () => {
 
 describe('GET /api/rooms/:roomId/messages', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockVerifyIdToken.mockResolvedValue({ uid: USER_ID });
   });
 
@@ -313,7 +317,7 @@ describe('GET /api/rooms/:roomId/messages', () => {
 
 describe('PATCH /api/rooms/:roomId — edge cases', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockVerifyIdToken.mockResolvedValue({ uid: USER_ID });
   });
 
@@ -348,7 +352,7 @@ describe('PATCH /api/rooms/:roomId — edge cases', () => {
 
 describe('DELETE /api/rooms/:roomId', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockVerifyIdToken.mockResolvedValue({ uid: USER_ID });
   });
 
