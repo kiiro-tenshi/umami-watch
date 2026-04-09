@@ -24,6 +24,11 @@ export default function AnimeDetailPage() {
   const [staleLink, setStaleLink] = useState(false);
   const [showCreateRoom, setShowCreateRoom] = useState(false);
 
+  // Close the modal once the room is created and roomId appears in the URL
+  useEffect(() => {
+    if (roomId) setShowCreateRoom(false);
+  }, [roomId]);
+
   useEffect(() => {
     const fetchAll = async () => {
       setLoading(true);
