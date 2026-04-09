@@ -3,14 +3,36 @@ import requireAuth from '../middleware/requireAuth.js';
 import admin from 'firebase-admin';
 import crypto from 'crypto';
 
+const ROOM_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+async function deleteExpiredRooms(io) {
+  const now = admin.firestore.Timestamp.now();
+  const sn = await admin.firestore().collection('rooms')
+    .where('expiresAt', '<=', now).get();
+  if (sn.empty) return;
+  const batch = admin.firestore().batch();
+  sn.docs.forEach(doc => {
+    io.to(doc.id).emit('room:deleted');
+    batch.delete(doc.ref);
+  });
+  await batch.commit();
+}
+
 export default function createRoomRouter(io) {
 const router = express.Router();
 router.use(requireAuth);
 
+// Run cleanup every 10 minutes
+const cleanupInterval = setInterval(() => deleteExpiredRooms(io).catch(console.error), 10 * 60 * 1000);
+cleanupInterval.unref(); // don't keep process alive
+
 router.get('/', async (req, res) => {
   try {
+    const now = admin.firestore.Timestamp.now();
     const sn = await admin.firestore().collection('rooms').where('members', 'array-contains', req.user.uid).get();
-    const rooms = sn.docs.map(d => ({ id: d.id, ...d.data() }));
+    const rooms = sn.docs
+      .filter(d => !d.data().expiresAt || d.data().expiresAt.toMillis() > now.toMillis())
+      .map(d => ({ id: d.id, ...d.data() }));
     res.json(rooms);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -34,7 +56,8 @@ router.post('/', async (req, res) => {
       contentTitle: contentTitle || null,
       streamUrl: streamUrl || null,
       playback: { playing: false, position: 0, updatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedBy: req.user.uid },
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + ROOM_TTL_MS)),
     };
     await roomRef.set(roomData);
     res.json({ id: roomRef.id, ...roomData });
@@ -68,8 +91,14 @@ router.get('/:roomId', async (req, res) => {
   try {
     const doc = await admin.firestore().collection('rooms').doc(req.params.roomId).get();
     if (!doc.exists) return res.status(404).json({ error: 'Not found' });
-    if (!doc.data().members.includes(req.user.uid)) return res.status(403).json({ error: 'Forbidden' });
-    res.json({ id: doc.id, ...doc.data() });
+    const data = doc.data();
+    if (data.expiresAt && data.expiresAt.toMillis() < Date.now()) {
+      await doc.ref.delete();
+      io.to(req.params.roomId).emit('room:deleted');
+      return res.status(404).json({ error: 'Room has expired' });
+    }
+    if (!data.members.includes(req.user.uid)) return res.status(403).json({ error: 'Forbidden' });
+    res.json({ id: doc.id, ...data });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
