@@ -5,6 +5,16 @@ import { auth } from '../firebase';
 import LoadingSpinner from '../components/LoadingSpinner';
 import CreateRoomModal from '../components/CreateRoomModal';
 
+function formatExpiry(expiresAt) {
+  if (!expiresAt) return null;
+  const ms = (expiresAt._seconds ?? expiresAt.seconds ?? 0) * 1000;
+  const diff = ms - Date.now();
+  if (diff <= 0) return 'Expired';
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  return h > 0 ? `${h}h ${m}m left` : `${m}m left`;
+}
+
 export default function RoomsPage({ autoJoin }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -164,6 +174,9 @@ export default function RoomsPage({ autoJoin }) {
                     </div>
                     <span className="text-sm font-bold text-accent-blue bg-red-50 px-3 py-1 rounded-lg border border-red-100 group-hover:bg-accent-blue group-hover:text-white transition-colors">Enter Room →</span>
                  </div>
+                 {room.expiresAt && (
+                   <p className="text-xs text-muted mt-2 text-right">{formatExpiry(room.expiresAt)}</p>
+                 )}
               </div>
             ))}
           </div>

@@ -6,6 +6,7 @@ import { useWatchlist } from '../hooks/useWatchlist';
 import { auth } from '../firebase';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EpisodeList from '../components/EpisodeList';
+import CreateRoomModal from '../components/CreateRoomModal';
 
 export default function AnimeDetailPage() {
   const { kitsuId } = useParams();
@@ -21,6 +22,7 @@ export default function AnimeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [staleLink, setStaleLink] = useState(false);
+  const [showCreateRoom, setShowCreateRoom] = useState(false);
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -148,17 +150,29 @@ export default function AnimeDetailPage() {
             <p className="text-secondary leading-relaxed mb-6 max-w-3xl font-medium text-sm sm:text-base line-clamp-4 sm:line-clamp-none"
               dangerouslySetInnerHTML={{ __html: anime.description }} />
 
-            <button
-              onClick={() => toggleWatchlist({
-                contentId: kitsuId, contentType: 'anime',
-                title: anime.title.english || anime.title.romaji,
-                posterUrl: anime.coverImage?.large
-              })}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold shadow-md transition-transform hover:scale-105 border ${inWatchlist ? 'bg-surface border-border text-red-600' : 'bg-surface-raised border-border text-primary'}`}
-            >
-              <span className="text-xl">{inWatchlist ? '♥️' : '♡'}</span>
-              {inWatchlist ? 'In Watchlist' : 'Add to Watchlist'}
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => toggleWatchlist({
+                  contentId: kitsuId, contentType: 'anime',
+                  title: anime.title.english || anime.title.romaji,
+                  posterUrl: anime.coverImage?.large
+                })}
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold shadow-md transition-transform hover:scale-105 border ${inWatchlist ? 'bg-surface border-border text-red-600' : 'bg-surface-raised border-border text-primary'}`}
+              >
+                <span className="text-xl">{inWatchlist ? '♥️' : '♡'}</span>
+                {inWatchlist ? 'In Watchlist' : 'Add to Watchlist'}
+              </button>
+
+              {!roomId && (
+                <button
+                  onClick={() => setShowCreateRoom(true)}
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold shadow-md transition-transform hover:scale-105 border bg-accent-teal text-white border-accent-teal hover:opacity-90"
+                >
+                  <span className="text-xl">🎬</span>
+                  Start Watch Party
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -204,6 +218,18 @@ export default function AnimeDetailPage() {
           </div>
         </div>
       </div>
+
+      {showCreateRoom && (
+        <CreateRoomModal
+          onClose={() => setShowCreateRoom(false)}
+          defaultContent={{
+            contentId: kitsuId,
+            contentType: 'anime',
+            contentTitle: anime.title.english || anime.title.romaji,
+            posterUrl: anime.coverImage?.large,
+          }}
+        />
+      )}
     </div>
   );
 }
