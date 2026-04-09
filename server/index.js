@@ -353,26 +353,6 @@ app.get('/api/proxy/mangadex/*', async (req, res) => {
   }
 });
 
-// ─── Aniwatch Proxy (forwards to self-hosted aniwatch-api) ─────────────────
-app.get('/api/proxy/aniwatch/*', requireAuth, async (req, res) => {
-  // Fallback to ShonenX public Vercel proxy (targets hianime.in) when no self-hosted instance is set
-  const base = process.env.ANIWATCH_API_URL || 'https://shonenx-aniwatch-instance.vercel.app';
-  const path = req.params[0];
-  try {
-    const targetUrl = new URL(`/api/v2/hianime/${path}`, base);
-    Object.entries(req.query).forEach(([k, v]) => targetUrl.searchParams.set(k, v));
-    const response = await fetch(targetUrl.toString(), {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-    if (!response.ok) {
-      return res.status(response.status).json({ error: 'Aniwatch API error', status: response.status });
-    }
-    res.json(await response.json());
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ─── Socket.IO ─────────────────────────────────────────────────────────────
 setupSockets(io);
 
