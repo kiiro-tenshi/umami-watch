@@ -106,6 +106,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       settings: isViewer ? [] : ['quality', 'speed', 'loop'],
       clickToPlay: !isViewer,
       keyboard: { focused: false, global: false },
+      blankVideo: '',
     };
 
     // After Plyr is created: store container + insert CC mount point in controls bar
