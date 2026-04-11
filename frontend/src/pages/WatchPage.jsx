@@ -58,6 +58,7 @@ export default function WatchPage() {
   const hasJoinedRoomRef = useRef(false);
   const episodeListRef = useRef(null);
   const pendingSyncRef = useRef(null); // buffers sync:state that arrives before player is ready
+  const isBufferingRef = useRef(false); // true while viewer's video element is waiting for data
 
   const { socketRef, connected, reconnecting } = useSocket(import.meta.env.VITE_API_BASE_URL, token);
   const isHost = roomData?.hostId === user?.uid;
@@ -293,7 +294,10 @@ export default function WatchPage() {
         pendingSyncRef.current = { position, playing };
         return;
       }
-      if (typeof position === 'number' && Math.abs(p.currentTime - position) > 3) {
+      // Skip seek if viewer is actively buffering — let it catch up naturally.
+      // Seeking mid-buffer discards the in-progress download and restarts it,
+      // creating a seek→buffer→drift→seek cycle.
+      if (!isBufferingRef.current && typeof position === 'number' && Math.abs(p.currentTime - position) > 6) {
         p.currentTime = position;
       }
       if (playing && p.paused) p.play().catch(() => {});
@@ -302,13 +306,14 @@ export default function WatchPage() {
     const onPlay = (pos) => {
       const p = playerRef.current;
       if (!p || isHost) return;
-      if (Math.abs(p.currentTime - pos) > 3) p.currentTime = pos;
+      if (Math.abs(p.currentTime - pos) > 6) p.currentTime = pos;
       p.play().catch(() => {});
     };
     const onPause = (pos) => {
       const p = playerRef.current;
       if (!p || isHost) return;
-      p.currentTime = pos;
+      // Only re-seek if significantly out of sync; minor drift doesn't need a seek on pause
+      if (Math.abs(p.currentTime - pos) > 5) p.currentTime = pos;
       p.pause();
     };
     const onSeek = (pos) => {
@@ -428,6 +433,15 @@ export default function WatchPage() {
 
   const handlePlayerReady = (player) => {
     playerRef.current = player;
+    // Track buffering state so sync handlers can avoid seeking mid-buffer
+    if (roomId && !isHost && player.media) {
+      const media = player.media;
+      const onWaiting = () => { isBufferingRef.current = true; };
+      const onResume  = () => { isBufferingRef.current = false; };
+      media.addEventListener('waiting', onWaiting);
+      media.addEventListener('playing', onResume);
+      media.addEventListener('canplay', onResume);
+    }
     if (!roomId && user && type === 'anime' && kitsuId) {
       const histKey = `anime_kitsu${kitsuId}_ep${epNum}`;
       getDoc(doc(db, 'users', user.uid, 'history', histKey)).then(snap => {
