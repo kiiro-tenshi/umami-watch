@@ -19,6 +19,7 @@ steps:
           --build-arg VITE_TMDB_API_KEY=$$VITE_TMDB_API_KEY \
           --build-arg VITE_TURNSTILE_SITE_KEY=$$VITE_TURNSTILE_SITE_KEY \
           --build-arg VITE_HLS_PROXY_URL=$_VITE_HLS_PROXY_URL \
+          --build-arg VITE_GIPHY_API_KEY=$$VITE_GIPHY_API_KEY \
           .
     secretEnv:
       - VITE_FIREBASE_API_KEY
@@ -27,6 +28,7 @@ steps:
       - VITE_TMDB_API_KEY
       - VITE_API_BASE_URL
       - VITE_TURNSTILE_SITE_KEY
+      - VITE_GIPHY_API_KEY
 
   # ── Step 2: Push both tags ────────────────────────────────────────────────────
   - name: 'gcr.io/cloud-builders/docker'
@@ -68,6 +70,8 @@ availableSecrets:
       env: VITE_API_BASE_URL
     - versionName: projects/$PROJECT_ID/secrets/VITE_TURNSTILE_SITE_KEY/versions/latest
       env: VITE_TURNSTILE_SITE_KEY
+    - versionName: projects/$PROJECT_ID/secrets/VITE_GIPHY_API_KEY/versions/latest
+      env: VITE_GIPHY_API_KEY
 
 images:
   - 'gcr.io/$PROJECT_ID/umami-watch:$TAG_NAME'
