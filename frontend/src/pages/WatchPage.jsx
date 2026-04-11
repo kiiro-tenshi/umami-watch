@@ -99,9 +99,8 @@ export default function WatchPage() {
         if (data.streamUrl && data.hostId !== user?.uid) {
           setStreamUrl(data.streamUrl);
           if (data.contentType === 'anime') {
-            // AllAnime sources: direct MP4 (proxy) or iframe
-            const isProxy = data.streamUrl.includes('/api/proxy/');
-            setSources([{ type: isProxy ? 'direct' : 'iframe', url: data.streamUrl, label: 'Stream' }]);
+            const srcType = data.streamType || (data.streamUrl.includes('.m3u8') ? 'hls' : 'direct');
+            setSources([{ type: srcType, url: data.streamUrl, label: 'Stream' }]);
             setActiveTracks(data.tracks || []);
           } else if (data.contentType) {
             setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
@@ -140,6 +139,7 @@ export default function WatchPage() {
         let poster = '';
         let url = null;
         let subtitleTracks = [];
+        let streamType = 'iframe';
 
         if (type === 'anime') {
           if (!kitsuId) {
@@ -195,6 +195,7 @@ export default function WatchPage() {
             setActiveTracks([]);
           }
           url = animeSourceList[0]?.url;
+          streamType = animeSourceList[0]?.type || 'direct';
 
         } else if (type === 'movie') {
           const data = await getMovieDetail(tmdbId);
@@ -235,6 +236,7 @@ export default function WatchPage() {
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
               body: JSON.stringify({
                 streamUrl: url,
+                streamType,
                 contentId: type === 'anime' ? kitsuId : tmdbId,
                 contentType: type,
                 contentTitle: title,
@@ -332,8 +334,8 @@ export default function WatchPage() {
       if (data.streamUrl) {
         setStreamUrl(data.streamUrl);
         if (data.contentType === 'anime') {
-          const isProxy = data.streamUrl.includes('/api/proxy/');
-          setSources([{ type: isProxy ? 'direct' : 'iframe', url: data.streamUrl, label: 'Stream' }]);
+          const srcType = data.streamType || (data.streamUrl.includes('.m3u8') ? 'hls' : 'direct');
+          setSources([{ type: srcType, url: data.streamUrl, label: 'Stream' }]);
           setActiveTracks(data.tracks || []);
         } else {
           setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);

@@ -136,17 +136,22 @@ export default function setupSockets(io) {
       socket.to(socket.roomId).emit('chat:typing', { displayName: socket.displayName });
     });
 
-    // Chat
-    socket.on('chat:message', async (text) => {
+    // Chat — accepts { type: 'text', text } or { type: 'gif', gifUrl }
+    socket.on('chat:message', async (payload) => {
       if (!socket.roomId) return;
-      if (typeof text !== 'string' || !text.trim() || text.length > 500) return;
-      const msg = {
-        uid,
-        displayName: socket.displayName,
-        photoURL: socket.photoURL || null,
-        text,
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
-      };
+
+      let msg;
+      if (payload?.type === 'gif') {
+        // Only allow Giphy CDN URLs (media0.giphy.com, media1.giphy.com, etc.)
+        if (typeof payload.gifUrl !== 'string' || !/^https:\/\/media\d*\.giphy\.com\//.test(payload.gifUrl)) return;
+        msg = { uid, displayName: socket.displayName, photoURL: socket.photoURL || null, type: 'gif', gifUrl: payload.gifUrl, createdAt: admin.firestore.FieldValue.serverTimestamp() };
+      } else {
+        // text (or legacy plain string)
+        const text = typeof payload === 'string' ? payload : payload?.text;
+        if (typeof text !== 'string' || !text.trim() || text.length > 500) return;
+        msg = { uid, displayName: socket.displayName, photoURL: socket.photoURL || null, type: 'text', text: text.trim(), createdAt: admin.firestore.FieldValue.serverTimestamp() };
+      }
+
       const docRef = await admin.firestore().collection('rooms').doc(socket.roomId).collection('messages').add(msg);
       io.to(socket.roomId).emit('chat:message', { id: docRef.id, ...msg, createdAt: Date.now() });
     });
