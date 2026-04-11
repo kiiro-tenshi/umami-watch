@@ -108,3 +108,22 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
 }
+
+/* Themed scrollbar — matches app color tokens */
+.scrollbar-themed {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+}
+.scrollbar-themed::-webkit-scrollbar {
+    width: 4px;
+}
+.scrollbar-themed::-webkit-scrollbar-track {
+    background: transparent;
+}
+.scrollbar-themed::-webkit-scrollbar-thumb {
+    background-color: var(--color-border);
+    border-radius: 99px;
+}
+.scrollbar-themed::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-accent-teal);
+}
