@@ -65,6 +65,9 @@ describe('VideoPlayer', () => {
       />
     );
 
+    const video = document.querySelector('video');
+    video.dispatchEvent(new Event('loadedmetadata'));
+
     await waitFor(() => {
       expect(Plyr).toHaveBeenCalledOnce();
     });
@@ -124,6 +127,9 @@ describe('VideoPlayer', () => {
         options={{ sources: [{ src: 'http://example.com/video.mp4', type: 'video/mp4' }] }}
       />
     );
+
+    const video = document.querySelector('video');
+    video.dispatchEvent(new Event('loadedmetadata'));
 
     await waitFor(() => expect(Plyr).toHaveBeenCalledOnce());
 
