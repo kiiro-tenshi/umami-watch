@@ -1,0 +1,7 @@
+FROM node:20-alpine
+WORKDIR /app
+COPY server/package*.json ./
+RUN npm install
+# Source is bind-mounted at runtime; node_modules stays in the image layer
+EXPOSE 8080
+CMD ["node", "--watch", "index.js"]

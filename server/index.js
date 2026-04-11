@@ -222,8 +222,9 @@ app.get('/api/proxy/video', async (req, res) => {
   try {
     const upstream = await fetch(decoded, { headers });
     res.status(upstream.status);
-    const passHeaders = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control'];
+    const passHeaders = ['content-length', 'content-range', 'accept-ranges', 'cache-control'];
     passHeaders.forEach(h => { const v = upstream.headers.get(h); if (v) res.setHeader(h, v); });
+    res.setHeader('Content-Type', 'video/mp4');
     res.setHeader('Access-Control-Allow-Origin', '*');
     Readable.fromWeb(upstream.body).pipe(res);
   } catch (err) {

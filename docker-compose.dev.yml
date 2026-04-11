@@ -1,0 +1,102 @@
+services:
+  # ── Firebase Emulator (Auth + Firestore + UI) ─────────────────────────────
+  firebase:
+    build:
+      context: .
+      dockerfile: Dockerfile.firebase
+    volumes:
+      - ./firebase.json:/emulator/firebase.json:ro
+      - ./firestore.rules:/emulator/firestore.rules:ro
+      - firebase-data:/emulator/data
+    command: >
+      firebase emulators:start
+      --project umami-watch
+      --import=/emulator/data
+      --export-on-exit=/emulator/data
+    ports:
+      - "9099:9099"   # Auth emulator  (browser connects here)
+      - "8088:8088"   # Firestore emulator (browser connects here)
+      - "4000:4000"   # Emulator UI → open http://localhost:4000
+      - "4400:4400"   # Emulator Hub (used for healthcheck)
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4400/emulators"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # ── Backend (Express + Socket.io) ─────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./server:/app          # live reload via --watch
+      - /app/node_modules      # keep image's node_modules, don't overwrite
+    environment:
+      PORT: 8080
+      FIREBASE_PROJECT_ID: umami-watch
+      # Admin SDK auto-detects these to switch to emulator mode
+      FIRESTORE_EMULATOR_HOST: firebase:8088
+      FIREBASE_AUTH_EMULATOR_HOST: firebase:9099
+      ALLOWED_ORIGINS: http://localhost:5173
+      TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA"
+    ports:
+      - "8080:8080"
+    depends_on:
+      firebase:
+        condition: service_healthy
+
+  # ── Frontend (Vite dev server) ────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend/src:/app/src          # live reload
+      - ./frontend/public:/app/public
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.js:/app/vite.config.js:ro
+      - ./frontend/tailwind.config.js:/app/tailwind.config.js:ro
+      - ./frontend/postcss.config.js:/app/postcss.config.js:ro
+      - ./frontend/logo.webp:/app/logo.webp:ro
+      - ./frontend/logo-alt.webp:/app/logo-alt.webp:ro
+      - /app/node_modules
+    environment:
+      # Fake values are fine — emulator doesn't validate them
+      VITE_FIREBASE_API_KEY: "dev-fake-api-key"
+      VITE_FIREBASE_AUTH_DOMAIN: "umami-watch.firebaseapp.com"
+      VITE_FIREBASE_PROJECT_ID: "umami-watch"
+      VITE_FIREBASE_STORAGE_BUCKET: "umami-watch.appspot.com"
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "000000000000"
+      VITE_FIREBASE_APP_ID: "1:000000000000:web:000000000000"
+      VITE_API_BASE_URL: "http://localhost:8080"
+      VITE_TMDB_API_KEY: "${VITE_TMDB_API_KEY}"
+      VITE_TURNSTILE_SITE_KEY: "1x00000000000000000000AA"
+      # Tells firebase.js to connect to local emulators
+      VITE_USE_EMULATOR: "true"
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+  # ── Seed (runs once to create test account, then exits) ───────────────────
+  seed:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./seed:/app/seed
+    working_dir: /app/seed
+    command: >
+      sh -c "npm install && node seed.js"
+    environment:
+      FIREBASE_AUTH_EMULATOR_HOST: firebase:9099
+      FIRESTORE_EMULATOR_HOST: firebase:8088
+    depends_on:
+      firebase:
+        condition: service_healthy
+    restart: "no"   # run once and exit
+
+volumes:
+  firebase-data:   # persists emulator data between restarts
