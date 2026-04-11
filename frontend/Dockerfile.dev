@@ -1,0 +1,9 @@
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+# Copy config files into image (can be overridden by bind-mounts at runtime)
+COPY vite.config.js tailwind.config.js postcss.config.js ./
+# Source is bind-mounted at runtime; node_modules stays in the image layer
+EXPOSE 5173
+CMD ["npm", "run", "dev", "--", "--host"]

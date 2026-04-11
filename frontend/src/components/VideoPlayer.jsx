@@ -106,7 +106,6 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       settings: isViewer ? [] : ['quality', 'speed', 'loop'],
       clickToPlay: !isViewer,
       keyboard: { focused: false, global: false },
-      blankVideo: '',
     };
 
     // After Plyr is created: store container + insert CC mount point in controls bar
@@ -125,6 +124,8 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
         setCcMountEl(mount);
       }
     };
+
+    let cleanedUp = false;
 
     if (isM3u8 && Hls.isSupported()) {
       const hls = new Hls({
@@ -167,12 +168,12 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (cleanedUp) return;
         const levels = [...hls.levels.map(l => l.height).filter(Boolean)].reverse();
         const qualityOptions = levels.length > 0 ? {
           default: levels[0], options: levels, forced: true,
           onChange: (q) => { hls.levels.forEach((l, i) => { if (l.height === q) hls.currentLevel = i; }); }
         } : undefined;
-
         const player = new Plyr(video, {
           ...plyrOpts,
           ...(qualityOptions && { quality: qualityOptions }),
@@ -183,34 +184,45 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       });
 
     } else {
-      // Create Plyr FIRST (without a src), then set video.src.
-      // If src is set before Plyr init, Plyr resets it to its blank.mp4
-      // placeholder which fails with CORS and prevents loadedmetadata from firing.
-      const player = new Plyr(video, plyrOpts);
-      initPlayer(player);
+      // Set src and force metadata load BEFORE creating Plyr.
+      // Plyr's init resets video.preload to "none" and calls cancelRequests(),
+      // which clears video.src. Setting src first and waiting for loadedmetadata
+      // ensures the browser has committed to the resource before Plyr can interfere.
+      video.preload = 'metadata';
+      video.src = src;
 
       let settled = false;
-      const settle = (errMsg) => {
-        if (settled) return;
+      const settle = (errMsg, player) => {
+        if (settled || cleanedUp) return;
         settled = true;
         setIsLoading(false);
         if (errMsg) { setPlayerError(errMsg); if (onError) onError(new Error(errMsg)); }
-        else if (onReady) onReady(player);
+        else if (onReady) { try { onReady(player); } catch(e) { console.error('[VideoPlayer] onReady threw:', e); } }
       };
 
-      // 60 s timeout — torrent streams need time to connect peers / receive first pieces
       const timeout = setTimeout(
-        () => settle('Stream timed out — peers may be unavailable. Try another source.'),
+        () => settle('Stream timed out — source may be unavailable. Try another source.', null),
         60_000
       );
 
-      video.addEventListener('loadedmetadata', () => { clearTimeout(timeout); settle(null); }, { once: true });
-      video.addEventListener('error', () => { clearTimeout(timeout); settle('Failed to load video source.'); }, { once: true });
+      video.addEventListener('loadedmetadata', () => {
+        clearTimeout(timeout);
+        if (cleanedUp) return;
+        // Only now create Plyr — the browser already has the resource committed,
+        // so Plyr's cancelRequests() won't interfere.
+        const player = new Plyr(video, plyrOpts);
+        initPlayer(player);
+        settle(null, player);
+      }, { once: true });
 
-      video.src = src;
+      video.addEventListener('error', () => {
+        clearTimeout(timeout);
+        settle('Failed to load video source.', null);
+      }, { once: true });
     }
 
     return () => {
+      cleanedUp = true;
       if (playerRef.current) { playerRef.current.destroy(); playerRef.current = null; }
       if (hlsRef.current)    { hlsRef.current.destroy();    hlsRef.current    = null; }
       setPlyrContainer(null);
