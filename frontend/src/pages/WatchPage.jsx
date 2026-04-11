@@ -3,7 +3,7 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
-import { searchAllAnime, getAllAnimeShow, getAllAnimeSources, pickBestShow } from '../api/allanime';
+import { searchAllAnime, getAllAnimeShow, getAllAnimeSources, pickBestShow, buildVideoProxyUrl } from '../api/allanime';
 import { getMovieDetail, getTVDetail } from '../api/tmdb';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
@@ -182,12 +182,9 @@ export default function WatchPage() {
           if (rawSources.length === 0) throw new Error('No stream sources found for this episode.');
 
           // Build source list: prefer direct MP4 (proxied) over iframes
-          const API = import.meta.env.VITE_API_BASE_URL || '';
           const animeSourceList = rawSources.map(s => {
             if (s.type === 'direct') {
-              // Direct MP4: route through range-proxy so browser can seek
-              const proxyUrl = `${API}/api/proxy/video?url=${encodeURIComponent(s.url)}`;
-              return { label: s.name, url: proxyUrl, type: 'direct' };
+              return { label: s.name, url: buildVideoProxyUrl(s.url), type: 'direct' };
             }
             return { label: s.name, url: s.url, type: 'iframe' };
           });

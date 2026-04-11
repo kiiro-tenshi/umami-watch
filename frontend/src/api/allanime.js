@@ -57,12 +57,19 @@ export function pickBestShow(shows, searchTitle) {
 
 /**
  * Build a proxied video URL for direct MP4 sources (AllAnime CDN has no CORS).
- * The backend range-proxy passes Range headers through for seeking support.
+ * Uses the Cloudflare Worker proxy (free egress) when available,
+ * falling back to the Cloud Run backend proxy.
  */
-export const buildVideoProxyUrl = (rawUrl, token) => {
+export const buildVideoProxyUrl = (rawUrl) => {
+  const workerBase = import.meta.env.VITE_HLS_PROXY_URL;
+  if (workerBase) {
+    const u = new URL(workerBase);
+    u.searchParams.set('url', rawUrl);
+    return u.toString();
+  }
+  // Fallback: Cloud Run proxy (incurs egress charges)
   const base = `${import.meta.env.VITE_API_BASE_URL || ''}/api/proxy/video`;
-  const url = new URL(base, window.location.origin);
-  url.searchParams.set('url', rawUrl);
-  if (token) url.searchParams.set('token', token);
-  return url.toString();
+  const u = new URL(base, window.location.origin);
+  u.searchParams.set('url', rawUrl);
+  return u.toString();
 };
