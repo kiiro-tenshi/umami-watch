@@ -23,6 +23,33 @@ export default {
     const decodedUrl     = decodeURIComponent(targetUrl);
     const decodedReferer = decodeURIComponent(referer);
 
+    // ── Video proxy (AllAnime fast4speed CDN — no CORS, Range support needed) ──
+    if (decodedUrl.startsWith('https://tools.fast4speed.')) {
+      const upHeaders = {
+        'Referer':    'https://allanime.to/',
+        'Origin':     'https://allanime.to',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      };
+      const range = request.headers.get('Range');
+      if (range) upHeaders['Range'] = range;
+
+      let upstream;
+      try {
+        upstream = await fetch(decodedUrl, { headers: upHeaders });
+      } catch (err) {
+        return new Response(err.message, { status: 502, headers: CORS });
+      }
+
+      const respHeaders = { ...CORS, 'Content-Type': 'video/mp4', 'Accept-Ranges': 'bytes' };
+      for (const h of ['content-length', 'content-range', 'cache-control']) {
+        const v = upstream.headers.get(h);
+        if (v) respHeaders[h] = v;
+      }
+
+      // Stream body directly — do NOT buffer (videos are hundreds of MB)
+      return new Response(upstream.body, { status: upstream.status, headers: respHeaders });
+    }
+
     const contentType = (decodedUrl.match(/\.(m3u8|ts|vtt|srt|ass)(\?|$)/i) || [])[1] || '';
     const isM3u8 = /m3u8/i.test(contentType) || decodedUrl.includes('.m3u8');
     const isSegment = !isM3u8; // .ts, .vtt, etc.
