@@ -112,7 +112,8 @@ router.patch('/:roomId', async (req, res) => {
     if (docSnap.data().ownerId !== req.user.uid) return res.status(403).json({ error: 'Forbidden' });
 
     const updates = {};
-    if (req.body.streamUrl !== undefined) updates.streamUrl = req.body.streamUrl;
+    if (req.body.streamUrl  !== undefined) updates.streamUrl  = req.body.streamUrl;
+    if (req.body.streamType !== undefined) updates.streamType = req.body.streamType;
     if (req.body.contentId !== undefined) updates.contentId = req.body.contentId;
     if (req.body.contentType !== undefined) updates.contentType = req.body.contentType;
     if (req.body.contentTitle !== undefined) updates.contentTitle = req.body.contentTitle;
