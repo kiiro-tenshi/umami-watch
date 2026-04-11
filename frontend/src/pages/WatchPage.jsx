@@ -257,7 +257,8 @@ export default function WatchPage() {
 
     fetchStream();
     return () => { cancelled = true; };
-  }, [type, kitsuId, epNum, tmdbId, season, episode, isHost, roomId, roomData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, kitsuId, epNum, tmdbId, season, episode, isHost, roomId, roomData !== null]);
 
   // 4. Fetch all episodes for the sidebar (anime only)
   useEffect(() => {

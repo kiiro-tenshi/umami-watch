@@ -6,7 +6,6 @@ import { useWatchlist } from '../hooks/useWatchlist';
 import { auth } from '../firebase';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EpisodeList from '../components/EpisodeList';
-import CreateRoomModal from '../components/CreateRoomModal';
 
 export default function AnimeDetailPage() {
   const { kitsuId } = useParams();
@@ -22,12 +21,32 @@ export default function AnimeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [staleLink, setStaleLink] = useState(false);
-  const [showCreateRoom, setShowCreateRoom] = useState(false);
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
 
-  // Close the modal once the room is created and roomId appears in the URL
-  useEffect(() => {
-    if (roomId) setShowCreateRoom(false);
-  }, [roomId]);
+  async function handleWatchParty(epNum) {
+    if (!user || isCreatingRoom) return;
+    setIsCreatingRoom(true);
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/rooms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: `${user.displayName}'s Room`,
+          contentId: kitsuId,
+          contentType: 'anime',
+          contentTitle: anime?.title?.english || anime?.title?.romaji || '',
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        navigate(`/watch?type=anime&kitsuId=${kitsuId}&epNum=${epNum}&roomId=${data.id}`);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    setIsCreatingRoom(false);
+  }
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -168,13 +187,14 @@ export default function AnimeDetailPage() {
                 {inWatchlist ? 'In Watchlist' : 'Add to Watchlist'}
               </button>
 
-              {!roomId && (
+              {!roomId && user && (
                 <button
-                  onClick={() => setShowCreateRoom(true)}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold shadow-md transition-transform hover:scale-105 border bg-accent-teal text-white border-accent-teal hover:opacity-90"
+                  onClick={() => handleWatchParty(episodes[0]?.number || 1)}
+                  disabled={isCreatingRoom}
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-lg font-bold shadow-md transition-transform hover:scale-105 border bg-accent-teal text-white border-accent-teal hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
                   <span className="text-xl">🎬</span>
-                  Start Watch Party
+                  {isCreatingRoom ? 'Creating...' : 'Start Watch Party'}
                 </button>
               )}
             </div>
@@ -190,7 +210,7 @@ export default function AnimeDetailPage() {
         {/* Content grid */}
         <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 flex flex-col gap-8">
-            {!error && <EpisodeList episodes={episodes} animeId={kitsuId} roomId={roomId} />}
+            {!error && <EpisodeList episodes={episodes} animeId={kitsuId} roomId={roomId} onWatchParty={user ? handleWatchParty : null} />}
           </div>
 
           {/* Info sidebar */}
@@ -223,18 +243,6 @@ export default function AnimeDetailPage() {
           </div>
         </div>
       </div>
-
-      {showCreateRoom && (
-        <CreateRoomModal
-          onClose={() => setShowCreateRoom(false)}
-          defaultContent={{
-            contentId: kitsuId,
-            contentType: 'anime',
-            contentTitle: anime.title.english || anime.title.romaji,
-            posterUrl: anime.coverImage?.large,
-          }}
-        />
-      )}
     </div>
   );
 }

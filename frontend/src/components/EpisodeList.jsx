@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-export default function EpisodeList({ episodes, animeId, currentEpisodeId, roomId }) {
+export default function EpisodeList({ episodes, animeId, currentEpisodeId, roomId, onWatchParty }) {
   const [page, setPage] = useState(0);
+  const [creatingFor, setCreatingFor] = useState(null);
   const perPage = 100;
 
   if (!episodes || episodes.length === 0) return <p className="text-secondary py-4 font-medium">No episodes available.</p>;
@@ -37,10 +38,25 @@ export default function EpisodeList({ episodes, animeId, currentEpisodeId, roomI
                 <span className={`font-semibold ${isCurrent ? 'text-accent-teal' : 'text-primary'}`}>{ep.title || `Episode ${ep.number}`}</span>
                 {ep.isFiller && <span className="ml-2 text-xs bg-orange-100 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded font-semibold">Filler</span>}
               </div>
-              <Link to={`/watch?type=anime&kitsuId=${animeId}&epNum=${ep.number}${roomId ? `&roomId=${roomId}` : ''}`}
-                className={`shrink-0 px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-transform hover:scale-105 ${isCurrent ? 'bg-accent-teal text-white' : 'bg-accent-blue hover:bg-red-700 text-white'}`}>
-                {isCurrent ? 'Playing' : 'Watch'}
-              </Link>
+              <div className="flex items-center gap-2 shrink-0">
+                {onWatchParty && !roomId && (
+                  <button
+                    onClick={async () => {
+                      setCreatingFor(ep.number);
+                      await onWatchParty(ep.number);
+                      setCreatingFor(null);
+                    }}
+                    disabled={creatingFor === ep.number}
+                    className="px-3 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-transform hover:scale-105 bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  >
+                    {creatingFor === ep.number ? '...' : 'Party'}
+                  </button>
+                )}
+                <Link to={`/watch?type=anime&kitsuId=${animeId}&epNum=${ep.number}${roomId ? `&roomId=${roomId}` : ''}`}
+                  className={`px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-transform hover:scale-105 ${isCurrent ? 'bg-accent-teal text-white' : 'bg-accent-blue hover:bg-red-700 text-white'}`}>
+                  {isCurrent ? 'Playing' : 'Watch'}
+                </Link>
+              </div>
             </div>
           );
         })}
