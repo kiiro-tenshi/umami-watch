@@ -17,5 +17,15 @@ export default defineConfig({
       VITE_FIREBASE_MESSAGING_SENDER_ID: '123456789',
       VITE_FIREBASE_APP_ID: '1:123:web:abc',
     },
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      include: ['src/**/*.{js,jsx}'],
+      exclude: [
+        'src/test/**',
+        'src/main.jsx',
+        'src/**/*.test.{js,jsx}',
+      ],
+    },
   },
 });

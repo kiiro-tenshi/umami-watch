@@ -20,12 +20,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
 
       - name: Install server dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Run server tests
-        run: npm test
+      - name: Security audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Run server tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload server coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: server-coverage
+          path: server/coverage/
+          retention-days: 7
 
   # ── Frontend tests ──────────────────────────────────────────────────────
   test-frontend:
@@ -41,12 +55,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Run frontend tests
-        run: npm test
+      - name: Security audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Run frontend tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload frontend coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          retention-days: 7
 
   # ── Python logic tests ──────────────────────────────────────────────────
   test-python:
@@ -78,9 +106,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build
         run: npm run build
@@ -92,3 +122,4 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ci.appspot.com
           VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
           VITE_FIREBASE_APP_ID: 1:000:web:000
+          VITE_GIPHY_API_KEY: ci-placeholder
