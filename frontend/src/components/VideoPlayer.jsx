@@ -312,18 +312,6 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
 
   return (
     <div className="w-full h-full relative bg-black" onTouchEnd={handleTouchEnd}>
-      {/* Double-tap seek indicator */}
-      {seekIndicator && (
-        <div className={`absolute inset-y-0 z-20 flex items-center justify-center pointer-events-none
-          ${seekIndicator === 'back' ? 'left-0 w-2/5' : 'right-0 w-2/5'}`}>
-          <div className="bg-black/50 rounded-full px-5 py-3 flex flex-col items-center gap-1 animate-pulse">
-            <span className="text-white text-2xl font-bold">
-              {seekIndicator === 'back' ? '«' : '»'}
-            </span>
-            <span className="text-white text-xs font-semibold">10s</span>
-          </div>
-        </div>
-      )}
       <video ref={videoRef} playsInline crossOrigin="anonymous" className="w-full h-full">
         {tracks.map((t, i) => (
           <track key={i} kind={t.kind} label={t.label} srcLang={t.srclang} src={t.src} />
@@ -456,6 +444,20 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
             onClick={() => { setPlayerError(null); setIsLoading(true); videoRef.current?.load(); }}
             className="text-sm bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition-colors"
           >Retry</button>
+        </div>
+      )}
+
+      {/* Double-tap seek indicator — rendered last so React appends rather than
+          insertBefore the <video>, which Plyr has moved inside its own wrapper */}
+      {seekIndicator && (
+        <div className={`absolute inset-y-0 z-20 flex items-center justify-center pointer-events-none
+          ${seekIndicator === 'back' ? 'left-0 w-2/5' : 'right-0 w-2/5'}`}>
+          <div className="bg-black/50 rounded-full px-5 py-3 flex flex-col items-center gap-1 animate-pulse">
+            <span className="text-white text-2xl font-bold">
+              {seekIndicator === 'back' ? '«' : '»'}
+            </span>
+            <span className="text-white text-xs font-semibold">10s</span>
+          </div>
         </div>
       )}
     </div>
