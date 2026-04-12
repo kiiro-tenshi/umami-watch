@@ -81,24 +81,24 @@ describe('ContentCard', () => {
   // ── Progress bar ──────────────────────────────────────────────────────────
   it('renders a progress bar when progress > 0', () => {
     const { container } = renderCard({ progress: 60 });
-    const bar = container.querySelector('.bg-accent-teal');
+    const bar = container.querySelector('div.bg-accent-teal');
     expect(bar).toBeInTheDocument();
     expect(bar.style.width).toBe('60%');
   });
 
   it('does not render a progress bar when progress is 0', () => {
     const { container } = renderCard({ progress: 0 });
-    expect(container.querySelector('.bg-accent-teal')).not.toBeInTheDocument();
+    expect(container.querySelector('div.bg-accent-teal')).not.toBeInTheDocument();
   });
 
   it('clamps progress bar to 100% for values over 100', () => {
     const { container } = renderCard({ progress: 150 });
-    expect(container.querySelector('.bg-accent-teal').style.width).toBe('100%');
+    expect(container.querySelector('div.bg-accent-teal').style.width).toBe('100%');
   });
 
   it('clamps progress bar to 0% for negative values', () => {
     const { container } = renderCard({ progress: -10 });
-    expect(container.querySelector('.bg-accent-teal')).not.toBeInTheDocument();
+    expect(container.querySelector('div.bg-accent-teal')).not.toBeInTheDocument();
   });
 
   // ── Content type badge ────────────────────────────────────────────────────
