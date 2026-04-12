@@ -158,7 +158,7 @@ export default function ChatPanel({ roomId, socket, user }) {
       </div>
 
       {/* Messages */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 scrollbar-themed">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 scrollbar-themed overscroll-contain">
         {messages.length === 0 && (
           <p className="text-center text-muted text-sm mt-10">No messages yet. Say hi!</p>
         )}

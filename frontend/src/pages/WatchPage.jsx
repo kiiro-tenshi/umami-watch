@@ -366,6 +366,22 @@ export default function WatchPage() {
     };
   }, [connected, roomId, !!roomData, isHost, token]);
 
+  // Auto-rotate to landscape when any video enters fullscreen on mobile
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      if (document.fullscreenElement) {
+        screen.orientation?.lock?.('landscape').catch(() => {});
+      } else {
+        screen.orientation?.unlock?.();
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      screen.orientation?.unlock?.();
+    };
+  }, []);
+
   // Re-join room on socket reconnect (server drops socket rooms on disconnect)
   useEffect(() => {
     const socket = socketRef.current;

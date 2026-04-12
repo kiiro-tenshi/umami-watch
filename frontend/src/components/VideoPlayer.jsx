@@ -35,6 +35,11 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
   const [cueText,       setCueText]       = useState('');
   const [plyrContainer, setPlyrContainer] = useState(null); // .plyr element — portal target for subtitle overlay
   const [ccMountEl,     setCcMountEl]     = useState(null); // mount point inside Plyr controls bar
+  const [seekIndicator, setSeekIndicator] = useState(null); // 'back' | 'forward' | null
+
+  const doubleTapRef   = useRef(null); // timeout handle for double-tap detection
+  const lastTapRef     = useRef(null); // { x, time } of previous tap
+  const seekTimerRef   = useRef(null); // timeout to clear seek indicator
 
   const updateCC = (patch) => setCC(prev => ({ ...prev, ...patch }));
 
@@ -262,10 +267,63 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
     return () => document.removeEventListener('keydown', onKey);
   }, [isViewer]);
 
+  // Clear seek indicator on unmount
+  useEffect(() => () => {
+    clearTimeout(seekTimerRef.current);
+    clearTimeout(doubleTapRef.current);
+  }, []);
+
+  // Double-tap seek handler (mobile)
+  const handleTouchEnd = (e) => {
+    const player = playerRef.current;
+    if (!player || isViewer) return;
+
+    const touch = e.changedTouches[0];
+    const rect  = e.currentTarget.getBoundingClientRect();
+    const relX  = touch.clientX - rect.left;
+    const now   = Date.now();
+    const last  = lastTapRef.current;
+
+    // Detect double-tap: two taps within 300 ms in roughly the same zone
+    if (last && now - last.time < 300) {
+      lastTapRef.current = null;
+      clearTimeout(doubleTapRef.current);
+
+      const pct = relX / rect.width;
+      if (pct < 0.4) {
+        // Left zone → seek back 10 s
+        player.currentTime = Math.max(0, player.currentTime - 10);
+        setSeekIndicator('back');
+      } else if (pct > 0.6) {
+        // Right zone → seek forward 10 s
+        player.currentTime = Math.min(player.duration || Infinity, player.currentTime + 10);
+        setSeekIndicator('forward');
+      }
+      // Middle zone: do nothing (avoids false-positive on play/pause tap)
+
+      clearTimeout(seekTimerRef.current);
+      seekTimerRef.current = setTimeout(() => setSeekIndicator(null), 700);
+    } else {
+      lastTapRef.current = { time: now, x: relX };
+    }
+  };
+
   const hasTracks = tracks.length > 0;
 
   return (
-    <div className="w-full h-full relative bg-black">
+    <div className="w-full h-full relative bg-black" onTouchEnd={handleTouchEnd}>
+      {/* Double-tap seek indicator */}
+      {seekIndicator && (
+        <div className={`absolute inset-y-0 z-20 flex items-center justify-center pointer-events-none
+          ${seekIndicator === 'back' ? 'left-0 w-2/5' : 'right-0 w-2/5'}`}>
+          <div className="bg-black/50 rounded-full px-5 py-3 flex flex-col items-center gap-1 animate-pulse">
+            <span className="text-white text-2xl font-bold">
+              {seekIndicator === 'back' ? '«' : '»'}
+            </span>
+            <span className="text-white text-xs font-semibold">10s</span>
+          </div>
+        </div>
+      )}
       <video ref={videoRef} playsInline crossOrigin="anonymous" className="w-full h-full">
         {tracks.map((t, i) => (
           <track key={i} kind={t.kind} label={t.label} srcLang={t.srclang} src={t.src} />

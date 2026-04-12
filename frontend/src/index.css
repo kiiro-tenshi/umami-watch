@@ -33,6 +33,13 @@
   --color-accent-orange: #ea580c;
 }
 
+/* ── Prevent iOS Safari input zoom (font-size must be ≥ 16px) ────────────── */
+@media (max-width: 768px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
 /* ── Plyr custom theme ────────────────────────────────────────────────────── */
 :root {
   --plyr-color-main: #f43f5e;
