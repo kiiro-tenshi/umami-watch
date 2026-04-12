@@ -29,7 +29,7 @@ export default function Navbar() {
       <div className="flex items-center gap-6">
         <Link to="/home" className="text-xl font-bold text-primary flex items-center gap-2">
           <img src={logoImg} alt="UmamiStream" className="w-8 h-8 rounded-full object-cover shadow-sm" />
-          <span className="hidden sm:inline">UmamiStream</span>
+          <span>UmamiStream</span>
         </Link>
         <div className="hidden md:flex items-center gap-4 text-sm font-semibold text-secondary">
           <Link to="/home" className="hover:text-accent-blue transition-colors">Home</Link>

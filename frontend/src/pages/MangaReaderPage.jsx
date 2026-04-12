@@ -170,6 +170,31 @@ export default function MangaReaderPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [mode, pages.length, resetUiTimer]);
 
+  const touchStartRef = useRef(null);
+
+  const handlePageTouchStart = (e) => {
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY };
+  };
+
+  const handlePageTouchEnd = (e) => {
+    if (!touchStartRef.current) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartRef.current.x;
+    const dy = t.clientY - touchStartRef.current.y;
+    touchStartRef.current = null;
+    // Only register as a horizontal swipe if it's clearly horizontal and long enough
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
+    resetUiTimer();
+    if (dx < 0) {
+      // Swipe left → next page
+      setCurrentPage(p => Math.min(p + 1, pages.length - 1));
+    } else {
+      // Swipe right → previous page
+      setCurrentPage(p => Math.max(p - 1, 0));
+    }
+  };
+
   const toggleMode = () => {
     const next = mode === 'vertical' ? 'page' : 'vertical';
     setMode(next);
@@ -265,7 +290,10 @@ export default function MangaReaderPage() {
           </div>
         </div>
       ) : (
-        <div className="flex items-center justify-center h-screen pt-10 select-none">
+        <div className="flex items-center justify-center h-screen pt-10 select-none"
+          onTouchStart={handlePageTouchStart}
+          onTouchEnd={handlePageTouchEnd}
+        >
           {pages[currentPage] && (
             <img src={pages[currentPage]} alt={`Page ${currentPage + 1}`} className="max-h-[calc(100vh-80px)] max-w-full object-contain" draggable={false} />
           )}
