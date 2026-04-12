@@ -5,5 +5,15 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['tests/**/*.test.js'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      include: ['**/*.js'],
+      exclude: [
+        'tests/**',
+        'vitest.config.js',
+        'node_modules/**',
+      ],
+    },
   },
 });
