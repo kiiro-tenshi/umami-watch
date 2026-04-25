@@ -7,6 +7,7 @@
  * Decoded Yt-mp4 URLs are direct MP4 files; play via /api/proxy/video range-proxy.
  * iframe-type sources embed directly in the browser.
  */
+import { createHash, createDecipheriv } from 'crypto';
 import express from 'express';
 
 const router = express.Router();
@@ -19,6 +20,18 @@ function decodeUrl(encoded) {
   return Array.from({ length: hex.length / 2 }, (_, i) =>
     String.fromCharCode(parseInt(hex.slice(i * 2, i * 2 + 2), 16) ^ 56)
   ).join('');
+}
+
+const TOBEPARSED_KEY = createHash('sha256').update('Xot36i3lK3:v1').digest();
+
+function decodeTobeparsed(tbp) {
+  const raw = Buffer.from(tbp, 'base64');
+  const iv = raw.slice(1, 13);
+  const tag = raw.slice(-16);
+  const ciphertext = raw.slice(13, -16);
+  const decipher = createDecipheriv('aes-256-gcm', TOBEPARSED_KEY, iv);
+  decipher.setAuthTag(tag);
+  return JSON.parse(Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8'));
 }
 
 async function gqlPost(query, variables) {
@@ -34,7 +47,10 @@ async function gqlPost(query, variables) {
   if (!res.ok) throw new Error(`AllAnime API error: ${res.status}`);
   const json = await res.json();
   if (json.errors) throw new Error(json.errors[0].message);
-  return json.data;
+  const data = (json.data?._m && json.data?.tobeparsed)
+    ? decodeTobeparsed(json.data.tobeparsed)
+    : json.data;
+  return data;
 }
 
 // GET /api/anime/allanime/search?q=...
