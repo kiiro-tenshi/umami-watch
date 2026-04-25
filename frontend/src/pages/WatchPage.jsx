@@ -5,11 +5,13 @@ import { useSocket } from '../hooks/useSocket';
 import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
 import { searchAllAnime, getAllAnimeShow, getAllAnimeSources, pickBestShow, buildVideoProxyUrl } from '../api/allanime';
 import { getMovieDetail, getTVDetail } from '../api/tmdb';
-import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import VideoPlayer from '../components/VideoPlayer';
 import ChatPanel from '../components/ChatPanel';
 import ReconnectOverlay from '../components/ReconnectOverlay';
+import EpisodeContextMenu from '../components/EpisodeContextMenu';
+import { useWatchedEps } from '../hooks/useWatchedEps';
 import LoadingSpinner from '../components/LoadingSpinner';
 import InviteModal from '../components/InviteModal';
 import RoomContentModal from '../components/RoomContentModal';
@@ -52,8 +54,8 @@ export default function WatchPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showContentPicker, setShowContentPicker] = useState(false);
   const [animeEpisodes, setAnimeEpisodes] = useState([]);
-  const [watchedEps, setWatchedEps] = useState(new Set());
   const [mobileTab, setMobileTab] = useState('chat'); // 'chat' | 'episodes'
+  const [epMenu, setEpMenu] = useState(null); // { x, y, epNum }
 
   const playerRef = useRef(null);
   const hasJoinedRoomRef = useRef(false);
@@ -62,6 +64,9 @@ export default function WatchPage() {
 
   const getToken = useCallback((forceRefresh = false) => auth.currentUser?.getIdToken(forceRefresh), []);
   const { socketRef, connected, reconnecting } = useSocket(import.meta.env.VITE_API_BASE_URL, getToken);
+  const { watchedEps, toggleWatched, markAllWatched, markAllUnwatched, updateWatched } = useWatchedEps(
+    type === 'anime' ? kitsuId : null, user, contentDetails?.title, contentDetails?.posterUrl
+  );
   const isHost = roomData?.hostId === user?.uid;
 
   // Derived: current episode index + next episode
@@ -269,22 +274,6 @@ export default function WatchPage() {
       .catch(() => {});
   }, [type, kitsuId]);
 
-  // 4b. Fetch watched episodes for this anime
-  useEffect(() => {
-    if (!user || !kitsuId || type !== 'anime') return;
-    getDocs(query(
-      collection(db, 'users', user.uid, 'history'),
-      where('contentId', '==', kitsuId)
-    )).then(snap => {
-      const watched = new Set();
-      snap.forEach(d => {
-        const { epNum: ep, position, duration } = d.data();
-        if (ep && position && duration && position >= duration * 0.85) watched.add(ep);
-      });
-      setWatchedEps(watched);
-    }).catch(() => {});
-  }, [user, kitsuId, type]);
-
   // 5. Auto-scroll episode list to current episode
   useEffect(() => {
     if (!episodeListRef.current || !epNum || animeEpisodes.length === 0) return;
@@ -458,7 +447,7 @@ export default function WatchPage() {
         ...(episode && { episodeNum: episode })
       }, { merge: true }).catch(console.error);
       if (type === 'anime' && epNum && pos >= dur * 0.85) {
-        setWatchedEps(prev => prev.has(epNum) ? prev : new Set([...prev, epNum]));
+        updateWatched(epNum, true);
       }
     }, 15000);
     return () => clearInterval(interval);
@@ -692,20 +681,31 @@ export default function WatchPage() {
                 className={`bg-surface border border-border lg:rounded-xl overflow-hidden flex flex-col ${hasEpisodeSidebar && hasChatSidebar ? (mobileTab === 'episodes' ? 'flex lg:flex' : 'hidden lg:flex') : 'flex'}`}
                 style={{ maxHeight: hasChatSidebar ? undefined : 'calc(100vh - 160px)', height: hasChatSidebar ? '60vh' : undefined }}
               >
-                <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
+                <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0 gap-2">
                   <span className="font-bold text-sm text-primary">Episodes</span>
-                  <span className="text-xs text-muted">{animeEpisodes.length} eps</span>
+                  <div className="flex items-center gap-2">
+                    {user && animeEpisodes.length > 0 && (
+                      <button
+                        onClick={() => animeEpisodes.every(ep => watchedEps.has(ep.number)) ? markAllUnwatched() : markAllWatched(animeEpisodes)}
+                        className="text-xs px-2 py-1 rounded border border-border hover:bg-surface-raised transition-colors text-muted"
+                      >
+                        {animeEpisodes.every(ep => watchedEps.has(ep.number)) ? 'Unwatch all' : 'Watch all'}
+                      </button>
+                    )}
+                    <span className="text-xs text-muted">{animeEpisodes.length} eps</span>
+                  </div>
                 </div>
-                <div ref={episodeListRef} className="overflow-y-auto flex-1">
+                <div ref={episodeListRef} className="overflow-y-auto scrollbar-themed flex-1">
                   {animeEpisodes.map(ep => (
                     <Link
                       key={ep.id}
                       to={buildEpUrl(ep)}
                       data-ep={ep.number}
+                      onContextMenu={(e) => { e.preventDefault(); setEpMenu({ x: e.clientX, y: e.clientY, epNum: ep.number }); }}
                       className={`flex items-center gap-3 px-4 py-3 border-b border-border text-sm transition-colors hover:bg-surface-raised ${ep.number === epNum ? 'bg-accent-teal/10 border-l-4 border-l-accent-teal' : 'border-l-4 border-l-transparent'}`}
                     >
                       <span className={`font-bold w-7 text-right flex-shrink-0 text-xs ${ep.number === epNum ? 'text-accent-teal' : 'text-muted'}`}>{ep.number}</span>
-                      <span className={`truncate flex-1 ${ep.number === epNum ? 'text-primary font-semibold' : 'text-secondary'}`}>
+                      <span className={`truncate flex-1 ${ep.number === epNum ? 'text-primary font-semibold' : watchedEps.has(ep.number) ? 'text-muted' : 'text-secondary'}`}>
                         {ep.title || `Episode ${ep.number}`}
                       </span>
                       {watchedEps.has(ep.number) && (
@@ -717,6 +717,16 @@ export default function WatchPage() {
                     </Link>
                   ))}
                 </div>
+                {epMenu && (
+                  <EpisodeContextMenu
+                    x={epMenu.x}
+                    y={epMenu.y}
+                    epNum={epMenu.epNum}
+                    isWatched={watchedEps.has(epMenu.epNum)}
+                    onToggle={toggleWatched}
+                    onClose={() => setEpMenu(null)}
+                  />
+                )}
               </div>
             )}
           </div>

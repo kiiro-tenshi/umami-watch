@@ -16,7 +16,7 @@ export default function SeasonSelector({ seasons, selectedSeason, onSeasonChange
         </select>
       </div>
 
-      <div className="max-h-[65vh] md:max-h-[600px] overflow-y-auto divide-y divide-border-subtle">
+      <div className="max-h-[65vh] md:max-h-[600px] overflow-y-auto scrollbar-themed divide-y divide-border-subtle">
         {(!episodes || episodes.length === 0) ? (
           <p className="p-8 text-center text-muted font-medium">Select a season to view episodes.</p>
         ) : (
