@@ -4,9 +4,11 @@ import { getMangaById, getMangaChapters, coverUrl, getCoverFilename, getTitle, g
 import { searchComick, getComickChapters } from '../api/comick';
 import { useAuth } from '../hooks/useAuth';
 import { useWatchlist } from '../hooks/useWatchlist';
+import { useReadChapters } from '../hooks/useReadChapters';
 import { db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import LoadingSpinner from '../components/LoadingSpinner';
+import EpisodeContextMenu from '../components/EpisodeContextMenu';
 
 const PAGE_SIZE = 100;
 
@@ -44,6 +46,9 @@ export default function MangaDetailPage() {
   const [offset, setOffset] = useState(0);
   const [chaptersSource, setChaptersSource] = useState('mangadex');
   const [mangaProgress, setMangaProgress] = useState(null); // { chapterId, chapterNum, pageNum }
+  const [chMenu, setChMenu] = useState(null); // { x, y, chapterNum, isRead }
+
+  const { isChapterRead, toggleRead, markAllRead, markAllUnread } = useReadChapters(mangaId, user);
 
   // Load manga + initial chapters (with ComicK fallback) when mangaId changes
   useEffect(() => {
@@ -222,8 +227,20 @@ export default function MangaDetailPage() {
 
         {/* Chapter list */}
         <div className="mt-8 bg-surface rounded-2xl border border-border shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-border">
+          <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3">
             <h2 className="text-xl font-bold text-primary">Chapters</h2>
+            {user && chapters.length > 0 && (
+              <button
+                onClick={() => {
+                  const lastReadNum = mangaProgress?.chapterNum ? parseFloat(mangaProgress.chapterNum) : null;
+                  const allRead = chapters.every(ch => isChapterRead(ch.attributes?.chapter, lastReadNum));
+                  allRead ? markAllUnread() : markAllRead(chapters);
+                }}
+                className="text-xs px-2.5 py-1 rounded-md border border-border hover:bg-surface-raised transition-colors text-secondary font-medium"
+              >
+                {chapters.every(ch => isChapterRead(ch.attributes?.chapter, mangaProgress?.chapterNum ? parseFloat(mangaProgress.chapterNum) : null)) ? 'Unread all' : 'Read all'}
+              </button>
+            )}
           </div>
 
           {chaptersLoading && chapters.length === 0 ? (
@@ -239,8 +256,7 @@ export default function MangaDetailPage() {
                   const currentChId = mangaProgress?.chapterId;
                   return chapters.map(ch => {
                     const num = ch.attributes?.chapter;
-                    const chNum = num ? parseFloat(num) : null;
-                    const isRead = lastReadNum != null && chNum != null && chNum < lastReadNum;
+                    const isRead = isChapterRead(num, lastReadNum);
                     const isCurrent = ch.id === currentChId;
                     const chTitle = ch.attributes?.title;
                     const group = ch.relationships?.find(r => r.type === 'scanlation_group');
@@ -248,6 +264,10 @@ export default function MangaDetailPage() {
                     const isExternal = (ch.attributes?.pages ?? 1) === 0;
                     const extUrl = ch.attributes?.externalUrl;
                     const rowClass = `flex items-center justify-between px-6 py-3 hover:bg-surface-raised transition-colors ${isCurrent ? 'bg-accent-purple/10 border-l-4 border-l-accent-purple' : isRead ? 'opacity-50' : ''}`;
+                    const handleContextMenu = (e) => {
+                      e.preventDefault();
+                      setChMenu({ x: e.clientX, y: e.clientY, chapterNum: num, isRead });
+                    };
                     const inner = (
                       <>
                         <div className="flex items-center gap-2 min-w-0">
@@ -265,9 +285,9 @@ export default function MangaDetailPage() {
                       </>
                     );
                     return isExternal && extUrl ? (
-                      <a key={ch.id} href={extUrl} target="_blank" rel="noopener noreferrer" className={rowClass}>{inner}</a>
+                      <a key={ch.id} href={extUrl} target="_blank" rel="noopener noreferrer" onContextMenu={handleContextMenu} className={rowClass}>{inner}</a>
                     ) : (
-                      <Link key={ch.id} to={`/manga/${mangaId}/chapter/${ch.id}`} className={rowClass}>{inner}</Link>
+                      <Link key={ch.id} to={`/manga/${mangaId}/chapter/${ch.id}`} onContextMenu={handleContextMenu} className={rowClass}>{inner}</Link>
                     );
                   });
                 })()}
@@ -288,6 +308,19 @@ export default function MangaDetailPage() {
           )}
         </div>
       </div>
+
+      {chMenu && (
+        <EpisodeContextMenu
+          x={chMenu.x}
+          y={chMenu.y}
+          epNum={chMenu.chapterNum}
+          isWatched={chMenu.isRead}
+          onToggle={(chNum) => toggleRead(chNum, chMenu.isRead)}
+          onClose={() => setChMenu(null)}
+          watchedLabel="Mark as read"
+          unwatchedLabel="Mark as unread"
+        />
+      )}
     </div>
   );
 }

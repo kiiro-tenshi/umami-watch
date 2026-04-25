@@ -59,7 +59,7 @@ export default function RoomContentModal({ roomId, onClose }) {
           />
         </div>
 
-        <div className="flex-1 overflow-y-auto divide-y divide-border-subtle">
+        <div className="flex-1 overflow-y-auto scrollbar-themed divide-y divide-border-subtle">
           {searching && <p className="text-center text-muted p-6">Searching...</p>}
           {!searching && query && results.length === 0 && <p className="text-center text-muted p-6">No results found.</p>}
           {!query && (

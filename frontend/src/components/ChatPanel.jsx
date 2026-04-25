@@ -228,7 +228,7 @@ export default function ChatPanel({ roomId, socket, user }) {
               className="w-full bg-page border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent-blue"
             />
           </div>
-          <div className="h-44 overflow-y-auto px-2 pb-2">
+          <div className="h-44 overflow-y-auto scrollbar-themed px-2 pb-2">
             {!GIPHY_KEY ? (
               <p className="text-center text-muted text-xs py-6">GIF search not configured.</p>
             ) : loadingGifs ? (

@@ -94,7 +94,7 @@ export default function CreateRoomModal({ onClose, defaultContent = null }) {
           <button onClick={onClose} className="text-muted hover:text-primary transition-colors text-2xl leading-none">&times;</button>
         </div>
         
-        <form onSubmit={handleSubmit} className="p-6 flex-1 overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-6 flex-1 overflow-y-auto scrollbar-themed">
           <div className="mb-5">
              <label className="block text-sm font-bold text-primary mb-2">Room Name</label>
              <input type="text" required value={name} onChange={e => setName(e.target.value)}
@@ -119,7 +119,7 @@ export default function CreateRoomModal({ onClose, defaultContent = null }) {
                    className="w-full bg-page border border-border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-accent-blue shadow-sm" />
                  
                  {query && (
-                   <div className="absolute top-full mt-2 left-0 right-0 bg-surface border border-border rounded-lg shadow-xl max-h-60 overflow-y-auto z-10 divide-y divide-border-subtle">
+                   <div className="absolute top-full mt-2 left-0 right-0 bg-surface border border-border rounded-lg shadow-xl max-h-60 overflow-y-auto scrollbar-themed z-10 divide-y divide-border-subtle">
                      {isSearching ? (
                        <p className="text-center p-4 text-muted font-medium">Searching...</p>
                      ) : results.length > 0 ? (

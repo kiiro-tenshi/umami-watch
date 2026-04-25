@@ -63,11 +63,19 @@ export default function HomePage() {
 
       <div className="px-4 md:px-8 space-y-8">
         {/* Continue Watching */}
-        {history.length > 0 && (
+        {history.filter(item => {
+          if (item.manuallyWatched === true) return false;
+          if (item.manuallyWatched === false) return true;
+          return !(item.position && item.duration && item.position >= item.duration * 0.85);
+        }).length > 0 && (
           <section>
             <h2 className="text-xl font-bold text-primary mb-4 border-l-4 border-accent-orange pl-2">Continue Watching</h2>
             <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-4 snap-x">
-              {history.map(item => {
+              {history.filter(item => {
+                if (item.manuallyWatched === true) return false;
+                if (item.manuallyWatched === false) return true;
+                return !(item.position && item.duration && item.position >= item.duration * 0.85);
+              }).map(item => {
                 const progress = item.duration > 0
                   ? Math.min(100, Math.round((item.position / item.duration) * 100))
                   : null;
