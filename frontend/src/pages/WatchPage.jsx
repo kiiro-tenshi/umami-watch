@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
@@ -59,7 +59,8 @@ export default function WatchPage() {
   const episodeListRef = useRef(null);
   const pendingSyncRef = useRef(null); // buffers sync:state that arrives before player is ready
 
-  const { socketRef, connected, reconnecting } = useSocket(import.meta.env.VITE_API_BASE_URL, token);
+  const getToken = useCallback((forceRefresh = false) => auth.currentUser?.getIdToken(forceRefresh), []);
+  const { socketRef, connected, reconnecting } = useSocket(import.meta.env.VITE_API_BASE_URL, getToken);
   const isHost = roomData?.hostId === user?.uid;
 
   // Derived: current episode index + next episode
