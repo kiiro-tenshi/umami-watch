@@ -5,7 +5,7 @@ import { useSocket } from '../hooks/useSocket';
 import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
 import { searchAllAnime, getAllAnimeShow, getAllAnimeSources, pickBestShow, buildVideoProxyUrl } from '../api/allanime';
 import { getMovieDetail, getTVDetail } from '../api/tmdb';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import VideoPlayer from '../components/VideoPlayer';
 import ChatPanel from '../components/ChatPanel';
@@ -52,6 +52,7 @@ export default function WatchPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showContentPicker, setShowContentPicker] = useState(false);
   const [animeEpisodes, setAnimeEpisodes] = useState([]);
+  const [watchedEps, setWatchedEps] = useState(new Set());
   const [mobileTab, setMobileTab] = useState('chat'); // 'chat' | 'episodes'
 
   const playerRef = useRef(null);
@@ -268,6 +269,22 @@ export default function WatchPage() {
       .catch(() => {});
   }, [type, kitsuId]);
 
+  // 4b. Fetch watched episodes for this anime
+  useEffect(() => {
+    if (!user || !kitsuId || type !== 'anime') return;
+    getDocs(query(
+      collection(db, 'users', user.uid, 'history'),
+      where('contentId', '==', kitsuId)
+    )).then(snap => {
+      const watched = new Set();
+      snap.forEach(d => {
+        const { epNum: ep, position, duration } = d.data();
+        if (ep && position && duration && position >= duration * 0.85) watched.add(ep);
+      });
+      setWatchedEps(watched);
+    }).catch(() => {});
+  }, [user, kitsuId, type]);
+
   // 5. Auto-scroll episode list to current episode
   useEffect(() => {
     if (!episodeListRef.current || !epNum || animeEpisodes.length === 0) return;
@@ -418,9 +435,9 @@ export default function WatchPage() {
     return () => clearInterval(interval);
   }, [roomId, isHost, connected]);
 
-  // 7. Save watch history per episode
+  // 7. Save watch history per episode (solo + watch party)
   useEffect(() => {
-    if (!type || !user || roomId) return;
+    if (!type || !user) return;
     const histKey = type === 'anime' ? `anime_kitsu${kitsuId}_ep${epNum}` : (tmdbId || 'unknown');
     const interval = setInterval(async () => {
       const p = playerRef.current;
@@ -440,9 +457,12 @@ export default function WatchPage() {
         ...(season && { seasonNum: season }),
         ...(episode && { episodeNum: episode })
       }, { merge: true }).catch(console.error);
+      if (type === 'anime' && epNum && pos >= dur * 0.85) {
+        setWatchedEps(prev => prev.has(epNum) ? prev : new Set([...prev, epNum]));
+      }
     }, 15000);
     return () => clearInterval(interval);
-  }, [type, kitsuId, epNum, tmdbId, season, episode, user, contentDetails, roomId]);
+  }, [type, kitsuId, epNum, tmdbId, season, episode, user, contentDetails]);
 
   const handlePlayerReady = (player) => {
     playerRef.current = player;
@@ -688,6 +708,11 @@ export default function WatchPage() {
                       <span className={`truncate flex-1 ${ep.number === epNum ? 'text-primary font-semibold' : 'text-secondary'}`}>
                         {ep.title || `Episode ${ep.number}`}
                       </span>
+                      {watchedEps.has(ep.number) && (
+                        <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
                       {ep.isFiller && <span className="text-xs bg-orange-100 text-orange-600 px-1 py-0.5 rounded flex-shrink-0">F</span>}
                     </Link>
                   ))}
