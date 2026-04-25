@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { getChapterPages, getMangaChapters, getMangaById, getTitle, coverUrl, getCoverFilename } from '../api/mangadex';
 import { getComickImages, getComickChapters } from '../api/comick';
 import { useAuth } from '../hooks/useAuth';
+import { useReadChapters } from '../hooks/useReadChapters';
 import { db } from '../firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -100,6 +101,14 @@ export default function MangaReaderPage() {
 
     return () => { dead = true; };
   }, [mangaId, chapterId, isComick]);
+
+  const { markChapterRead } = useReadChapters(mangaId, user);
+
+  // Auto-mark chapter as read when the last page is reached
+  useEffect(() => {
+    if (!user || !chapterNum || pages.length === 0) return;
+    if (currentPage === pages.length - 1) markChapterRead(chapterNum);
+  }, [currentPage, pages.length, chapterNum, user]);
 
   // Save chapter entry to history (3s debounce to avoid saves on fast navigation)
   useEffect(() => {

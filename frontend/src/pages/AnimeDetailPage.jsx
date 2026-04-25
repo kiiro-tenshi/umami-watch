@@ -210,7 +210,7 @@ export default function AnimeDetailPage() {
         {/* Content grid */}
         <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 flex flex-col gap-8">
-            {!error && <EpisodeList episodes={episodes} animeId={kitsuId} roomId={roomId} onWatchParty={user ? handleWatchParty : null} />}
+            {!error && <EpisodeList episodes={episodes} animeId={kitsuId} roomId={roomId} onWatchParty={user ? handleWatchParty : null} user={user} animeTitle={anime?.title?.english || anime?.title?.romaji} posterUrl={anime?.coverImage?.large} />}
           </div>
 
           {/* Info sidebar */}
