@@ -6,6 +6,27 @@ import LoadingSpinner from './LoadingSpinner';
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+function formatCountdown(airingAt) {
+  const diff = airingAt * 1000 - Date.now();
+  if (diff <= 0) return 'Released';
+  const totalMins = Math.floor(diff / 60000);
+  const days = Math.floor(totalMins / 1440);
+  const hours = Math.floor((totalMins % 1440) / 60);
+  const mins = totalMins % 60;
+  if (days > 0) return `in ${days}d ${hours}h ${mins}m`;
+  if (hours > 0) return `in ${hours}h ${mins}m`;
+  return `in ${mins}m`;
+}
+
+function Countdown({ airingAt }) {
+  const [label, setLabel] = useState(() => formatCountdown(airingAt));
+  useEffect(() => {
+    const id = setInterval(() => setLabel(formatCountdown(airingAt)), 60000);
+    return () => clearInterval(id);
+  }, [airingAt]);
+  return <span>{label}</span>;
+}
+
 function getWeekStart(ref = new Date()) {
   const d = new Date(ref);
   const day = d.getDay(); // 0=Sun
@@ -137,8 +158,8 @@ export default function AiringCalendar() {
                         return (
                           <Link
                             key={idx}
-                            to={`/anime/${ep.media.id}?title=${encodeURIComponent(title)}`}
-                            className="flex items-center gap-2 px-2 py-2 hover:bg-surface-raised transition-colors group"
+                            to={`/anime/${ep.media.id}?title=${encodeURIComponent(title)}&source=anilist`}
+                            className="flex items-center gap-2 px-2 py-2 h-[72px] overflow-hidden hover:bg-surface-raised transition-colors group"
                           >
                             <img
                               src={ep.media.coverImage.large}
@@ -149,9 +170,9 @@ export default function AiringCalendar() {
                               <p className="text-[11px] font-semibold text-primary group-hover:text-accent-teal transition-colors line-clamp-2 leading-tight">
                                 {title}
                               </p>
-                              <p className="text-[10px] text-muted mt-0.5">Ep {ep.episode}</p>
+                              <p className="text-[10px] text-muted mt-0.5">Ep {ep.episode}{ep.media.episodes ? ` / ${ep.media.episodes}` : ''}</p>
                               <p className="text-[10px] text-muted tabular-nums">
-                                {airTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                <Countdown airingAt={ep.airingAt} />
                               </p>
                             </div>
                           </Link>
@@ -188,7 +209,7 @@ export default function AiringCalendar() {
                         return (
                           <Link
                             key={idx}
-                            to={`/anime/${ep.media.id}?title=${encodeURIComponent(title)}`}
+                            to={`/anime/${ep.media.id}?title=${encodeURIComponent(title)}&source=anilist`}
                             className="flex-shrink-0 w-[80px] group"
                           >
                             <img
@@ -199,7 +220,7 @@ export default function AiringCalendar() {
                             <p className="text-[10px] font-semibold text-primary group-hover:text-accent-teal transition-colors line-clamp-2 leading-tight mt-1">
                               {title}
                             </p>
-                            <p className="text-[10px] text-muted">Ep {ep.episode}</p>
+                            <p className="text-[10px] text-muted">Ep {ep.episode}{ep.media.episodes ? ` / ${ep.media.episodes}` : ''}</p>
                           </Link>
                         );
                       })}

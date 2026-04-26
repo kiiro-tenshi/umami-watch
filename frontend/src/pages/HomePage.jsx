@@ -35,7 +35,7 @@ export default function HomePage() {
     <div className="flex flex-col gap-8 pb-10">
       {/* PIW motto */}
       <div className="text-center py-2 bg-surface-raised border-b border-border-subtle">
-        <p className="text-xs text-muted font-semibold tracking-wide">Keep your watch history Pure, Innocent, and Wholesome <span className="text-primary font-bold">(PIW)</span></p>
+        <p className="text-xs text-muted font-semibold tracking-wide">{user?.displayName ? `Hi, ${user.displayName.split(' ')[0]}! ` : ''}Keep your watch history Pure, Innocent, and Wholesome <span className="text-primary font-bold">(PIW)</span></p>
       </div>
 
       <div className="px-4 md:px-8 space-y-8">
@@ -90,7 +90,7 @@ export default function HomePage() {
             </div>
             <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-4 snap-x">
               {trendingAnime.map(anime => (
-                <ContentCard key={anime.id} id={anime.id} title={anime.title.english || anime.title.romaji} posterUrl={anime.coverImage?.large} contentType="anime" rating={anime.averageScore ? anime.averageScore / 10 : null} />
+                <ContentCard key={anime.id} id={anime.id} title={anime.title.english || anime.title.romaji} posterUrl={anime.coverImage?.large} contentType="anime" rating={anime.averageScore ? anime.averageScore / 10 : null} source="anilist" />
               ))}
             </div>
           </section>
