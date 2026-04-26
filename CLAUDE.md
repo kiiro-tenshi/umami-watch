@@ -128,7 +128,7 @@ umami-watch/
 ├── frontend/                    # React SPA (Vite)
 │   ├── src/
 │   │   ├── api/                 # External service integration modules
-│   │   │   ├── anilist.js       # AniList GraphQL: trending, seasonal, search, detail, monthly airing schedule
+│   │   │   ├── anilist.js       # AniList GraphQL: trending, seasonal, search, detail, weekly airing schedule
 │   │   │   ├── kitsu.js         # Kitsu REST: anime info, episodes, categories; normalizes to shared shape
 │   │   │   ├── tmdb.js          # TMDB REST: movies, TV, genres, trending
 │   │   │   ├── allanime.js      # AllAnime via backend proxy: search, sources, URL building
@@ -141,7 +141,7 @@ umami-watch/
 │   │   │   ├── EpisodeList.jsx  # Episode selector with watched checkmarks + context menu
 │   │   │   ├── EpisodeContextMenu.jsx  # Right-click menu for manual watch toggle
 │   │   │   ├── SeasonSelector.jsx      # TV season/episode picker
-│   │   │   ├── AiringCalendar.jsx  # Monthly calendar of episode air dates; fetches AniList airingSchedules; click day to see episode list
+│   │   │   ├── AiringCalendar.jsx  # Weekly (Mon–Sun) airing schedule; fetches AniList airingSchedules; top 5 per day by popularity; prev/next week navigation
 │   │   │   ├── ContentCard.jsx  # Poster card for all content types
 │   │   │   ├── Navbar.jsx       # Top nav: logo, links, dark mode toggle, user avatar
 │   │   │   ├── BottomNav.jsx    # Mobile bottom tab bar (hidden on /watch and manga reader)

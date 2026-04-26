@@ -84,20 +84,22 @@ export const getAnimeGenres = async () => {
   return data.GenreCollection;
 };
 
-export const getMonthAiringSchedule = async (year, month) => {
-  const start = Math.floor(new Date(year, month - 1, 1).getTime() / 1000);
-  const end = Math.floor(new Date(year, month, 0, 23, 59, 59).getTime() / 1000);
+export const getWeekAiringSchedule = async (weekStart) => {
+  const start = Math.floor(weekStart.getTime() / 1000);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 7);
+  const end = Math.floor(weekEnd.getTime() / 1000) - 1;
   const gql = `query($page:Int,$gt:Int,$lt:Int){
     Page(page:$page,perPage:50){
       pageInfo{hasNextPage}
       airingSchedules(airingAt_greater:$gt,airingAt_lesser:$lt,sort:TIME){
         airingAt episode
-        media{ id title{romaji english} coverImage{large} }
+        media{ id title{romaji english} coverImage{large} popularity }
       }
     }
   }`;
   const all = [];
-  for (let page = 1; page <= 4; page++) {
+  for (let page = 1; page <= 2; page++) {
     const data = await gqlFetch(gql, { page, gt: start, lt: end });
     all.push(...data.Page.airingSchedules);
     if (!data.Page.pageInfo.hasNextPage) break;
