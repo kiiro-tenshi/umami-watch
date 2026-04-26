@@ -128,20 +128,20 @@ umami-watch/
 ├── frontend/                    # React SPA (Vite)
 │   ├── src/
 │   │   ├── api/                 # External service integration modules
-│   │   │   ├── anilist.js       # AniList GraphQL: trending, seasonal, search, detail, weekly airing schedule
-│   │   │   ├── kitsu.js         # Kitsu REST: anime info, episodes, categories; normalizes to shared shape
+│   │   │   ├── anilist.js       # AniList GraphQL: trending, seasonal, search, detail, weekly airing schedule, browse/filter, genre list, studio lookup
+│   │   │   ├── kitsu.js         # Kitsu REST: anime info, episodes (with airdate), categories; normalizes to shared shape
 │   │   │   ├── tmdb.js          # TMDB REST: movies, TV, genres, trending
 │   │   │   ├── allanime.js      # AllAnime via backend proxy: search, sources, URL building
-│   │   │   ├── mangadex.js      # MangaDex via backend proxy: manga, chapters, covers
+│   │   │   ├── mangadex.js      # MangaDex via backend proxy: manga, chapters, covers; browseManga with search/tag/status/sort/offset
 │   │   │   ├── comick.js        # ComicK via backend proxy: search, chapters, images
 │   │   │   └── torrentio.js     # Unused in pages; test file only
 │   │   ├── components/          # Reusable React components
 │   │   │   ├── VideoPlayer.jsx  # Core player: Plyr + HLS.js, double-tap seek, subtitle overlay (465 lines)
 │   │   │   ├── ChatPanel.jsx    # Socket.IO live chat with emoji/GIF support
-│   │   │   ├── EpisodeList.jsx  # Episode selector with watched checkmarks + context menu
+│   │   │   ├── EpisodeList.jsx  # Episode selector with watched checkmarks + context menu; airdate display per episode ("Released" or "Release: Apr 30, 2026")
 │   │   │   ├── EpisodeContextMenu.jsx  # Right-click menu for manual watch toggle
 │   │   │   ├── SeasonSelector.jsx      # TV season/episode picker
-│   │   │   ├── AiringCalendar.jsx  # Weekly (Mon–Sun) airing schedule; fetches AniList airingSchedules; top 5 per day by popularity; prev/next week navigation
+│   │   │   ├── AiringCalendar.jsx  # Weekly (Mon–Sun) airing schedule; fetches AniList airingSchedules; top 5 per day by popularity; prev/next week navigation; live countdown timers (updates every minute); shows "Released" for past episodes
 │   │   │   ├── ContentCard.jsx  # Poster card for all content types
 │   │   │   ├── Navbar.jsx       # Top nav: logo, links, dark mode toggle, user avatar
 │   │   │   ├── BottomNav.jsx    # Mobile bottom tab bar (hidden on /watch and manga reader)
@@ -162,15 +162,15 @@ umami-watch/
 │   │   │   └── useReadChapters.js      # Tracks per-chapter read state for manga (batch writes)
 │   │   ├── pages/               # Route-level components
 │   │   │   ├── AuthPage.jsx     # Login + password reset with Turnstile CAPTCHA
-│   │   │   ├── HomePage.jsx     # Airing calendar + continue watching + seasonal trending + movies/TV rows (hero banner removed)
-│   │   │   ├── AnimeBrowsePage.jsx     # Anime search + Kitsu category browse
-│   │   │   ├── AnimeDetailPage.jsx     # Anime detail: episodes, watchlist, start watch party
-│   │   │   ├── MovieBrowsePage.jsx     # Movie/TV search + TMDB genre browse
+│   │   │   ├── HomePage.jsx     # Airing calendar + continue watching + seasonal trending + movies/TV rows (hero banner removed); personalized "Hi, {firstName}!" greeting in PIW motto
+│   │   │   ├── AnimeBrowsePage.jsx     # Anime search (Kitsu IDs) + AniList browse with season/year/genre/sort filters + load more; search uses Kitsu, filtered browse uses AniList + source=anilist on links
+│   │   │   ├── AnimeDetailPage.jsx     # Anime detail: episodes, watchlist, start watch party; studio name fetched from AniList and shown in info sidebar; source=anilist param triggers title-based Kitsu lookup with AniList fallback
+│   │   │   ├── MovieBrowsePage.jsx     # Movie/TV search + TMDB discover with genre/year/sort filters + load more; uses getTrending when no filters, discoverContent otherwise
 │   │   │   ├── MovieDetailPage.jsx     # Movie/TV detail: cast, trailer, seasons
 │   │   │   ├── WatchPage.jsx    # Video player + room sync + sidebar; most complex page (740 lines)
 │   │   │   ├── RoomsPage.jsx    # Create/join/list watch party rooms
 │   │   │   ├── ProfilePage.jsx  # Settings, watchlist, history, avatar upload
-│   │   │   ├── MangaBrowsePage.jsx     # Manga search + MangaDex tag browse
+│   │   │   ├── MangaBrowsePage.jsx     # Manga search + MangaDex browse with tag/status/sort filters + load more (offset-based pagination)
 │   │   │   ├── MangaDetailPage.jsx     # Manga detail: chapters, ComicK fallback, watchlist
 │   │   │   └── MangaReaderPage.jsx     # Chapter reader: vertical scroll + page-by-page modes
 │   │   ├── App.jsx              # BrowserRouter + ThemeProvider + Navbar + routes + BottomNav
