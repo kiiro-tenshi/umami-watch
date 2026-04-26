@@ -77,6 +77,22 @@ export const getMangaByGenre = async (tagId, limit = 20, offset = 0) => {
   return data.data || [];
 };
 
+export const browseManga = async ({ search, tag, status, sort = 'followedCount', offset = 0, limit = 24 } = {}) => {
+  const params = {
+    limit,
+    offset,
+    [`order[${sort}]`]: 'desc',
+    'includes[]': ['cover_art', 'author'],
+    'contentRating[]': ['safe', 'suggestive'],
+    'availableTranslatedLanguage[]': ['en'],
+  };
+  if (search) params.title = search;
+  if (tag) params['includedTags[]'] = [tag];
+  if (status) params['status[]'] = [status];
+  const data = await mdFetch('/manga', params);
+  return { data: data.data || [], total: data.total || 0 };
+};
+
 export const getMangaById = async (id) => {
   const data = await mdFetch(`/manga/${id}`, {
     'includes[]': ['cover_art', 'author', 'artist'],

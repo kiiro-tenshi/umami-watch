@@ -16,15 +16,25 @@ export function getCurrentSeasonLabel() {
   return `${name} ${year}`;
 }
 
-const gqlFetch = async (query, variables = {}) => {
+const gqlFetch = async (query, variables = {}, retries = 2) => {
   const res = await fetch(ANILIST_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables })
   });
+  if (res.status === 429 && retries > 0) {
+    await new Promise(r => setTimeout(r, 1500));
+    return gqlFetch(query, variables, retries - 1);
+  }
   if (!res.ok) throw new Error(`AniList HTTP error: ${res.status}`);
   const json = await res.json();
-  if (json.errors) throw new Error(json.errors[0]?.message || 'AniList GraphQL error');
+  if (json.errors) {
+    if (json.errors[0]?.status === 429 && retries > 0) {
+      await new Promise(r => setTimeout(r, 1500));
+      return gqlFetch(query, variables, retries - 1);
+    }
+    throw new Error(json.errors[0]?.message || 'AniList GraphQL error');
+  }
   return json.data;
 };
 
@@ -78,6 +88,16 @@ export const getAnimeById = async (id) => {
   return data.Media;
 };
 
+export const getStudioByTitle = async (title) => {
+  const gql = `query($search:String){
+    Media(search:$search,type:ANIME){
+      studios(isMain:true){nodes{name}}
+    }
+  }`;
+  const data = await gqlFetch(gql, { search: title });
+  return data.Media?.studios?.nodes?.[0]?.name || null;
+};
+
 export const getAnimeGenres = async () => {
   const gql = `query{ GenreCollection }`;
   const data = await gqlFetch(gql);
@@ -94,7 +114,7 @@ export const getWeekAiringSchedule = async (weekStart) => {
       pageInfo{hasNextPage}
       airingSchedules(airingAt_greater:$gt,airingAt_lesser:$lt,sort:TIME){
         airingAt episode
-        media{ id title{romaji english} coverImage{large} popularity }
+        media{ id title{romaji english} coverImage{large} popularity episodes }
       }
     }
   }`;
@@ -105,6 +125,28 @@ export const getWeekAiringSchedule = async (weekStart) => {
     if (!data.Page.pageInfo.hasNextPage) break;
   }
   return all;
+};
+
+export function getCurrentSeasonInfo() {
+  return getCurrentSeason();
+}
+
+export const browseAnime = async ({ season, year, genre, search, sort = 'TRENDING_DESC', page = 1, perPage = 24 } = {}) => {
+  const gql = `query($page:Int,$perPage:Int,$sort:[MediaSort],$search:String,$season:MediaSeason,$seasonYear:Int,$genre:String){
+    Page(page:$page,perPage:$perPage){
+      pageInfo{hasNextPage}
+      media(type:ANIME,sort:$sort,search:$search,season:$season,seasonYear:$seasonYear,genre:$genre){
+        id title{romaji english} coverImage{large} averageScore episodes status genres
+      }
+    }
+  }`;
+  const variables = { page, perPage, sort: [sort] };
+  if (search) variables.search = search;
+  if (season) variables.season = season;
+  if (year) variables.seasonYear = parseInt(year);
+  if (genre) variables.genre = genre;
+  const data = await gqlFetch(gql, variables);
+  return { media: data.Page.media, hasNextPage: data.Page.pageInfo.hasNextPage };
 };
 
 export const discoverAnimeByGenre = async (genre, page = 1, perPage = 20) => {
