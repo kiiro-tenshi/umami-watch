@@ -1,26 +1,43 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { getMonthAiringSchedule } from '../api/anilist';
+import { getWeekAiringSchedule } from '../api/anilist';
 import LoadingSpinner from './LoadingSpinner';
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function getWeekStart(ref = new Date()) {
+  const d = new Date(ref);
+  const day = d.getDay(); // 0=Sun
+  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function dateKey(date) {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function formatWeekRange(weekStart) {
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const s = weekStart, e = weekEnd;
+  if (s.getMonth() === e.getMonth()) {
+    return `${MONTH_SHORT[s.getMonth()]} ${s.getDate()}–${e.getDate()}, ${e.getFullYear()}`;
+  }
+  return `${MONTH_SHORT[s.getMonth()]} ${s.getDate()} – ${MONTH_SHORT[e.getMonth()]} ${e.getDate()}, ${e.getFullYear()}`;
+}
 
 export default function AiringCalendar() {
   const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1);
+  const [weekStart, setWeekStart] = useState(() => getWeekStart());
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDay, setSelectedDay] = useState(today.getDate());
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    getMonthAiringSchedule(year, month)
+    getWeekAiringSchedule(weekStart)
       .then(data => {
         if (cancelled) return;
         setSchedules(data);
@@ -32,163 +49,167 @@ export default function AiringCalendar() {
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [year, month]);
+  }, [weekStart]);
 
-  // Group by day-of-month
+  // Group by day, sort each day by popularity desc, cap at 5
   const dayMap = useMemo(() => {
     const map = {};
     for (const s of schedules) {
-      const day = new Date(s.airingAt * 1000).getDate();
-      if (!map[day]) map[day] = [];
-      map[day].push(s);
+      const key = dateKey(new Date(s.airingAt * 1000));
+      if (!map[key]) map[key] = [];
+      map[key].push(s);
+    }
+    for (const key of Object.keys(map)) {
+      map[key].sort((a, b) => (b.media.popularity || 0) - (a.media.popularity || 0));
+      map[key] = map[key].slice(0, 5);
     }
     return map;
   }, [schedules]);
 
-  const firstDayOfMonth = new Date(year, month - 1, 1).getDay();
-  const daysInMonth = new Date(year, month, 0).getDate();
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    return d;
+  });
 
-  const prevMonth = () => {
-    if (month === 1) { setYear(y => y - 1); setMonth(12); }
-    else setMonth(m => m - 1);
-    setSelectedDay(null);
-  };
-  const nextMonth = () => {
-    if (month === 12) { setYear(y => y + 1); setMonth(1); }
-    else setMonth(m => m + 1);
-    setSelectedDay(null);
-  };
+  const prevWeek = () => setWeekStart(ws => {
+    const d = new Date(ws);
+    d.setDate(d.getDate() - 7);
+    return d;
+  });
 
-  const isToday = (day) =>
-    year === today.getFullYear() && month === today.getMonth() + 1 && day === today.getDate();
-
-  const selectedEpisodes = selectedDay ? (dayMap[selectedDay] || []) : [];
+  const nextWeek = () => setWeekStart(ws => {
+    const d = new Date(ws);
+    d.setDate(d.getDate() + 7);
+    return d;
+  });
 
   return (
-    <div className="bg-surface border border-border-subtle rounded-xl overflow-hidden">
+    <div className="bg-surface border border-border rounded-xl overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
-        <h2 className="font-bold text-primary text-base">Airing Schedule</h2>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <h2 className="font-bold text-primary text-base">Airing This Week</h2>
         <div className="flex items-center gap-1">
           <button
-            onClick={prevMonth}
+            onClick={prevWeek}
             className="w-7 h-7 flex items-center justify-center rounded hover:bg-surface-raised text-secondary hover:text-primary transition-colors text-lg leading-none"
           >‹</button>
-          <span className="text-sm font-semibold text-primary w-32 text-center">
-            {MONTH_NAMES[month - 1]} {year}
+          <span className="text-xs font-semibold text-primary w-44 text-center">
+            {formatWeekRange(weekStart)}
           </span>
           <button
-            onClick={nextMonth}
+            onClick={nextWeek}
             className="w-7 h-7 flex items-center justify-center rounded hover:bg-surface-raised text-secondary hover:text-primary transition-colors text-lg leading-none"
           >›</button>
         </div>
       </div>
 
-      {/* Weekday labels */}
-      <div className="grid grid-cols-7 border-b border-border-subtle">
-        {WEEKDAYS.map(d => (
-          <div key={d} className="text-center text-[11px] font-semibold text-muted py-2 tracking-wide">
-            {d}
-          </div>
-        ))}
-      </div>
-
-      {/* Calendar grid */}
       {loading ? (
-        <div className="py-16 flex justify-center">
+        <div className="py-12 flex justify-center">
           <LoadingSpinner />
         </div>
       ) : (
-        <div className="grid grid-cols-7 border-t border-l border-border-subtle/40">
-          {/* Leading empty cells */}
-          {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-            <div
-              key={`pre-${i}`}
-              className="min-h-[76px] border-r border-b border-border-subtle/40 bg-surface-raised/10"
-            />
-          ))}
+        <>
+          {/* Desktop: 7-column grid */}
+          <div className="hidden md:grid grid-cols-7 divide-x divide-border">
+            {days.map((day, i) => {
+              const key = dateKey(day);
+              const eps = dayMap[key] || [];
+              const isToday = dateKey(day) === dateKey(today);
 
-          {/* Day cells */}
-          {Array.from({ length: daysInMonth }).map((_, i) => {
-            const day = i + 1;
-            const eps = dayMap[day] || [];
-            const selected = selectedDay === day;
-            const current = isToday(day);
-
-            return (
-              <div
-                key={day}
-                onClick={() => setSelectedDay(selected ? null : day)}
-                className={`min-h-[76px] border-r border-b border-border-subtle/40 p-1.5 cursor-pointer transition-colors select-none
-                  ${selected ? 'bg-surface-raised' : 'hover:bg-surface-raised/50'}`}
-              >
-                <div className={`text-[11px] font-bold mb-1 w-5 h-5 flex items-center justify-center rounded-full
-                  ${current ? 'bg-accent-teal text-white' : 'text-secondary'}`}>
-                  {day}
+              return (
+                <div key={i} className={`flex flex-col ${isToday ? 'bg-surface-raised/50' : ''}`}>
+                  <div className={`px-2 py-2 text-center border-b border-border ${isToday ? 'bg-accent-teal/10' : ''}`}>
+                    <p className={`text-[10px] font-bold tracking-wide ${isToday ? 'text-accent-teal' : 'text-muted'}`}>
+                      {DAY_NAMES[i]}
+                    </p>
+                    <p className={`text-sm font-bold ${isToday ? 'text-accent-teal' : 'text-secondary'}`}>
+                      {MONTH_SHORT[day.getMonth()]} {day.getDate()}
+                    </p>
+                  </div>
+                  <div className="flex flex-col divide-y divide-border">
+                    {eps.length === 0 ? (
+                      <p className="text-[11px] text-muted text-center py-5 px-2">—</p>
+                    ) : (
+                      eps.map((ep, idx) => {
+                        const airTime = new Date(ep.airingAt * 1000);
+                        const title = ep.media.title.english || ep.media.title.romaji;
+                        return (
+                          <Link
+                            key={idx}
+                            to={`/anime/${ep.media.id}?title=${encodeURIComponent(title)}`}
+                            className="flex items-center gap-2 px-2 py-2 hover:bg-surface-raised transition-colors group"
+                          >
+                            <img
+                              src={ep.media.coverImage.large}
+                              alt=""
+                              className="w-8 h-11 object-cover rounded flex-shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-semibold text-primary group-hover:text-accent-teal transition-colors line-clamp-2 leading-tight">
+                                {title}
+                              </p>
+                              <p className="text-[10px] text-muted mt-0.5">Ep {ep.episode}</p>
+                              <p className="text-[10px] text-muted tabular-nums">
+                                {airTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            </div>
+                          </Link>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-0.5">
-                  {eps.slice(0, 4).map((ep, idx) => (
-                    <img
-                      key={idx}
-                      src={ep.media.coverImage.large}
-                      alt={ep.media.title.english || ep.media.title.romaji}
-                      title={ep.media.title.english || ep.media.title.romaji}
-                      className="w-5 h-5 rounded-sm object-cover"
-                    />
-                  ))}
-                  {eps.length > 4 && (
-                    <span className="text-[10px] text-muted self-end leading-none">+{eps.length - 4}</span>
+              );
+            })}
+          </div>
+
+          {/* Mobile: vertical list of day sections */}
+          <div className="md:hidden flex flex-col divide-y divide-border">
+            {days.map((day, i) => {
+              const key = dateKey(day);
+              const eps = dayMap[key] || [];
+              const isToday = dateKey(day) === dateKey(today);
+
+              return (
+                <div key={i}>
+                  <div className={`px-3 py-2 flex items-center gap-2 ${isToday ? 'bg-accent-teal/10' : 'bg-surface-raised/30'}`}>
+                    <span className={`text-xs font-bold ${isToday ? 'text-accent-teal' : 'text-muted'}`}>{DAY_NAMES[i]}</span>
+                    <span className={`text-sm font-bold ${isToday ? 'text-accent-teal' : 'text-secondary'}`}>
+                      {MONTH_SHORT[day.getMonth()]} {day.getDate()}
+                    </span>
+                  </div>
+                  {eps.length === 0 ? (
+                    <p className="text-[11px] text-muted px-3 py-3">—</p>
+                  ) : (
+                    <div className="flex gap-3 overflow-x-auto scrollbar-hide px-3 py-3">
+                      {eps.map((ep, idx) => {
+                        const title = ep.media.title.english || ep.media.title.romaji;
+                        return (
+                          <Link
+                            key={idx}
+                            to={`/anime/${ep.media.id}?title=${encodeURIComponent(title)}`}
+                            className="flex-shrink-0 w-[80px] group"
+                          >
+                            <img
+                              src={ep.media.coverImage.large}
+                              alt=""
+                              className="w-[80px] h-[112px] object-cover rounded"
+                            />
+                            <p className="text-[10px] font-semibold text-primary group-hover:text-accent-teal transition-colors line-clamp-2 leading-tight mt-1">
+                              {title}
+                            </p>
+                            <p className="text-[10px] text-muted">Ep {ep.episode}</p>
+                          </Link>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Selected day episode list */}
-      {selectedDay && !loading && (
-        <div className="border-t border-border-subtle">
-          <div className="flex items-center justify-between px-4 py-2 border-b border-border-subtle/50">
-            <h3 className="text-sm font-bold text-primary">
-              {MONTH_NAMES[month - 1]} {selectedDay}
-            </h3>
-            <span className="text-xs text-muted">
-              {selectedEpisodes.length} episode{selectedEpisodes.length !== 1 ? 's' : ''}
-            </span>
+              );
+            })}
           </div>
-          {selectedEpisodes.length === 0 ? (
-            <p className="text-sm text-muted px-4 py-4">No episodes scheduled.</p>
-          ) : (
-            <div className="overflow-y-auto max-h-60 scrollbar-themed">
-              {selectedEpisodes.map((ep, idx) => {
-                const airTime = new Date(ep.airingAt * 1000);
-                return (
-                  <Link
-                    key={idx}
-                    to={`/anime/${ep.media.id}`}
-                    className="flex items-center gap-3 px-4 py-2 hover:bg-surface-raised transition-colors group"
-                  >
-                    <img
-                      src={ep.media.coverImage.large}
-                      alt=""
-                      className="w-8 h-11 object-cover rounded flex-shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-primary truncate group-hover:text-accent-teal transition-colors">
-                        {ep.media.title.english || ep.media.title.romaji}
-                      </p>
-                      <p className="text-xs text-muted">Episode {ep.episode}</p>
-                    </div>
-                    <time className="text-xs text-muted flex-shrink-0 tabular-nums">
-                      {airTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </time>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        </>
       )}
     </div>
   );
