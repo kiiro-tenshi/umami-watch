@@ -16,7 +16,7 @@ const fetchTMDB = async (endpoint, params = {}) => {
 export const tmdbImage = (path, size = 'w500') => path ? `https://image.tmdb.org/t/p/${size}${path}` : '/placeholder.png';
 
 export const searchContent = (query, type) => fetchTMDB(`/search/${type}`, { query });
-export const getTrending = (type, window = 'week') => fetchTMDB(`/trending/${type}/${window}`);
+export const getTrending = (type, window = 'week', page = 1) => fetchTMDB(`/trending/${type}/${window}`, { page });
 export const getMovieDetail = (id) => fetchTMDB(`/movie/${id}`, { append_to_response: 'credits,videos,external_ids' });
 export const getTVDetail = (id) => fetchTMDB(`/tv/${id}`, { append_to_response: 'credits,videos,external_ids' });
 export const getTVSeason = (id, season) => fetchTMDB(`/tv/${id}/season/${season}`);

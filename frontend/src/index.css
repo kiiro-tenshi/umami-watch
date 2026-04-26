@@ -107,6 +107,29 @@
   padding: 2px 8px;
 }
 
+/* ── Global scrollbar — themed to match app ──────────────────────────────── */
+html {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) var(--color-surface-raised);
+}
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: var(--color-surface-raised);
+}
+::-webkit-scrollbar-thumb {
+    background-color: var(--color-border);
+    border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-accent-teal);
+}
+::-webkit-scrollbar-corner {
+    background: var(--color-surface-raised);
+}
+
 /* Hide scrollbar for horizontal scrolling containers */
 .scrollbar-hide::-webkit-scrollbar {
     display: none;
@@ -116,13 +139,14 @@
     scrollbar-width: none;
 }
 
-/* Themed scrollbar — matches app color tokens */
+/* Themed scrollbar — matches app color tokens (narrower than global) */
 .scrollbar-themed {
     scrollbar-width: thin;
     scrollbar-color: var(--color-border) transparent;
 }
 .scrollbar-themed::-webkit-scrollbar {
     width: 4px;
+    height: 4px;
 }
 .scrollbar-themed::-webkit-scrollbar-track {
     background: transparent;

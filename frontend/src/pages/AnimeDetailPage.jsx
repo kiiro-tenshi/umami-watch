@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
+import { getAnimeById, getStudioByTitle } from '../api/anilist';
 import { useAuth } from '../hooks/useAuth';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { auth } from '../firebase';
@@ -12,6 +13,7 @@ export default function AnimeDetailPage() {
   const [searchParams] = useSearchParams();
   const roomId = searchParams.get('roomId');
   const titleHint = searchParams.get('title');
+  const source = searchParams.get('source');
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isInWatchlist, toggleWatchlist } = useWatchlist(user?.uid);
@@ -22,6 +24,7 @@ export default function AnimeDetailPage() {
   const [error, setError] = useState(null);
   const [staleLink, setStaleLink] = useState(false);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [studio, setStudio] = useState(null);
 
   async function handleWatchParty(epNum) {
     if (!user || isCreatingRoom) return;
@@ -52,12 +55,50 @@ export default function AnimeDetailPage() {
     const fetchAll = async () => {
       setLoading(true);
       setError(null);
+
+      // ID is from AniList — skip the Kitsu ID lookup and search by title directly
+      if (source === 'anilist' && titleHint) {
+        const results = await searchAnimeKitsu(titleHint).catch(() => []);
+        const normalized = str => str.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+        const hintWords = normalized(titleHint).split(/\s+/).filter(w => w.length > 3);
+        const match = results.find(r => {
+          const candidate = normalized([r.title?.english, r.title?.romaji].filter(Boolean).join(' '));
+          return hintWords.some(word => candidate.includes(word));
+        });
+        if (match) {
+          const qs = new URLSearchParams();
+          if (roomId) qs.set('roomId', roomId);
+          qs.set('title', titleHint);
+          navigate(`/anime/${match.id}?${qs.toString()}`, { replace: true });
+          return;
+        }
+        // Kitsu doesn't have it yet — fall back to AniList data using the AniList ID
+        try {
+          const anilistData = await getAnimeById(kitsuId);
+          if (anilistData) {
+            setAnime(anilistData);
+            setStudio(anilistData.studios?.nodes?.[0]?.name || null);
+            const count = anilistData.episodes || 1;
+            setEpisodes(Array.from({ length: count }, (_, i) => ({
+              id: `${i + 1}`, number: i + 1, title: `Episode ${i + 1}`, isFiller: false,
+            })));
+            setLoading(false);
+            return;
+          }
+        } catch { /* fall through to stale link */ }
+        setStaleLink(true);
+        setLoading(false);
+        return;
+      }
+
       try {
         const [animeData, eps] = await Promise.all([
           getAnimeKitsuInfo(kitsuId),
           getKitsuEpisodes(kitsuId),
         ]);
         setAnime(animeData);
+        const title = animeData.title?.english || animeData.title?.romaji;
+        if (title) getStudioByTitle(title).then(s => setStudio(s)).catch(() => {});
 
         if (eps.length > 0) {
           setEpisodes(eps);
@@ -118,10 +159,19 @@ export default function AnimeDetailPage() {
   if (loading) return <LoadingSpinner fullScreen />;
   if (staleLink) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-4">
-      <div className="text-5xl">🔗</div>
-      <h2 className="text-2xl font-bold text-primary">This link is outdated</h2>
-      <p className="text-secondary max-w-md">This anime page uses an old ID that's no longer valid. Please search for the anime to find the updated page.</p>
-      <Link to="/anime" className="mt-2 px-6 py-2.5 bg-accent-teal text-white rounded-lg font-bold shadow hover:opacity-90 transition">Browse Anime</Link>
+      <div className="text-5xl">🔍</div>
+      <h2 className="text-2xl font-bold text-primary">Anime not found in Kitsu</h2>
+      <p className="text-secondary max-w-md">
+        {titleHint ? (
+          <><span className="font-semibold text-primary">"{titleHint}"</span> couldn't be matched in Kitsu's database — it may not be indexed yet.</>
+        ) : 'This anime ID is not valid or has moved.'}
+      </p>
+      <Link
+        to={titleHint ? `/anime?search=${encodeURIComponent(titleHint)}` : '/anime'}
+        className="mt-2 px-6 py-2.5 bg-accent-teal text-white rounded-lg font-bold shadow hover:opacity-90 transition"
+      >
+        Search for it manually
+      </Link>
     </div>
   );
   if (!anime) return <div className="p-8 text-center text-red-500 font-bold">Failed to load content.</div>;
@@ -237,6 +287,12 @@ export default function AnimeDetailPage() {
                 <div>
                   <p className="text-muted font-semibold uppercase tracking-wider mb-1">Episodes</p>
                   <p className="text-primary font-medium">{anime.episodes}</p>
+                </div>
+              )}
+              {studio && (
+                <div>
+                  <p className="text-muted font-semibold uppercase tracking-wider mb-1">Studio</p>
+                  <p className="text-primary font-medium">{studio}</p>
                 </div>
               )}
             </div>

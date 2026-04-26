@@ -1,16 +1,21 @@
 import { Link } from 'react-router-dom';
 
-export default function ContentCard({ id, title, posterUrl, contentType, rating, className, progress, continueUrl }) {
+export default function ContentCard({ id, title, posterUrl, contentType, rating, className, progress, continueUrl, source }) {
   const badgeColor =
     contentType === 'anime' ? 'bg-accent-teal' :
     contentType === 'movie' ? 'bg-accent-blue' :
     contentType === 'manga' ? 'bg-accent-purple' : 'bg-accent-orange';
 
+  const animeParams = new URLSearchParams();
+  if (title) animeParams.set('title', title);
+  if (source) animeParams.set('source', source);
+  const animeQuery = animeParams.toString();
+
   const defaultLinkTo =
     contentType === 'tv' ? `/tv/${id}` :
     contentType === 'movie' ? `/movie/${id}` :
     contentType === 'manga' ? `/manga/${id}` :
-    `/anime/${id}${title ? `?title=${encodeURIComponent(title)}` : ''}`;
+    `/anime/${id}${animeQuery ? `?${animeQuery}` : ''}`;
 
   const linkTo = continueUrl || defaultLinkTo;
   const sizeClass = className ?? 'w-32 sm:w-40 h-48 sm:h-60 shrink-0';

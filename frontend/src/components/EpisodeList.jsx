@@ -66,11 +66,19 @@ export default function EpisodeList({ episodes, animeId, currentEpisodeId, roomI
                 ) : (
                   <span className="w-3.5 flex-shrink-0" />
                 )}
-                <span className="text-muted font-bold text-sm">EP {ep.number}</span>
-                <span className={`font-semibold truncate ${isCurrent ? 'text-accent-teal' : watched ? 'text-muted' : 'text-primary'}`}>
-                  {ep.title || `Episode ${ep.number}`}
-                </span>
-                {ep.isFiller && <span className="ml-1 text-xs bg-orange-100 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded font-semibold flex-shrink-0">Filler</span>}
+                <span className="text-muted font-bold text-sm flex-shrink-0">EP {ep.number}</span>
+                <span className="text-muted flex-shrink-0">·</span>
+                <div className="min-w-0 flex-1">
+                  <span className={`font-semibold truncate block ${isCurrent ? 'text-accent-teal' : watched ? 'text-muted' : 'text-primary'}`}>
+                    {ep.title || `Episode ${ep.number}`}
+                    {ep.isFiller && <span className="ml-1 text-xs bg-orange-100 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded font-semibold">Filler</span>}
+                  </span>
+                  {ep.airdate && (
+                    <span className="text-xs text-muted">
+                      {new Date(ep.airdate) <= new Date() ? 'Released' : `Release: ${new Date(ep.airdate).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })}`}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2 shrink-0 ml-2">
                 {onWatchParty && !roomId && (

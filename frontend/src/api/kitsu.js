@@ -64,7 +64,7 @@ export const getKitsuEpisodes = async (kitsuId) => {
 
   while (true) {
     const res = await fetch(
-      `${KITSU_BASE}/anime/${kitsuId}/episodes?page[limit]=${limit}&page[offset]=${offset}&fields[episodes]=number,canonicalTitle`
+      `${KITSU_BASE}/anime/${kitsuId}/episodes?page[limit]=${limit}&page[offset]=${offset}&fields[episodes]=number,canonicalTitle,airdate`
     );
     if (!res.ok) break;
     const data = await res.json();
@@ -78,6 +78,7 @@ export const getKitsuEpisodes = async (kitsuId) => {
     id: ep.id,
     number: ep.attributes.number,
     title: ep.attributes.canonicalTitle || `Episode ${ep.attributes.number}`,
+    airdate: ep.attributes.airdate || null,
     isFiller: false,
   }));
 };
