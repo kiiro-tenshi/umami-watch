@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
 import { searchAllAnime, getAllAnimeShow, getAllAnimeSources, pickBestShow, buildVideoProxyUrl } from '../api/allanime';
+import { getAnimeById } from '../api/anilist';
 import { getMovieDetail, getTVDetail } from '../api/tmdb';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
@@ -160,10 +161,16 @@ export default function WatchPage() {
             // Kitsu periodically renumbers entries — fall back to a title search.
             // roomData.contentTitle is "Anime Title — Episode N", strip the suffix.
             const storedTitle = roomData?.contentTitle?.replace(/\s*—\s*Episode\s*\d+.*$/i, '').trim();
-            if (!storedTitle) throw new Error('Anime not found (Kitsu ID expired). Please re-open from the search page.');
-            const results = await searchAnimeKitsu(storedTitle);
-            if (!results.length) throw new Error('Anime not found (Kitsu ID expired). Please re-open from the search page.');
-            return results[0];
+            if (storedTitle) {
+              const results = await searchAnimeKitsu(storedTitle);
+              if (results.length) return results[0];
+            }
+            // kitsuId may actually be an AniList ID (AnimeDetailPage AniList fallback path)
+            try {
+              const anilistData = await getAnimeById(kitsuId);
+              if (anilistData) return anilistData;
+            } catch { /* ignore */ }
+            throw new Error('Anime not found (Kitsu ID expired). Please re-open from the search page.');
           });
           title = `${animeData.title?.english || animeData.title?.romaji || 'Anime'} — Episode ${epNum}`;
           poster = animeData.coverImage?.large || '';
