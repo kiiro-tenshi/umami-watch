@@ -4,13 +4,36 @@ export default {
 
     const CORS = {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': '*',
     };
 
     // CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: CORS });
+    }
+
+    // AllAnime GraphQL proxy — routes around Cloud Run IP blocking
+    if (request.method === 'POST' && url.searchParams.get('mode') === 'allanime') {
+      let upstream;
+      try {
+        upstream = await fetch('https://api.allanime.day/api', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Referer': 'https://allanime.to/',
+            'Origin': 'https://allanime.to',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          },
+          body: await request.text(),
+        });
+      } catch (err) {
+        return new Response(err.message, { status: 502, headers: CORS });
+      }
+      return new Response(await upstream.text(), {
+        status: upstream.status,
+        headers: { ...CORS, 'Content-Type': 'application/json' },
+      });
     }
 
     const targetUrl = url.searchParams.get('url');
