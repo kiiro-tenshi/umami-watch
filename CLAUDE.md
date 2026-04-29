@@ -85,14 +85,14 @@ UmamiStream is a private, invite-only streaming portal for anime, manga, movies,
 - **REST API** — authenticated with Firebase ID tokens (`Authorization: Bearer <token>` or `?token=<token>` query param), handled by `server/middleware/requireAuth.js`
 - **Socket.IO** (WebSocket with polling fallback) — real-time watch party sync; auth via `socket.handshake.auth.token`
 - **Direct third-party API calls from browser** — Kitsu, AniList GraphQL, TMDB (no backend proxy needed for these)
-- **Backend-proxied calls** — AllAnime, MangaDex, ComicK, video CDN (all require CORS bypass or Referer injection)
+- **Backend-proxied calls** — AnimeKai, AllAnime, MangaDex, ComicK, video CDN (all require CORS bypass or Referer injection)
 
 ### Data Flow (Anime Watch Example)
 1. User navigates to `/watch?type=anime&kitsuId=12345&epNum=3`
 2. Frontend fetches Firebase ID token → calls `GET /api/rooms/{roomId}` (if watch party)
-3. Frontend calls AllAnime API via `GET /api/anime/allanime/search`, then `/sources`
-4. Server decodes XOR-encoded stream URL, returns source list
-5. Frontend picks best source; HLS sources proxied through Cloudflare Worker or `GET /api/proxy/hls`
+3. Frontend calls AnimeKai API via `GET /api/anime/animekai/search`, then `/episodes`, then `/sources`
+4. Server fetches watch page for ani_id, calls enc-dec.app for token encoding, resolves megaup CDN stream via decryption chain
+5. Frontend proxies HLS stream through Cloudflare Worker (with `referer=megaup.nl`) or `GET /api/proxy/hls`
 6. Plyr + HLS.js render video; position saved to Firestore `users/{uid}/history` every 15 seconds
 7. If in a room: Socket.IO events (`playback:play`, `playback:pause`, `playback:seek`, `playback:heartbeat`) sync state between host and viewers; Firestore stores authoritative `rooms/{roomId}.playback`
 
@@ -106,8 +106,10 @@ UmamiStream is a private, invite-only streaming portal for anime, manga, movies,
 | AniList GraphQL (`graphql.anilist.co`) | Frontend → direct | Anime search, seasonal trending, detail pages |
 | Kitsu REST API (`kitsu.io/api/edge`) | Frontend → direct | Anime info, episode lists, category browse |
 | TMDB REST API v3 | Frontend → direct | Movie/TV metadata, genres, trailers, cast |
-| AllAnime GraphQL (`api.allanime.day/api`) | Frontend → backend proxy | Anime search + stream sources |
-| AllAnime CDN (`tools.fast4speed.rsvp`) | Frontend → backend proxy | Direct MP4 video files |
+| AnimeKai (`anikai.to`) | Frontend → backend proxy | Anime search, episode list, HLS stream (via enc-dec.app + megaup CDN) |
+| enc-dec.app | Backend → direct | Token encoding/decryption for AnimeKai API (dependency risk: third-party) |
+| megaup CDN (`megaup.nl`, `hub26link.site`) | Frontend → Cloudflare Worker | HLS video streams from AnimeKai |
+| AllAnime GraphQL (`api.allanime.day/api`) | Frontend → backend proxy | Legacy anime source (CAPTCHA-blocked on sourceUrls since Apr 2026) |
 | MangaDex API (`api.mangadex.org`) | Frontend → backend proxy | Manga search, chapter metadata |
 | MangaDex CDN (`uploads.mangadex.org`) | Frontend → backend proxy | Cover images (Referer required) |
 | ComicK API (`comick.art/api`) | Frontend → backend proxy | Comics search, chapter lists |
@@ -131,7 +133,8 @@ umami-watch/
 │   │   │   ├── anilist.js       # AniList GraphQL: trending, seasonal, search, detail, weekly airing schedule, browse/filter, genre list, studio lookup
 │   │   │   ├── kitsu.js         # Kitsu REST: anime info, episodes (with airdate), categories; normalizes to shared shape
 │   │   │   ├── tmdb.js          # TMDB REST: movies, TV, genres, trending
-│   │   │   ├── allanime.js      # AllAnime via backend proxy: search, sources, URL building
+│   │   │   ├── animekai.js      # AnimeKai via backend proxy: search, episodes, sources, pickBestAnimekaiShow
+│   │   │   ├── allanime.js      # AllAnime via backend proxy: search, sources, URL building (legacy — CAPTCHA-blocked)
 │   │   │   ├── mangadex.js      # MangaDex via backend proxy: manga, chapters, covers; browseManga with search/tag/status/sort/offset
 │   │   │   ├── comick.js        # ComicK via backend proxy: search, chapters, images
 │   │   │   └── torrentio.js     # Unused in pages; test file only
@@ -192,7 +195,8 @@ umami-watch/
 │   ├── routes/
 │   │   ├── users.js             # GET/PATCH /api/me — user profile; DELETE /api/me/history
 │   │   ├── rooms.js             # Full CRUD for watch party rooms + room expiry cleanup job
-│   │   ├── allanime.js          # AllAnime proxy: search, show details, stream sources with XOR/AES decoding
+│   │   ├── animekai.js          # AnimeKai proxy: search (anikai.to AJAX), episodes (watch page → ani_id → enc-dec.app), sources (enc-dec.app + megaup CDN chain)
+│   │   ├── allanime.js          # AllAnime proxy: search, show details, stream sources with XOR/AES decoding (legacy)
 │   │   └── torrent.js           # Torrent streaming: /stream (FFmpeg remux), /seed (raw bytes), /status
 │   ├── socket/
 │   │   └── roomSocket.js        # Socket.IO server: auth middleware, room join/leave, playback sync, chat
@@ -495,11 +499,14 @@ docker build -t umami-watch:local \
 
 ## 9. Key Business Logic Locations
 
-### AllAnime Title Matching (`frontend/src/api/allanime.js` — `pickBestShow()`)
-Scores candidate shows by counting matching words between the query title and the candidate's `name`/`englishName`, then penalizes candidates with extra words. This is the critical function that determines which AllAnime entry maps to a given Kitsu anime. Incorrect matches cause wrong episodes or broken streams.
+### AnimeKai Stream Resolution (`server/routes/animekai.js`)
+Three-endpoint chain: `/search` (anikai.to AJAX) → `/episodes` (fetch watch page to extract `ani_id`, then episode list via enc-dec.app token) → `/sources` (server list → link_id → enc-dec.app dec-kai → megaup /media → enc-dec.app dec-mega → HLS URL). The `enc-dec.app` service is a third-party dependency; if it goes down, anime streaming breaks. The HLS stream from `hub26link.site` CDN requires `Referer: https://megaup.nl/` — passed as the `referer` parameter to the Cloudflare Worker proxy.
 
-### AllAnime URL Decoding (`server/routes/allanime.js` lines ~17–35)
-Two decoding paths:
+### AnimeKai Title Matching (`frontend/src/api/animekai.js` — `pickBestAnimekaiShow()`)
+Same word-count scoring algorithm as the old AllAnime `pickBestShow()`. Scores by matching word count minus penalty for extra words. Determines which AnimeKai entry maps to a given Kitsu/AniList anime title.
+
+### AllAnime URL Decoding (`server/routes/allanime.js` lines ~17–35) — legacy
+Two decoding paths (used if AllAnime CAPTCHA restriction is ever lifted):
 1. **XOR-56**: URLs prefixed with `--` are decoded byte-by-byte with key `56`
 2. **AES-256-GCM**: Responses with `tobeparsed` field use `sha256('Xot36i3lK3:v1')` as key, bytes 1–13 as IV, last 16 bytes as auth tag
 
