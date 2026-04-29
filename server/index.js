@@ -30,6 +30,7 @@ if (saPath && existsSync(saPath)) {
 import userRoutes from './routes/users.js';
 import createRoomRouter from './routes/rooms.js';
 import allAnimeRoutes from './routes/allanime.js';
+import animekaiRoutes from './routes/animekai.js';
 import setupSockets from './socket/roomSocket.js';
 import requireAuth from './middleware/requireAuth.js';
 
@@ -84,6 +85,7 @@ app.post('/api/verify-turnstile', async (req, res) => {
 app.use('/api/me', userRoutes);
 app.use('/api/rooms', createRoomRouter(io));
 app.use('/api/anime/allanime', requireAuth, allAnimeRoutes);
+app.use('/api/anime/animekai', requireAuth, animekaiRoutes);
 
 // ─── HLS Proxy (fallback when Cloudflare Worker is blocked by CDN) ──────────
 // In-memory LRU cache for .ts segments — avoids duplicate upstream fetches when

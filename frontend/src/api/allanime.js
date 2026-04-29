@@ -97,12 +97,6 @@ export const getAllAnimeSources = async (showId, ep, type = 'sub') => {
   return { sources };
 };
 
-/**
- * Pick the AllAnime show from a search result list that best matches a given title.
- * Scores each show by how many words from the search title appear in the show name,
- * penalising names that have more words (e.g. "Season 2" suffix) by 0.5 per extra word.
- * Falls back to shows[0] if the list is empty.
- */
 export function pickBestShow(shows, searchTitle) {
   if (!shows || shows.length === 0) return null;
   const normalise = s => s.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
@@ -117,11 +111,6 @@ export function pickBestShow(shows, searchTitle) {
   return scored[0].show;
 }
 
-/**
- * Build a proxied video URL for direct MP4 sources (AllAnime CDN has no CORS).
- * Uses the Cloudflare Worker proxy (free egress) when available,
- * falling back to the Cloud Run backend proxy.
- */
 export const buildVideoProxyUrl = (rawUrl) => {
   const workerBase = import.meta.env.VITE_HLS_PROXY_URL;
   if (workerBase) {
@@ -129,7 +118,6 @@ export const buildVideoProxyUrl = (rawUrl) => {
     u.searchParams.set('url', rawUrl);
     return u.toString();
   }
-  // Fallback: Cloud Run proxy (incurs egress charges)
   const base = `${import.meta.env.VITE_API_BASE_URL || ''}/api/proxy/video`;
   const u = new URL(base, window.location.origin);
   u.searchParams.set('url', rawUrl);
