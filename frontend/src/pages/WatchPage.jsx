@@ -175,11 +175,26 @@ export default function WatchPage() {
           title = `${animeData.title?.english || animeData.title?.romaji || 'Anime'} — Episode ${epNum}`;
           poster = animeData.coverImage?.large || '';
 
-          // Search GogoAnime by title, pick best match
-          const searchTitle = animeData.title?.english || animeData.title?.romaji || '';
-          const { shows } = await searchGogoanime(searchTitle);
-          if (!shows?.length) throw new Error('Anime not found on the streaming service.');
-          const matchedShow = pickBestShow(shows, searchTitle);
+          // Search GogoAnime by title, pick best match.
+          // Try English title first, then romaji if no confident match is found.
+          // GogoAnime sometimes uses a different title format (e.g. "Marriage Toxin"
+          // for an AniList title of "MARRIAGETOXIN"), so we fall back to romaji when
+          // the English search returns results but none score above zero.
+          const englishTitle = animeData.title?.english || '';
+          const romajiTitle  = animeData.title?.romaji  || '';
+          let searchTitle = englishTitle || romajiTitle;
+          let matchedShow = null;
+
+          if (englishTitle) {
+            const { shows } = await searchGogoanime(englishTitle);
+            matchedShow = pickBestShow(shows, englishTitle);
+          }
+          if (!matchedShow && romajiTitle && romajiTitle !== englishTitle) {
+            const { shows } = await searchGogoanime(romajiTitle);
+            matchedShow = pickBestShow(shows, romajiTitle);
+            if (matchedShow) searchTitle = romajiTitle;
+          }
+          if (!matchedShow) throw new Error('Anime not found on the streaming service.');
 
           // Backend scrapes episode page and returns direct vibeplayer HLS URL.
           // ByteDance CDN (p16-ad-sg.ibyteimg.com) has no IP restrictions so the
@@ -272,11 +287,25 @@ export default function WatchPage() {
   }, [type, kitsuId, epNum, tmdbId, season, episode, isHost, roomId, roomData !== null]);
 
   // 4. Fetch all episodes for the sidebar (anime only)
+  // kitsuId may actually be an AniList ID when Kitsu doesn't have the anime yet —
+  // fall back to AniList episode count in that case.
   useEffect(() => {
     if (type !== 'anime' || !kitsuId) return;
     getKitsuEpisodes(kitsuId)
-      .then(eps => { if (eps.length > 0) setAnimeEpisodes(eps); })
-      .catch(() => {});
+      .then(eps => {
+        if (eps.length > 0) { setAnimeEpisodes(eps); return; }
+        throw new Error('empty');
+      })
+      .catch(() => {
+        getAnimeById(kitsuId)
+          .then(a => {
+            const count = a?.episodes || 1;
+            setAnimeEpisodes(Array.from({ length: count }, (_, i) => ({
+              id: `${i + 1}`, number: i + 1, title: `Episode ${i + 1}`, isFiller: false,
+            })));
+          })
+          .catch(() => {});
+      });
   }, [type, kitsuId]);
 
   // 5. Auto-scroll episode list to current episode

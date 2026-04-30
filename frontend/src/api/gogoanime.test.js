@@ -26,6 +26,14 @@ describe('pickBestShow', () => {
     expect(pickBestShow(null, 'Naruto')).toBeNull();
   });
 
+  it('returns null when no show has a meaningful match (avoids returning wrong anime)', () => {
+    const unrelated = [
+      { slug: 'dragon-ball-z', title: 'Dragon Ball Z' },
+      { slug: 'one-piece', title: 'One Piece' },
+    ];
+    expect(pickBestShow(unrelated, 'Naruto')).toBeNull();
+  });
+
   it('Frieren S1 — picks base show over Season 2', () => {
     const result = pickBestShow(FRIEREN_SHOWS, "Frieren: Beyond Journey's End");
     expect(result.slug).toBe('sousou-no-frieren');
@@ -46,14 +54,27 @@ describe('pickBestShow', () => {
     expect(result.slug).toBe('oshi-no-ko-season-3');
   });
 
-  it('single result — returns it regardless of title match', () => {
-    const only = [{ slug: 'something', title: 'Something' }];
-    expect(pickBestShow(only, 'Anything')).toBe(only[0]);
-  });
-
   it('ignores punctuation differences in matching', () => {
     const result = pickBestShow(FRIEREN_SHOWS, 'Frieren Beyond Journeys End');
     expect(result.slug).toBe('sousou-no-frieren');
+  });
+
+  // Compact match: AniList may store a title as one concatenated word (e.g. "MARRIAGETOXIN")
+  // while GogoAnime indexes it with spaces ("Marriage Toxin"). Strip spaces from both and compare.
+  it('compact match — "MARRIAGETOXIN" matches "Marriage Toxin"', () => {
+    const shows = [
+      { slug: 'some-romance-show', title: 'My Lovely Marriage' },
+      { slug: 'marriage-toxin', title: 'Marriage Toxin' },
+    ];
+    expect(pickBestShow(shows, 'MARRIAGETOXIN').slug).toBe('marriage-toxin');
+  });
+
+  it('compact match — "MARRIAGETOXIN" beats unrelated show even when listed first', () => {
+    const shows = [
+      { slug: 'random-show', title: 'Random Show' },
+      { slug: 'marriage-toxin', title: 'Marriage Toxin' },
+    ];
+    expect(pickBestShow(shows, 'MARRIAGETOXIN').slug).toBe('marriage-toxin');
   });
 
   it('prefers sub over dub when titles otherwise match equally', () => {
@@ -67,8 +88,8 @@ describe('pickBestShow', () => {
     expect(result.slug).toBe('naruto');
   });
 
-  it('only-dub list — returns the dub rather than null', () => {
+  it('returns null for dub-only list — caller should try romaji fallback', () => {
     const dubOnly = [{ slug: 'one-piece-dub', title: 'One Piece (Dub)' }];
-    expect(pickBestShow(dubOnly, 'One Piece').slug).toBe('one-piece-dub');
+    expect(pickBestShow(dubOnly, 'One Piece')).toBeNull();
   });
 });

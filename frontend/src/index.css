@@ -77,11 +77,10 @@
   background: rgba(244,63,94,0.85) !important;
   border-radius: 50% !important;
   padding: 18px !important;
-  transition: background 0.2s, transform 0.15s !important;
+  transition: background 0.2s !important;
 }
 .plyr__control--overlaid:hover {
   background: #f43f5e !important;
-  transform: scale(1.08) !important;
 }
 
 /* Buffered/loaded track */

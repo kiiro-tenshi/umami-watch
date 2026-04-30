@@ -235,6 +235,13 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
     };
   }, [src, isM3u8, isViewer, options.autoplay, token]);
 
+  // Auto-enable English CC when tracks are available
+  useEffect(() => {
+    if (!tracks.length) return;
+    const preferred = tracks.find(t => /english/i.test(t.label)) || tracks[0];
+    setCC(prev => ({ ...prev, enabled: true, activeLang: preferred.label }));
+  }, [tracks, src]);
+
   // Global keyboard shortcuts — skip when user is typing in any input/textarea
   useEffect(() => {
     const onKey = (e) => {

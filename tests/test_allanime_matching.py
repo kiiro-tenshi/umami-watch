@@ -24,17 +24,21 @@ def pick_best_show(shows, search_title):
     """Port of pickBestShow from frontend/src/api/gogoanime.js"""
     if not shows:
         return None
-    search_words = normalise(search_title).split()
+    search_norm = normalise(search_title)
+    search_compact = search_norm.replace(' ', '')
+    search_words = [w for w in search_norm.split() if w]
     scored = []
     for s in shows:
         norm_name = normalise(s.get('title') or '')
+        norm_compact = norm_name.replace(' ', '')
         match_count = sum(1 for w in search_words if w in norm_name)
-        extra_words = len(norm_name.split()) - len(search_words)
+        extra_words = len([w for w in norm_name.split() if w]) - len(search_words)
         dub_penalty = 100 if is_dub(s) else 0
-        score = match_count - max(0, extra_words) * 0.5 - dub_penalty
+        compact_bonus = 3 if (search_compact and norm_compact == search_compact) else 0
+        score = match_count - max(0, extra_words) * 0.5 - dub_penalty + compact_bonus
         scored.append((score, s))
     scored.sort(key=lambda x: -x[0])
-    return scored[0][1]
+    return scored[0][1] if scored[0][0] > 0 else None
 
 
 FRIEREN_SHOWS = [
@@ -79,9 +83,12 @@ class TestPickBestShow(unittest.TestCase):
         result = pick_best_show(OSHI_SHOWS, 'Oshi no Ko Season 3')
         self.assertEqual(result['slug'], 'oshi-no-ko-season-3')
 
-    def test_single_result_always_returned(self):
-        only = [{'slug': 'something', 'title': 'Something'}]
-        self.assertEqual(pick_best_show(only, 'Anything'), only[0])
+    def test_returns_none_when_no_confident_match(self):
+        unrelated = [
+            {'slug': 'dragon-ball-z', 'title': 'Dragon Ball Z'},
+            {'slug': 'one-piece',     'title': 'One Piece'},
+        ]
+        self.assertIsNone(pick_best_show(unrelated, 'Naruto'))
 
     def test_punctuation_differences_ignored(self):
         result = pick_best_show(FRIEREN_SHOWS, 'Frieren Beyond Journeys End')
@@ -96,9 +103,24 @@ class TestPickBestShow(unittest.TestCase):
         result = pick_best_show(reversed_shows, 'Naruto')
         self.assertEqual(result['slug'], 'naruto')
 
-    def test_only_dub_available_returns_dub(self):
+    def test_only_dub_available_returns_none(self):
         dub_only = [{'slug': 'one-piece-dub', 'title': 'One Piece (Dub)'}]
-        self.assertEqual(pick_best_show(dub_only, 'One Piece')['slug'], 'one-piece-dub')
+        self.assertIsNone(pick_best_show(dub_only, 'One Piece'))
+
+    def test_compact_match_handles_no_space_title(self):
+        # AniList may store "MARRIAGETOXIN" (one word), GogoAnime has "Marriage Toxin" (two words)
+        shows = [
+            {'slug': 'some-romance-show', 'title': 'My Lovely Marriage'},
+            {'slug': 'marriage-toxin',    'title': 'Marriage Toxin'},
+        ]
+        self.assertEqual(pick_best_show(shows, 'MARRIAGETOXIN')['slug'], 'marriage-toxin')
+
+    def test_compact_match_beats_unrelated_first_result(self):
+        shows = [
+            {'slug': 'random-show',   'title': 'Random Show'},
+            {'slug': 'marriage-toxin','title': 'Marriage Toxin'},
+        ]
+        self.assertEqual(pick_best_show(shows, 'MARRIAGETOXIN')['slug'], 'marriage-toxin')
 
     def test_partial_word_match_scores_lower_than_full_match(self):
         shows = [

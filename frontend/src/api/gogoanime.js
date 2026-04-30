@@ -21,14 +21,20 @@ export function pickBestShow(shows, searchTitle) {
   if (!shows?.length) return null;
   const normalise = s => s.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
   const isDub = s => /\bdub\b/i.test(s.title || '') || /-dub$/.test(s.slug || '');
-  const searchWords = normalise(searchTitle).split(' ');
+  const searchNorm = normalise(searchTitle);
+  const searchCompact = searchNorm.replace(/\s/g, '');
+  const searchWords = searchNorm.split(' ').filter(Boolean);
   const scored = shows.map(s => {
     const normName = normalise(s.title || '');
+    const normCompact = normName.replace(/\s/g, '');
     const matchCount = searchWords.filter(w => normName.includes(w)).length;
-    const extraWords = normName.split(' ').length - searchWords.length;
+    const extraWords = normName.split(' ').filter(Boolean).length - searchWords.length;
     const dubPenalty = isDub(s) ? 100 : 0;
-    return { show: s, score: matchCount - Math.max(0, extraWords) * 0.5 - dubPenalty };
+    // Handles titles like "MARRIAGETOXIN" ↔ "Marriage Toxin" (same chars, different spacing)
+    const compactBonus = (searchCompact && normCompact === searchCompact) ? 3 : 0;
+    return { show: s, score: matchCount - Math.max(0, extraWords) * 0.5 - dubPenalty + compactBonus };
   });
   scored.sort((a, b) => b.score - a.score);
-  return scored[0].show;
+  // Return null when no show has any meaningful signal — lets the caller try an alternative search
+  return scored[0].score > 0 ? scored[0].show : null;
 }
