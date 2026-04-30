@@ -61,9 +61,19 @@ export default function AnimeDetailPage() {
         const results = await searchAnimeKitsu(titleHint).catch(() => []);
         const normalized = str => str.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
         const hintWords = normalized(titleHint).split(/\s+/).filter(w => w.length > 3);
+        // Extract season number from the hint (e.g. "Season 4" → "4")
+        const hintSeason = titleHint.match(/(?:season|s)\s*(\d+)/i)?.[1] ?? null;
         const match = results.find(r => {
           const candidate = normalized([r.title?.english, r.title?.romaji].filter(Boolean).join(' '));
-          return hintWords.some(word => candidate.includes(word));
+          // Require ≥80% of hint words to appear in the candidate
+          const wordHits = hintWords.filter(w => candidate.includes(w)).length;
+          if (wordHits < Math.ceil(hintWords.length * 0.8)) return false;
+          // If the search title has a season number, the candidate must match it exactly
+          if (hintSeason) {
+            const candidateSeason = candidate.match(/(?:season|s)\s*(\d+)/i)?.[1] ?? null;
+            return candidateSeason === hintSeason;
+          }
+          return true;
         });
         if (match) {
           const qs = new URLSearchParams();
