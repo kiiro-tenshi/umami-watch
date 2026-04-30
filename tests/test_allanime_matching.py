@@ -36,9 +36,14 @@ def pick_best_show(shows, search_title):
         dub_penalty = 100 if is_dub(s) else 0
         compact_bonus = 3 if (search_compact and norm_compact == search_compact) else 0
         score = match_count - max(0, extra_words) * 0.5 - dub_penalty + compact_bonus
-        scored.append((score, s))
+        scored.append((score, match_count, compact_bonus, s))
     scored.sort(key=lambda x: -x[0])
-    return scored[0][1] if scored[0][0] > 0 else None
+    best_score, best_match_count, best_compact_bonus, best_show = scored[0]
+    if best_match_count == 0 and best_compact_bonus == 0:
+        return None
+    if is_dub(best_show) and best_score < 0:
+        return None
+    return best_show
 
 
 FRIEREN_SHOWS = [

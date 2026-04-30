@@ -92,4 +92,11 @@ describe('pickBestShow', () => {
     const dubOnly = [{ slug: 'one-piece-dub', title: 'One Piece (Dub)' }];
     expect(pickBestShow(dubOnly, 'One Piece')).toBeNull();
   });
+
+  it('returns match even when extra words in result title push score negative', () => {
+    // "Overlord" matches "Overlord IV: The Half-Elf Demihuman" even though extraWords penalty > matchCount
+    const shows = [{ slug: 'overlord-iv', title: 'Overlord IV: The Half-Elf Demihuman' }];
+    expect(pickBestShow(shows, 'Overlord IV')).not.toBeNull();
+    expect(pickBestShow(shows, 'Overlord IV').slug).toBe('overlord-iv');
+  });
 });
