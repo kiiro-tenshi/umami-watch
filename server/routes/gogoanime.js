@@ -12,7 +12,7 @@ async function fetchHtml(url) {
 
 function parseSearchResults(html) {
   const shows = [];
-  const re = /href="\/category\/([^"]+)"[^>]*>[\s\S]*?<img[^>]+src="([^"]*)"[^>]*>[\s\S]*?class="name"[^>]*>([^<]+)</g;
+  const re = /href="\/category\/([^"]+)"[^>]*>[\s\S]*?<img[^>]+src="([^"]*)"[^>]*>[\s\S]*?class="name"[^>]*>[\s\S]*?<a[^>]*>([^<]+)</g;
   let m;
   while ((m = re.exec(html)) !== null) {
     const slug = m[1];

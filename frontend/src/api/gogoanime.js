@@ -32,9 +32,13 @@ export function pickBestShow(shows, searchTitle) {
     const dubPenalty = isDub(s) ? 100 : 0;
     // Handles titles like "MARRIAGETOXIN" ↔ "Marriage Toxin" (same chars, different spacing)
     const compactBonus = (searchCompact && normCompact === searchCompact) ? 3 : 0;
-    return { show: s, score: matchCount - Math.max(0, extraWords) * 0.5 - dubPenalty + compactBonus };
+    return { show: s, score: matchCount - Math.max(0, extraWords) * 0.5 - dubPenalty + compactBonus, matchCount, compactBonus };
   });
   scored.sort((a, b) => b.score - a.score);
-  // Return null when no show has any meaningful signal — lets the caller try an alternative search
-  return scored[0].score > 0 ? scored[0].show : null;
+  const best = scored[0];
+  // No words matched and no compact match → genuinely unrelated, let caller try fallback
+  if (best.matchCount === 0 && best.compactBonus === 0) return null;
+  // Only dub matched with a negative score → return null so caller can try romaji fallback
+  if (isDub(best.show) && best.score < 0) return null;
+  return best.show;
 }
