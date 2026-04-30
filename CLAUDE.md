@@ -4,7 +4,7 @@
 
 ## 1. Project Overview
 
-UmamiStream is a private, invite-only streaming portal for anime, manga, movies, and TV shows, with real-time synchronized watch parties and live chat. It aggregates content metadata and streams from multiple third-party sources (AllAnime, Kitsu, AniList, TMDB, MangaDex, ComicK) and proxies video/image traffic to bypass CORS and CDN restrictions. The project targets a small, trusted user group ("PIW — Pure, Innocent, and Wholesome") and is deployed as a single Cloud Run service with a Cloudflare Worker handling video bandwidth.
+UmamiStream is a private, invite-only streaming portal for anime, manga, movies, and TV shows, with real-time synchronized watch parties and live chat. It aggregates content metadata and streams from multiple third-party sources (GogoAnime/anitaku.to, Kitsu, AniList, TMDB, MangaDex, ComicK) and proxies video/image traffic to bypass CORS and CDN restrictions. The project targets a small, trusted user group ("PIW — Pure, Innocent, and Wholesome") and is deployed as a single Cloud Run service with a Cloudflare Worker handling video bandwidth.
 
 **Status:** Deployed / production (tagged releases trigger Cloud Build → Cloud Run).
 
@@ -71,7 +71,7 @@ UmamiStream is a private, invite-only streaming portal for anime, manga, movies,
 
 ### Testing
 - **Vitest** — frontend and server unit/integration tests
-- **pytest** (Python 3.12) — pure-logic tests in `tests/`; covers AllAnime title matching, torrentio parsing, Kitsu normalization, socket event logic
+- **pytest** (Python 3.12) — pure-logic tests in `tests/`; covers `pickBestShow()` title matching, torrentio parsing, Kitsu normalization, socket event logic
 - **GitHub Actions** (`.github/workflows/test.yml`) — runs all three test suites on push to `main`/`develop` and on PRs
 
 ---
@@ -85,14 +85,14 @@ UmamiStream is a private, invite-only streaming portal for anime, manga, movies,
 - **REST API** — authenticated with Firebase ID tokens (`Authorization: Bearer <token>` or `?token=<token>` query param), handled by `server/middleware/requireAuth.js`
 - **Socket.IO** (WebSocket with polling fallback) — real-time watch party sync; auth via `socket.handshake.auth.token`
 - **Direct third-party API calls from browser** — Kitsu, AniList GraphQL, TMDB (no backend proxy needed for these)
-- **Backend-proxied calls** — AnimeKai, AllAnime, MangaDex, ComicK, video CDN (all require CORS bypass or Referer injection)
+- **Backend-proxied calls** — GogoAnime, MangaDex, ComicK, video CDN (all require CORS bypass or Referer injection)
 
 ### Data Flow (Anime Watch Example)
 1. User navigates to `/watch?type=anime&kitsuId=12345&epNum=3`
 2. Frontend fetches Firebase ID token → calls `GET /api/rooms/{roomId}` (if watch party)
-3. Frontend calls AnimeKai API via `GET /api/anime/animekai/search`, then `/episodes`, then `/sources`
-4. Server fetches watch page for ani_id, calls enc-dec.app for token encoding, resolves megaup CDN stream via decryption chain
-5. Frontend proxies HLS stream through Cloudflare Worker (with `referer=megaup.nl`) or `GET /api/proxy/hls`
+3. Frontend calls GogoAnime API via `GET /api/anime/gogoanime/search`, then `/sources`
+4. Server scrapes `anitaku.to` HTML to find the vibeplayer embed ID, returns `hlsUrl` pointing to `vibeplayer.site/public/stream/{id}/master.m3u8`
+5. Frontend proxies HLS stream through Cloudflare Worker (with `referer=vibeplayer.site`) or `GET /api/proxy/hls` — video segments served by ByteDance CDN with no IP restrictions
 6. Plyr + HLS.js render video; position saved to Firestore `users/{uid}/history` every 15 seconds
 7. If in a room: Socket.IO events (`playback:play`, `playback:pause`, `playback:seek`, `playback:heartbeat`) sync state between host and viewers; Firestore stores authoritative `rooms/{roomId}.playback`
 
@@ -106,10 +106,9 @@ UmamiStream is a private, invite-only streaming portal for anime, manga, movies,
 | AniList GraphQL (`graphql.anilist.co`) | Frontend → direct | Anime search, seasonal trending, detail pages |
 | Kitsu REST API (`kitsu.io/api/edge`) | Frontend → direct | Anime info, episode lists, category browse |
 | TMDB REST API v3 | Frontend → direct | Movie/TV metadata, genres, trailers, cast |
-| AnimeKai (`anikai.to`) | Frontend → backend proxy | Anime search, episode list, HLS stream (via enc-dec.app + megaup CDN) |
-| enc-dec.app | Backend → direct | Token encoding/decryption for AnimeKai API (dependency risk: third-party) |
-| megaup CDN (`megaup.nl`, `hub26link.site`) | Frontend → Cloudflare Worker | HLS video streams from AnimeKai |
-| AllAnime GraphQL (`api.allanime.day/api`) | Frontend → backend proxy | Legacy anime source (CAPTCHA-blocked on sourceUrls since Apr 2026) |
+| GogoAnime (`anitaku.to`) | Backend scrape | Anime search, episode list — no auth/CAPTCHA required |
+| vibeplayer.site | Backend → Cloudflare Worker | HLS master manifest; no auth required |
+| ByteDance CDN (`p16-ad-sg.ibyteimg.com`) | Frontend → Cloudflare Worker | HLS video segments; no IP restrictions, no Referer required |
 | MangaDex API (`api.mangadex.org`) | Frontend → backend proxy | Manga search, chapter metadata |
 | MangaDex CDN (`uploads.mangadex.org`) | Frontend → backend proxy | Cover images (Referer required) |
 | ComicK API (`comick.art/api`) | Frontend → backend proxy | Comics search, chapter lists |
@@ -133,8 +132,7 @@ umami-watch/
 │   │   │   ├── anilist.js       # AniList GraphQL: trending, seasonal, search, detail, weekly airing schedule, browse/filter, genre list, studio lookup
 │   │   │   ├── kitsu.js         # Kitsu REST: anime info, episodes (with airdate), categories; normalizes to shared shape
 │   │   │   ├── tmdb.js          # TMDB REST: movies, TV, genres, trending
-│   │   │   ├── animekai.js      # AnimeKai via backend proxy: search, episodes, sources, pickBestAnimekaiShow
-│   │   │   ├── allanime.js      # AllAnime via backend proxy: search, sources, URL building (legacy — CAPTCHA-blocked)
+│   │   │   ├── gogoanime.js     # GogoAnime via backend proxy: search, sources, pickBestShow; HLS from vibeplayer.site
 │   │   │   ├── mangadex.js      # MangaDex via backend proxy: manga, chapters, covers; browseManga with search/tag/status/sort/offset
 │   │   │   ├── comick.js        # ComicK via backend proxy: search, chapters, images
 │   │   │   └── torrentio.js     # Unused in pages; test file only
@@ -195,8 +193,7 @@ umami-watch/
 │   ├── routes/
 │   │   ├── users.js             # GET/PATCH /api/me — user profile; DELETE /api/me/history
 │   │   ├── rooms.js             # Full CRUD for watch party rooms + room expiry cleanup job
-│   │   ├── animekai.js          # AnimeKai proxy: search (anikai.to AJAX), episodes (watch page → ani_id → enc-dec.app), sources (enc-dec.app + megaup CDN chain)
-│   │   ├── allanime.js          # AllAnime proxy: search, show details, stream sources with XOR/AES decoding (legacy)
+│   │   ├── gogoanime.js         # GogoAnime proxy: /search (scrapes anitaku.to), /episodes, /sources (picks vibeplayer ID → HLS URL + VTT subtitles)
 │   │   └── torrent.js           # Torrent streaming: /stream (FFmpeg remux), /seed (raw bytes), /status
 │   ├── socket/
 │   │   └── roomSocket.js        # Socket.IO server: auth middleware, room join/leave, playback sync, chat
@@ -271,7 +268,7 @@ useEffect(() => {
 - API modules throw `Error` with descriptive messages; callers use `.catch(() => fallbackValue)`
 - `ErrorBoundary.jsx` wraps the app router for uncaught render errors
 - Server routes use `try/catch` → `res.status(500).json({ error: error.message })`
-- AllAnime sources fall back gracefully: if no sources found, shows error state in `WatchPage`
+- GogoAnime sources: if no show found or no vibeplayer ID found, shows error state in `WatchPage`
 
 ### API Response Structure
 - Server returns `{ success: true }` for mutations on success
@@ -349,7 +346,7 @@ Document ID format varies by content type:
 | `streamUrl` | string \| null | HLS/MP4/iframe URL |
 | `streamType` | string \| null | `"hls"`, `"direct"`, `"iframe"` |
 | `tracks` | array \| null | Subtitle track objects |
-| `episodeId` | string | AllAnime episode ID |
+| `episodeId` | string | Legacy AllAnime episode ID (unused since GogoAnime migration) |
 | `magnetFileIdx` | number \| null | For torrent content |
 | `playback.playing` | boolean | |
 | `playback.position` | number | Seconds |
@@ -389,7 +386,7 @@ Document ID format varies by content type:
 | `VITE_HLS_PROXY_URL` | Cloudflare Worker HLS proxy base URL | No | `https://umami-hls-proxy.*.workers.dev` |
 | `VITE_GIPHY_API_KEY` | Giphy API key for GIF search in chat | No | `...` |
 | `VITE_USE_EMULATOR` | Connect to local Firebase emulators | No (dev only) | `true` |
-| `VITE_CONSUMET_API_URL` | Deprecated — replaced by AllAnime backend proxy | No | — |
+| `VITE_CONSUMET_API_URL` | Deprecated — unused; passed as build arg in `cloudbuild.yaml` but ignored | No | — |
 
 ### Backend (`process.env.*`)
 
@@ -499,16 +496,17 @@ docker build -t umami-watch:local \
 
 ## 9. Key Business Logic Locations
 
-### AnimeKai Stream Resolution (`server/routes/animekai.js`)
-Three-endpoint chain: `/search` (anikai.to AJAX) → `/episodes` (fetch watch page to extract `ani_id`, then episode list via enc-dec.app token) → `/sources` (server list → link_id → enc-dec.app dec-kai → megaup /media → enc-dec.app dec-mega → HLS URL). The `enc-dec.app` service is a third-party dependency; if it goes down, anime streaming breaks. The HLS stream from `hub26link.site` CDN requires `Referer: https://megaup.nl/` — passed as the `referer` parameter to the Cloudflare Worker proxy.
+### GogoAnime Stream Resolution (`server/routes/gogoanime.js`)
+Three endpoints: `/search` scrapes `anitaku.to/search.html`, `/episodes` scrapes `anitaku.to/category/{slug}`, `/sources` scrapes the episode page to extract `data-video` attributes. The sources endpoint picks the **short vibeplayer ID** (exactly 16 lowercase hex chars, no `ag` prefix, no trailing `h`) from the embed URLs — long IDs return 404. Returns `hlsUrl` = `https://vibeplayer.site/public/stream/{id}/master.m3u8` plus optional subtitle VTT from the `?sub=` query param on the embed URL.
 
-### AnimeKai Title Matching (`frontend/src/api/animekai.js` — `pickBestAnimekaiShow()`)
-Same word-count scoring algorithm as the old AllAnime `pickBestShow()`. Scores by matching word count minus penalty for extra words. Determines which AnimeKai entry maps to a given Kitsu/AniList anime title.
+**Why GogoAnime:** No CAPTCHA, no token decryption, no third-party decoding service. anitaku.to is freely scrapable server-side; vibeplayer.site requires no auth; video segments are served by **ByteDance CDN** (`p16-ad-sg.ibyteimg.com`) which has no IP blocking — Cloudflare Worker can fetch segments freely, meaning zero video egress through Cloud Run.
 
-### AllAnime URL Decoding (`server/routes/allanime.js` lines ~17–35) — legacy
-Two decoding paths (used if AllAnime CAPTCHA restriction is ever lifted):
-1. **XOR-56**: URLs prefixed with `--` are decoded byte-by-byte with key `56`
-2. **AES-256-GCM**: Responses with `tobeparsed` field use `sha256('Xot36i3lK3:v1')` as key, bytes 1–13 as IV, last 16 bytes as auth tag
+**Why AllAnime was dropped (Apr 2026):** `api.allanime.day/api` returns `{"message":"NEED_CAPTCHA"}` at the application level on `sourceUrls` queries. The Cloudflare Turnstile site key (`0x4AAAAAADAXQmN7FOUbtiV8`) is validated server-side — fake tokens return "Error Re-captcha!" — requiring a paid CAPTCHA solving service (~$6 minimum top-up) per session.
+
+**Why AnimeKai was dropped:** MegaUp CDN (`megaup.nl`, `hub26link.site`) actively blocks Cloudflare datacenter IPs, making it impossible to route video through the Worker. All video bytes would pass through Cloud Run, generating significant egress charges.
+
+### GogoAnime Title Matching (`frontend/src/api/gogoanime.js` — `pickBestShow()`)
+Word-count scoring: for each result, count how many search title words appear in the result title, then subtract a penalty of 0.5× extra words (words in result title beyond the search title length). Sorts descending by score. Determines which GogoAnime slug maps to a given Kitsu/AniList anime title.
 
 ### Watch Position & Episode Completion (`frontend/src/pages/WatchPage.jsx` ~lines 428–454)
 Saves to Firestore every 15 seconds while playing. Auto-marks episode as watched at 85% of duration (`position >= duration * 0.85`). Three-state `manuallyWatched` flag overrides auto-detection.
@@ -533,7 +531,7 @@ Host emits heartbeat every 5 seconds; viewers emit `request-sync` every 20 secon
 - `frontend/src/components/VideoPlayer.jsx` — 465 lines; Plyr + HLS.js integration, subtitle system, double-tap seek, viewer mode controls
 - `frontend/src/pages/WatchPage.jsx` — 740 lines; the entire watch experience, room sync, history saving
 - `server/socket/roomSocket.js` — all real-time room logic; wrong dot-notation can corrupt `playback` field
-- `server/routes/allanime.js` — XOR/AES decoding; any change breaks all anime streaming
+- `server/routes/gogoanime.js` — HTML regex scraping; if anitaku.to changes its markup, all anime streaming breaks
 
 ---
 
@@ -543,7 +541,7 @@ Host emits heartbeat every 5 seconds; viewers emit `request-sync` every 20 secon
 - **Server routes** — `vitest` + `supertest`; covers route logic, proxy behavior, auth middleware
 - **Frontend hooks/components** — `vitest` + `@testing-library/react`; covers hook logic and component rendering
 - **Python logic tests** — pure-logic tests with no network/Firebase dependency:
-  - `test_allanime_matching.py` — `pickBestShow()` scoring algorithm
+  - `test_allanime_matching.py` — `pickBestShow()` scoring algorithm (same logic used by GogoAnime title matching)
   - `test_server_logic.py` — server-side business rules
   - `test_socket_logic.py` — room sync event logic
   - `test_kitsu.py` — Kitsu response normalization
@@ -553,7 +551,7 @@ Host emits heartbeat every 5 seconds; viewers emit `request-sync` every 20 secon
 - End-to-end browser tests (no Cypress or Playwright)
 - Firebase emulator integration tests
 - The Cloudflare Worker (`hls-proxy.js`)
-- AllAnime XOR/AES decoding (no server-side JS test for this)
+- GogoAnime HTML scraping (no server-side test for regex parsers in `server/routes/gogoanime.js`)
 - Socket.IO connection lifecycle
 
 ### Running Tests
@@ -589,7 +587,7 @@ Cloud Run is configured with `--session-affinity`. Without it, Socket.IO polling
 `VITE_*` variables are inlined at build time by Vite. Changing them requires a full rebuild + redeploy. There is no runtime config injection.
 
 ### `VITE_CONSUMET_API_URL` Is Deprecated
-This variable appears in `cloudbuild.yaml` as `$_VITE_CONSUMET_API_URL` but the AllAnime integration replaced Consumet. The variable is passed as a build arg but not meaningfully used. Safe to ignore.
+This variable appears in `cloudbuild.yaml` as `$_VITE_CONSUMET_API_URL` from when the project used Consumet, then AllAnime. It is passed as a build arg but not meaningfully used. Safe to ignore.
 
 ### Kitsu ID Expiry
 Kitsu periodically renumbers or removes entries. `AnimeDetailPage.jsx` handles 404 responses by searching Kitsu by title and redirecting to the new ID. `WatchPage.jsx` does the same for watch party room content. If you see redirect loops, Kitsu may have deprecated that ID entirely.

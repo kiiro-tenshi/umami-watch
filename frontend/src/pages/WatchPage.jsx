@@ -3,7 +3,7 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
-import { searchAnimekai, getAnimekaiEpisodes, getAnimekaiSources, pickBestAnimekaiShow } from '../api/animekai';
+import { searchGogoanime, getGogoanimeSource, pickBestShow } from '../api/gogoanime';
 import { getAnimeById } from '../api/anilist';
 import { getMovieDetail, getTVDetail } from '../api/tmdb';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -175,66 +175,39 @@ export default function WatchPage() {
           title = `${animeData.title?.english || animeData.title?.romaji || 'Anime'} — Episode ${epNum}`;
           poster = animeData.coverImage?.large || '';
 
-          // Search AnimeKai by title, pick best match
+          // Search GogoAnime by title, pick best match
           const searchTitle = animeData.title?.english || animeData.title?.romaji || '';
-          const searchData = await searchAnimekai(searchTitle);
-          const shows = searchData?.shows || [];
-          if (!shows.length) throw new Error('Anime not found on the streaming service.');
-          const matchedShow = pickBestAnimekaiShow(shows, searchTitle);
+          const { shows } = await searchGogoanime(searchTitle);
+          if (!shows?.length) throw new Error('Anime not found on the streaming service.');
+          const matchedShow = pickBestShow(shows, searchTitle);
 
-          // Get episode list and find the requested episode token
-          const { episodes: epList } = await getAnimekaiEpisodes(matchedShow.slug);
-          const epData = epList.find(e => e.number === epNum);
-          if (!epData) throw new Error(`Episode ${epNum} not available on this source.`);
-
-          // Backend resolves all available AnimeKai servers in parallel.
-          // Try each through the Cloudflare Worker — different CDNs have different IP
-          // restrictions. First server whose .m3u8 fetches successfully through the
-          // Worker is used (zero Cloud Run egress). Falls back to backend proxy if all
-          // Worker attempts fail (e.g., all CDNs block Cloudflare IPs).
-          const { servers } = await getAnimekaiSources(epData.token, 'sub');
-          if (!servers?.length) throw new Error('No stream sources found for this episode.');
+          // Backend scrapes episode page and returns direct vibeplayer HLS URL.
+          // ByteDance CDN (p16-ad-sg.ibyteimg.com) has no IP restrictions so the
+          // Cloudflare Worker proxies segments with zero Cloud Run egress.
+          const { hlsUrl, tracks } = await getGogoanimeSource(matchedShow.slug, epNum);
 
           const workerBase = import.meta.env.VITE_HLS_PROXY_URL;
-          let proxiedUrl = null;
-          let activeServer = null;
-
+          let proxiedUrl;
           if (workerBase) {
-            // Worker is absolute — always route HLS through Cloudflare, never backend.
-            // Probe each server to find one whose CDN doesn't block Cloudflare IPs.
-            for (const srv of servers) {
-              const hlsFile = srv.sources?.[0]?.file;
-              if (!hlsFile) continue;
-              const u = new URL(workerBase);
-              u.searchParams.set('url', hlsFile);
-              u.searchParams.set('referer', srv.referer || 'https://megaup.nl/');
-              try {
-                const probe = await fetch(u.toString());
-                if (probe.ok) { proxiedUrl = u.toString(); activeServer = srv; break; }
-              } catch { /* try next server */ }
-            }
-            if (!proxiedUrl) throw new Error('No stream server is available through the CDN proxy. Please try again later.');
+            const u = new URL(workerBase);
+            u.searchParams.set('url', hlsUrl);
+            u.searchParams.set('referer', 'https://vibeplayer.site/');
+            proxiedUrl = u.toString();
           } else {
-            // Dev / no Worker configured — use backend proxy
-            activeServer = servers[0];
-            const hlsFile = activeServer.sources[0].file;
-            const base = `${import.meta.env.VITE_API_BASE_URL || ''}/api/proxy/hls`;
-            const u = new URL(base, window.location.origin);
-            u.searchParams.set('url', hlsFile);
-            u.searchParams.set('referer', activeServer.referer || 'https://megaup.nl/');
+            const u = new URL(`${import.meta.env.VITE_API_BASE_URL || ''}/api/proxy/hls`, window.location.origin);
+            u.searchParams.set('url', hlsUrl);
+            u.searchParams.set('referer', 'https://vibeplayer.site/');
             proxiedUrl = u.toString();
           }
 
-          const animeSourceList = [{ label: 'AnimeKai', url: proxiedUrl, type: 'hls', tracks: activeServer.tracks }];
-
           if (!cancelled) {
-            setSources(animeSourceList);
+            setSources([{ label: 'GogoAnime', url: proxiedUrl, type: 'hls', tracks }]);
             setActiveSourceIdx(0);
-            setActiveTracks(activeServer.tracks || []);
+            setActiveTracks(tracks);
           }
           url = proxiedUrl;
           streamType = 'hls';
-          subtitleTracks = activeServer.tracks || [];
+          subtitleTracks = tracks;
 
         } else if (type === 'movie') {
           const data = await getMovieDetail(tmdbId);
