@@ -1,32 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { browseManga, getMangaTags, coverUrl, getCoverFilename, getTitle } from '../api/mangadex';
+import { browseManga, getTags, coverUrl, getTitle, SORT_OPTIONS, STATUSES } from '../api/mangadex';
 import LoadingSpinner from '../components/LoadingSpinner';
-
-const SORTS = [
-  { value: 'followedCount', label: 'Most Popular' },
-  { value: 'rating', label: 'Top Rated' },
-  { value: 'createdAt', label: 'Newest' },
-  { value: 'updatedAt', label: 'Recently Updated' },
-];
-
-const STATUSES = [
-  { value: '', label: 'All Status' },
-  { value: 'ongoing', label: 'Ongoing' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'hiatus', label: 'Hiatus' },
-  { value: 'cancelled', label: 'Cancelled' },
-];
-
-const LIMIT = 24;
 
 const selectClass = 'bg-surface border border-border rounded-lg px-3 py-2 text-sm font-semibold text-primary focus:outline-none focus:ring-2 focus:ring-accent-purple cursor-pointer';
 
 function MangaCard({ manga }) {
-  const filename = getCoverFilename(manga);
   const title = getTitle(manga);
-  const poster = filename ? coverUrl(manga.id, filename, 256) : '/placeholder.png';
+  const poster = coverUrl(manga);
   const status = manga.attributes?.status;
+  const statusLabel = { ongoing: 'Ongoing', completed: 'Completed', cancelled: 'Cancelled', hiatus: 'Hiatus' }[status] || '';
 
   return (
     <Link
@@ -37,8 +20,8 @@ function MangaCard({ manga }) {
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-2">
         <h3 className="text-white font-bold text-sm truncate w-full shadow-sm">{title}</h3>
         <div className="flex items-center justify-between mt-1 text-xs font-semibold">
-          <span className="bg-accent-purple text-white px-1.5 py-0.5 rounded shadow-sm capitalize">Manga</span>
-          {status && <span className="text-white/70 capitalize">{status}</span>}
+          <span className="bg-accent-purple text-white px-1.5 py-0.5 rounded shadow-sm">Manga</span>
+          {statusLabel && <span className="text-white/70">{statusLabel}</span>}
         </div>
       </div>
       <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -59,31 +42,29 @@ export default function MangaBrowsePage() {
   const [sort, setSort] = useState('followedCount');
   const [tags, setTags] = useState([]);
   const [results, setResults] = useState([]);
-  const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
-    getMangaTags().then(setTags).catch(() => {});
+    getTags().then(setTags).catch(() => {});
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    const isSearch = search.trim().length > 0;
+    setOffset(0);
 
     const run = async () => {
       setLoading(true);
-      setOffset(0);
-      const params = buildParams(0, isSearch);
-      const { data, total: t } = await browseManga(params).catch(() => ({ data: [], total: 0 }));
+      const { data, hasMore: more } = await browseManga({ query: search.trim(), tag, status, sort, offset: 0 }).catch(() => ({ data: [], hasMore: false }));
       if (cancelled) return;
       setResults(data);
-      setTotal(t);
+      setHasMore(more);
       setLoading(false);
     };
 
-    if (isSearch) {
+    if (search.trim()) {
       const timer = setTimeout(run, 400);
       return () => { cancelled = true; clearTimeout(timer); };
     }
@@ -91,33 +72,20 @@ export default function MangaBrowsePage() {
     return () => { cancelled = true; };
   }, [search, tag, status, sort]);
 
-  function buildParams(currentOffset, isSearch) {
-    const params = { sort, offset: currentOffset, limit: LIMIT };
-    if (isSearch) {
-      params.search = search.trim();
-    } else {
-      if (tag) params.tag = tag;
-      if (status) params.status = status;
-    }
-    return params;
-  }
-
   const loadMore = async () => {
-    const nextOffset = offset + LIMIT;
+    const nextOffset = offset + 24;
     setLoadingMore(true);
-    const isSearch = search.trim().length > 0;
-    const { data } = await browseManga(buildParams(nextOffset, isSearch)).catch(() => ({ data: [] }));
+    const { data, hasMore: more } = await browseManga({ query: search.trim(), tag, status, sort, offset: nextOffset }).catch(() => ({ data: [], hasMore: false }));
     setResults(prev => [...prev, ...data]);
     setOffset(nextOffset);
+    setHasMore(more);
     setLoadingMore(false);
   };
 
-  const hasNextPage = offset + LIMIT < total;
-  const isFiltered = !search.trim() && (tag || status || sort !== 'followedCount');
+  const isFiltered = tag || status || sort !== 'followedCount';
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto">
-      {/* Title + Search */}
       <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-6">
         <h1 className="text-3xl font-bold text-primary">Browse <span className="text-accent-purple">Manga</span></h1>
         <div className="relative w-full md:w-96">
@@ -136,45 +104,31 @@ export default function MangaBrowsePage() {
         </div>
       </div>
 
-      {/* Filter bar */}
-      {!search.trim() && (
-        <div className="flex flex-wrap gap-2 mb-6 items-center">
-          <select value={tag} onChange={e => setTag(e.target.value)} className={selectClass}>
-            <option value="">All Genres</option>
-            {tags.map(t => (
-              <option key={t.id} value={t.id}>{t.attributes?.name?.en || 'Unknown'}</option>
-            ))}
-          </select>
+      <div className="flex flex-wrap gap-2 mb-6 items-center">
+        <select value={tag} onChange={e => setTag(e.target.value)} className={selectClass}>
+          <option value="">All Genres</option>
+          {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
 
-          <select value={status} onChange={e => setStatus(e.target.value)} className={selectClass}>
-            {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
+        <select value={status} onChange={e => setStatus(e.target.value)} className={selectClass}>
+          {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
 
+        {!search.trim() && (
           <select value={sort} onChange={e => setSort(e.target.value)} className={selectClass}>
-            {SORTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {SORT_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
+        )}
 
-          {isFiltered && (
-            <button
-              onClick={() => { setTag(''); setStatus(''); setSort('followedCount'); }}
-              className="px-3 py-2 rounded-lg text-sm font-semibold text-accent-purple border border-accent-purple hover:bg-accent-purple/10 transition-colors"
-            >
-              Reset
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Active filter label */}
-      {!search.trim() && (
-        <p className="text-xs font-semibold text-muted mb-4 uppercase tracking-wide">
-          {[
-            tags.find(t => t.id === tag)?.attributes?.name?.en || null,
-            STATUSES.find(s => s.value === status)?.label !== 'All Status' ? STATUSES.find(s => s.value === status)?.label : null,
-            SORTS.find(s => s.value === sort)?.label,
-          ].filter(Boolean).join(' · ')}
-        </p>
-      )}
+        {isFiltered && (
+          <button
+            onClick={() => { setTag(''); setStatus(''); setSort('followedCount'); }}
+            className="px-3 py-2 rounded-lg text-sm font-semibold text-accent-purple border border-accent-purple hover:bg-accent-purple/10 transition-colors"
+          >
+            Reset
+          </button>
+        )}
+      </div>
 
       {loading ? (
         <LoadingSpinner />
@@ -183,11 +137,13 @@ export default function MangaBrowsePage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {results.map(manga => <MangaCard key={manga.id} manga={manga} />)}
             {results.length === 0 && (
-              <p className="col-span-full text-center text-muted p-10 font-medium">No results found.</p>
+              <p className="col-span-full text-center text-muted p-10 font-medium">
+                {search.trim() ? 'No results found.' : 'No manga found.'}
+              </p>
             )}
           </div>
 
-          {hasNextPage && (
+          {hasMore && (
             <div className="mt-8 flex justify-center">
               <button
                 onClick={loadMore}

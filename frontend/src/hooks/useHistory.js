@@ -17,7 +17,7 @@ export function useHistory(uid) {
       const q = query(
         collection(db, 'users', uid, 'history'),
         orderBy('updatedAt', 'desc'),
-        limit(20)
+        limit(40)
       );
       try {
         const snap = await getDocs(q);

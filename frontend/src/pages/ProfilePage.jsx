@@ -1,7 +1,9 @@
 import { useState, useRef } from 'react';
 import { signOut } from 'firebase/auth';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useWatchlist } from '../hooks/useWatchlist';
+import { useReadlist } from '../hooks/useReadlist';
 import { useHistory } from '../hooks/useHistory';
 import ContentCard from '../components/ContentCard';
 import { auth } from '../firebase';
@@ -27,10 +29,10 @@ function resizeImage(file, maxSize) {
 export default function ProfilePage() {
   const { user, updateUserProfile } = useAuth();
   const { watchlist, toggleWatchlist } = useWatchlist(user?.uid);
+  const { readlist, toggleReadlist } = useReadlist(user?.uid);
   const { history, setHistory } = useHistory(user?.uid);
   const [tab, setTab] = useState('settings');
 
-  // Settings state
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [savingName, setSavingName] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
@@ -38,7 +40,6 @@ export default function ProfilePage() {
   const [avatarError, setAvatarError] = useState('');
   const fileInputRef = useRef(null);
 
-  // History state
   const [clearingHistory, setClearingHistory] = useState(false);
 
   const handleLogout = async () => {
@@ -75,7 +76,6 @@ export default function ProfilePage() {
     setUploadingAvatar(true);
     setAvatarError('');
     try {
-      // Resize to 128×128 using Canvas — produces a ~10-20 KB JPEG stored in Firestore
       const dataUrl = await resizeImage(file, 128);
       await updateUserProfile({ photoURL: dataUrl });
     } catch (err) {
@@ -105,12 +105,25 @@ export default function ProfilePage() {
 
   const avatarUrl = user?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user?.displayName}`;
 
+  // Filter watchlist: anime/movies/TV only (manga is in readlist now)
+  const videoWatchlist = watchlist.filter(item => item.contentType !== 'manga');
+
+  // Split history into watch (video) and read (manga)
+  const watchHistory = history.filter(h => ['anime', 'movie', 'tv'].includes(h.contentType));
+  const readHistory = history.filter(h => h.contentType === 'manga');
+
+  const tabClass = (t, activeColor) =>
+    `flex-1 md:flex-none p-3 md:p-4 text-center md:text-left transition-colors whitespace-nowrap font-semibold ${
+      tab === t
+        ? `bg-surface-raised ${activeColor} md:border-l-4 border-b-2 md:border-b-0`
+        : 'text-secondary hover:bg-page md:border-l-4 md:border-l-transparent'
+    }`;
+
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto flex flex-col md:flex-row gap-8">
       {/* Sidebar */}
       <div className="w-full md:w-64 shrink-0 flex flex-col gap-6">
         <div className="bg-surface rounded-2xl p-6 shadow-md border border-border flex flex-col items-center">
-          {/* Clickable avatar */}
           <div className="relative mb-4 group cursor-pointer" onClick={handleAvatarClick}>
             {uploadingAvatar ? (
               <div className="w-24 h-24 rounded-full border-4 border-surface-raised bg-page flex items-center justify-center">
@@ -129,21 +142,29 @@ export default function ProfilePage() {
           </div>
           <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
           {avatarError && <p className="text-red-500 text-xs text-center mb-2">{avatarError}</p>}
-
           <h2 className="text-xl font-bold text-primary text-center">{user?.displayName}</h2>
           <p className="text-secondary text-sm text-center truncate w-full mb-4 font-medium">{user?.email}</p>
         </div>
 
-        {/* Vertical tabs (md+) / horizontal tabs (mobile) */}
         <div className="bg-surface rounded-xl shadow-sm border border-border overflow-hidden font-semibold">
           <div className="flex md:flex-col divide-x md:divide-x-0 md:divide-y divide-border-subtle overflow-x-auto scrollbar-hide">
-            <button onClick={() => setTab('settings')} className={`flex-1 md:flex-none p-3 md:p-4 text-center md:text-left transition-colors whitespace-nowrap ${tab === 'settings' ? 'bg-surface-raised text-accent-blue font-bold md:border-l-4 md:border-l-accent-blue border-b-2 border-b-accent-blue md:border-b-0' : 'text-secondary hover:bg-page md:border-l-4 md:border-l-transparent'}`}>Settings</button>
-            <button onClick={() => setTab('watchlist')} className={`flex-1 md:flex-none p-3 md:p-4 text-center md:text-left transition-colors flex justify-center md:justify-between items-center gap-1 whitespace-nowrap ${tab === 'watchlist' ? 'bg-surface-raised text-accent-red font-bold md:border-l-4 md:border-l-red-500 border-b-2 border-b-red-500 md:border-b-0' : 'text-secondary hover:bg-page md:border-l-4 md:border-l-transparent'}`}>
-              Watchlist
-              <span className="bg-accent-red text-white text-xs px-1.5 py-0.5 rounded-full">{watchlist.length}</span>
+            <button onClick={() => setTab('settings')} className={tabClass('settings', 'text-accent-blue md:border-l-accent-blue border-b-accent-blue')}>
+              Settings
             </button>
-            <button onClick={() => setTab('history')} className={`flex-1 md:flex-none p-3 md:p-4 text-center md:text-left transition-colors whitespace-nowrap ${tab === 'history' ? 'bg-surface-raised text-accent-orange font-bold md:border-l-4 md:border-l-accent-orange border-b-2 border-b-accent-orange md:border-b-0' : 'text-secondary hover:bg-page md:border-l-4 md:border-l-transparent'}`}>History</button>
-            <button onClick={handleLogout} className="flex-1 md:flex-none p-3 md:p-4 text-center md:text-left transition-colors text-secondary hover:bg-page whitespace-nowrap">Log Out</button>
+            <button onClick={() => setTab('watchlist')} className={`${tabClass('watchlist', 'text-accent-red md:border-l-red-500 border-b-red-500')} flex justify-center md:justify-between items-center gap-1`}>
+              Watchlist
+              <span className="bg-accent-red text-white text-xs px-1.5 py-0.5 rounded-full">{videoWatchlist.length}</span>
+            </button>
+            <button onClick={() => setTab('readlist')} className={`${tabClass('readlist', 'text-accent-purple md:border-l-accent-purple border-b-accent-purple')} flex justify-center md:justify-between items-center gap-1`}>
+              Readlist
+              <span className="bg-accent-purple text-white text-xs px-1.5 py-0.5 rounded-full">{readlist.length}</span>
+            </button>
+            <button onClick={() => setTab('history')} className={tabClass('history', 'text-accent-orange md:border-l-accent-orange border-b-accent-orange')}>
+              History
+            </button>
+            <button onClick={handleLogout} className="flex-1 md:flex-none p-3 md:p-4 text-center md:text-left transition-colors text-secondary hover:bg-page whitespace-nowrap md:border-l-4 md:border-l-transparent">
+              Log Out
+            </button>
           </div>
         </div>
       </div>
@@ -158,7 +179,6 @@ export default function ProfilePage() {
               <p className="text-secondary font-medium border-b border-border pb-6">Manage your account preferences.</p>
             </div>
 
-            {/* Profile section */}
             <div className="bg-surface rounded-2xl shadow-sm border border-border overflow-hidden">
               <div className="p-6 bg-surface-raised border-b border-border">
                 <h2 className="text-xl font-bold text-primary flex items-center gap-2 mb-1">
@@ -167,7 +187,6 @@ export default function ProfilePage() {
                 <p className="text-secondary text-sm font-medium">Update your display name and profile picture.</p>
               </div>
               <div className="p-6 space-y-5">
-                {/* Avatar upload */}
                 <div className="flex items-center gap-5">
                   <div className="relative group cursor-pointer flex-shrink-0" onClick={handleAvatarClick}>
                     {uploadingAvatar ? (
@@ -190,7 +209,6 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                {/* Display name */}
                 <div>
                   <label className="block text-sm font-semibold text-secondary mb-1.5">Display name</label>
                   <div className="flex gap-2">
@@ -215,7 +233,6 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Account section */}
             <div className="bg-surface rounded-2xl shadow-sm border border-border overflow-hidden">
               <div className="p-6 bg-surface-raised border-b border-border">
                 <h2 className="text-xl font-bold text-primary flex items-center gap-2 mb-1">
@@ -235,14 +252,14 @@ export default function ProfilePage() {
         {tab === 'watchlist' && (
           <div className="animate-in fade-in">
             <h1 className="text-3xl font-bold text-primary mb-6 pb-4 border-b border-border flex items-center justify-between">
-              Your Watchlist
-              <span className="text-sm font-semibold bg-surface-raised border border-border text-muted px-3 py-1 rounded-full">{watchlist.length} items</span>
+              Watchlist
+              <span className="text-sm font-semibold bg-surface-raised border border-border text-muted px-3 py-1 rounded-full">{videoWatchlist.length} items</span>
             </h1>
-            {watchlist.length === 0 ? (
-              <div className="text-center py-20 text-muted font-medium bg-page rounded-xl border border-dashed border-border">Your watchlist is empty.</div>
+            {videoWatchlist.length === 0 ? (
+              <div className="text-center py-20 text-muted font-medium bg-page rounded-xl border border-dashed border-border">No anime, movies, or TV shows in your watchlist yet.</div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                {watchlist.map(item => (
+                {videoWatchlist.map(item => (
                   <div key={item.contentId} className="relative group/card">
                     <ContentCard id={item.contentId} title={item.title} posterUrl={item.posterUrl} contentType={item.contentType} className="w-full h-48 sm:h-60" />
                     <button
@@ -261,10 +278,39 @@ export default function ProfilePage() {
           </div>
         )}
 
+        {tab === 'readlist' && (
+          <div className="animate-in fade-in">
+            <h1 className="text-3xl font-bold text-primary mb-6 pb-4 border-b border-border flex items-center justify-between">
+              Readlist
+              <span className="text-sm font-semibold bg-surface-raised border border-border text-muted px-3 py-1 rounded-full">{readlist.length} manga</span>
+            </h1>
+            {readlist.length === 0 ? (
+              <div className="text-center py-20 text-muted font-medium bg-page rounded-xl border border-dashed border-border">No manga in your readlist yet.</div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {readlist.map(item => (
+                  <div key={item.contentId} className="relative group/card">
+                    <ContentCard id={item.contentId} title={item.title} posterUrl={item.posterUrl} contentType="manga" className="w-full h-48 sm:h-60" />
+                    <button
+                      onClick={() => toggleReadlist({ contentId: item.contentId, contentType: 'manga', title: item.title, posterUrl: item.posterUrl })}
+                      title="Remove from readlist"
+                      className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full bg-black/70 text-white flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity hover:bg-red-600"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {tab === 'history' && (
           <div className="animate-in fade-in">
             <div className="flex items-center justify-between mb-6 pb-4 border-b border-border">
-              <h1 className="text-3xl font-bold text-primary">Watch History</h1>
+              <h1 className="text-3xl font-bold text-primary">History</h1>
               {history.length > 0 && (
                 <button
                   onClick={handleClearHistory}
@@ -275,35 +321,79 @@ export default function ProfilePage() {
                 </button>
               )}
             </div>
-            {history.length === 0 ? (
-              <div className="text-center py-20 text-muted font-medium bg-page rounded-xl border border-dashed border-border">No watch history yet.</div>
-            ) : (
-              <div className="space-y-4">
-                {history.map(item => {
-                  const progress = item.duration > 0 ? (item.position / item.duration) * 100 : 0;
-                  return (
-                    <div key={item.id} className="flex gap-4 p-4 rounded-xl hover:bg-surface-raised transition-colors border border-transparent hover:border-border group bg-page shadow-sm">
-                      <img src={item.posterUrl} className="w-16 h-24 object-cover rounded shadow-sm border border-border" alt="" />
-                      <div className="flex-1 flex flex-col justify-center">
-                        <div className="flex justify-between items-start mb-1">
-                          <h3 className="font-bold text-primary text-lg group-hover:text-accent-blue transition-colors line-clamp-1">{item.title}</h3>
-                          <span className="text-xs uppercase bg-surface border border-border text-secondary font-bold px-2 py-0.5 rounded shadow-sm">{item.contentType}</span>
-                        </div>
-                        <p className="text-sm text-secondary font-semibold mb-3">
-                          {item.epNum && `Ep ${item.epNum} · `}
-                          {item.seasonNum && `S${item.seasonNum} `}{item.episodeNum && `E${item.episodeNum}`}
-                          {(item.seasonNum || item.episodeNum || item.epNum) && ' · '}
-                          Stopped at {Math.floor(item.position / 60)}:{String(Math.floor(item.position % 60)).padStart(2, '0')}
-                        </p>
-                        <div className="w-full max-w-sm h-1.5 bg-border-subtle rounded-full overflow-hidden mb-2 shadow-inner">
-                          <div className="bg-accent-blue h-full rounded-full transition-all duration-300" style={{ width: `${Math.min(100, progress)}%` }} />
+
+            {/* Watch History */}
+            <div className="mb-8">
+              <h2 className="text-lg font-bold text-secondary mb-4 flex items-center gap-2">
+                <span className="w-1 h-5 bg-accent-blue rounded-full inline-block" />
+                Watch History
+              </h2>
+              {watchHistory.length === 0 ? (
+                <div className="text-center py-10 text-muted font-medium bg-page rounded-xl border border-dashed border-border">No watch history yet.</div>
+              ) : (
+                <div className="space-y-3">
+                  {watchHistory.map(item => {
+                    const progress = item.duration > 0 ? (item.position / item.duration) * 100 : 0;
+                    return (
+                      <div key={item.id} className="flex gap-4 p-4 rounded-xl hover:bg-surface-raised transition-colors border border-transparent hover:border-border group bg-page shadow-sm">
+                        <img src={item.posterUrl} className="w-16 h-24 object-cover rounded shadow-sm border border-border shrink-0" alt="" />
+                        <div className="flex-1 flex flex-col justify-center min-w-0">
+                          <div className="flex justify-between items-start mb-1 gap-2">
+                            <h3 className="font-bold text-primary text-base group-hover:text-accent-blue transition-colors line-clamp-1">{item.title}</h3>
+                            <span className="text-xs uppercase bg-surface border border-border text-secondary font-bold px-2 py-0.5 rounded shadow-sm shrink-0">{item.contentType}</span>
+                          </div>
+                          <p className="text-sm text-secondary font-semibold mb-3">
+                            {item.epNum && `Ep ${item.epNum} · `}
+                            {item.seasonNum && `S${item.seasonNum} `}{item.episodeNum && `E${item.episodeNum}`}
+                            {(item.seasonNum || item.episodeNum || item.epNum) && ' · '}
+                            Stopped at {Math.floor(item.position / 60)}:{String(Math.floor(item.position % 60)).padStart(2, '0')}
+                          </p>
+                          <div className="w-full max-w-sm h-1.5 bg-border-subtle rounded-full overflow-hidden shadow-inner">
+                            <div className="bg-accent-blue h-full rounded-full transition-all duration-300" style={{ width: `${Math.min(100, progress)}%` }} />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Read History */}
+            <div>
+              <h2 className="text-lg font-bold text-secondary mb-4 flex items-center gap-2">
+                <span className="w-1 h-5 bg-accent-purple rounded-full inline-block" />
+                Read History
+              </h2>
+              {readHistory.length === 0 ? (
+                <div className="text-center py-10 text-muted font-medium bg-page rounded-xl border border-dashed border-border">No manga read history yet.</div>
+              ) : (
+                <div className="space-y-3">
+                  {readHistory.map(item => (
+                    <Link
+                      key={item.id}
+                      to={item.chapterId ? `/manga/${item.contentId}/chapter/${item.chapterId}?page=${item.pageNum || 1}` : `/manga/${item.contentId}`}
+                      className="flex gap-4 p-4 rounded-xl hover:bg-surface-raised transition-colors border border-transparent hover:border-border group bg-page shadow-sm"
+                    >
+                      <img src={item.posterUrl} className="w-16 h-24 object-cover rounded shadow-sm border border-border shrink-0" alt="" />
+                      <div className="flex-1 flex flex-col justify-center min-w-0">
+                        <div className="flex justify-between items-start mb-1 gap-2">
+                          <h3 className="font-bold text-primary text-base group-hover:text-accent-purple transition-colors line-clamp-1">{item.title}</h3>
+                          <span className="text-xs uppercase bg-surface border border-border text-secondary font-bold px-2 py-0.5 rounded shadow-sm shrink-0">manga</span>
+                        </div>
+                        {item.chapterNum && (
+                          <p className="text-sm text-secondary font-semibold">
+                            Ch. {item.chapterNum}
+                            {item.pageNum ? <span className="text-muted font-normal"> · p.{item.pageNum}</span> : null}
+                          </p>
+                        )}
+                        <p className="text-xs text-accent-purple mt-1 font-medium">Continue reading →</p>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

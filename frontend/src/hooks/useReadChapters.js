@@ -87,11 +87,13 @@ export function useReadChapters(mangaId, user) {
     setUnreadSet(new Set());
   }, [user, mangaId]);
 
-  const markChapterRead = useCallback(async (chapterNum) => {
+  const markChapterRead = useCallback(async (chapterNum, durationMs) => {
     if (!user || !mangaId) return;
     const key = String(chapterNum);
     const ref = doc(db, 'users', user.uid, 'history', `manga_${mangaId}_ch_${key}`);
-    await setDoc(ref, { contentId: mangaId, contentType: 'manga-chapter', chapterNum: key, manuallyRead: true, updatedAt: serverTimestamp() }, { merge: true });
+    const data = { contentId: mangaId, contentType: 'manga-chapter', chapterNum: key, manuallyRead: true, updatedAt: serverTimestamp() };
+    if (durationMs != null) data.readDuration = durationMs;
+    await setDoc(ref, data, { merge: true });
     setReadSet(prev => prev.has(key) ? prev : new Set([...prev, key]));
     setUnreadSet(prev => { const next = new Set(prev); next.delete(key); return next; });
   }, [user, mangaId]);
