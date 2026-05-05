@@ -30,6 +30,7 @@ if (saPath && existsSync(saPath)) {
 import userRoutes from './routes/users.js';
 import createRoomRouter from './routes/rooms.js';
 import gogoanimeRoutes from './routes/gogoanime.js';
+import mangaRoutes from './routes/manga.js';
 import setupSockets from './socket/roomSocket.js';
 import requireAuth from './middleware/requireAuth.js';
 
@@ -84,6 +85,7 @@ app.post('/api/verify-turnstile', async (req, res) => {
 app.use('/api/me', userRoutes);
 app.use('/api/rooms', createRoomRouter(io));
 app.use('/api/anime/gogoanime', requireAuth, gogoanimeRoutes);
+app.use('/api/manga', mangaRoutes);
 
 // ─── HLS Proxy (fallback when Cloudflare Worker is blocked by CDN) ──────────
 // In-memory LRU cache for .ts segments — avoids duplicate upstream fetches when
@@ -232,123 +234,26 @@ app.get('/api/proxy/video', async (req, res) => {
   }
 });
 
-// ─── MangaDex Cover Image Proxy (CDN requires Referer: mangadex.org) ────────
-app.get('/api/proxy/mangadex-cover', async (req, res) => {
+// ─── Manga Image Proxy (MangaBuddy CDN — requires Referer) ────────────────
+app.get('/api/proxy/manga-image', async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'url required' });
   const decoded = decodeURIComponent(url);
-  if (!decoded.startsWith('https://uploads.mangadex.org/covers/')) {
-    return res.status(400).json({ error: 'Invalid URL' });
+  if (!/^https:\/\/s\d+\.mbcdns\w+\.org\//.test(decoded)) {
+    return res.status(400).json({ error: 'URL not allowed' });
   }
   try {
     const upstream = await fetch(decoded, {
       headers: {
-        'Referer': 'https://mangadex.org/',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://mangabuddy.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       },
     });
-    if (!upstream.ok) return res.status(upstream.status).send();
+    if (!upstream.ok) return res.status(upstream.status).end();
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/jpeg');
-    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
-    const cl = upstream.headers.get('content-length');
-    if (cl) res.setHeader('Content-Length', cl);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Access-Control-Allow-Origin', '*');
     Readable.fromWeb(upstream.body).pipe(res);
-  } catch (err) {
-    res.status(502).json({ error: err.message });
-  }
-});
-
-// ─── ComicK API Proxy (comick.art/api — search, chapter list) ───────────────
-app.get('/api/proxy/comick/*', async (req, res) => {
-  const path = req.params[0];
-  const rawQuery = req.originalUrl.split('?').slice(1).join('?');
-  const targetUrl = `https://comick.art/api/${path}${rawQuery ? '?' + rawQuery : ''}`;
-  try {
-    const response = await fetch(targetUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-      }
-    });
-    if (!response.ok) return res.status(response.status).json({ error: 'ComicK error', status: response.status });
-    res.json(await response.json());
-  } catch (err) {
-    res.status(502).json({ error: err.message });
-  }
-});
-
-// ─── ComicK Chapter Images (scrapes comick.art HTML, CDN requires Referer) ───
-app.get('/api/comick/images', async (req, res) => {
-  const { slug, hid, chap, lang = 'en' } = req.query;
-  if (!slug || !hid || !chap) return res.status(400).json({ error: 'slug, hid, chap required' });
-  const pageUrl = `https://comick.art/comic/${slug}/${hid}-chapter-${chap}-${lang}`;
-  try {
-    const response = await fetch(pageUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://comick.art/',
-        'Accept': 'text/html',
-      },
-    });
-    if (!response.ok) return res.status(response.status).json({ error: 'Chapter not found', status: response.status });
-    const html = await response.text();
-    // Extract images JSON array embedded in the page
-    const marker = '"images":';
-    const start = html.indexOf(marker + '[');
-    if (start === -1) return res.json({ images: [] });
-    let i = start + marker.length; // points at '['
-    let depth = 0, endIdx = i;
-    for (let j = i; j < Math.min(i + 500000, html.length); j++) {
-      if (html[j] === '[') depth++;
-      else if (html[j] === ']') { depth--; if (depth === 0) { endIdx = j + 1; break; } }
-    }
-    const images = JSON.parse(html.slice(i, endIdx));
-    const proto = req.headers['x-forwarded-proto'] || req.protocol;
-    const base = `${proto}://${req.get('host')}`;
-    res.json({ images: images.map(img => `${base}/api/proxy/comick-image?url=${encodeURIComponent(img.url)}`) });
-  } catch (err) {
-    res.status(502).json({ error: err.message });
-  }
-});
-
-// ─── ComicK Image Proxy (CDN requires Referer: comick.art) ───────────────────
-app.get('/api/proxy/comick-image', async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).json({ error: 'url required' });
-  const decoded = decodeURIComponent(url);
-  if (!decoded.startsWith('https://cdn') || !decoded.includes('comicknew.pictures')) {
-    return res.status(400).json({ error: 'Invalid URL' });
-  }
-  try {
-    const upstream = await fetch(decoded, {
-      headers: {
-        'Referer': 'https://comick.art/',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
-    });
-    if (!upstream.ok) return res.status(upstream.status).send();
-    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/webp');
-    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
-    const cl = upstream.headers.get('content-length');
-    if (cl) res.setHeader('Content-Length', cl);
-    Readable.fromWeb(upstream.body).pipe(res);
-  } catch (err) {
-    res.status(502).json({ error: err.message });
-  }
-});
-
-// ─── MangaDex Proxy (browser CORS blocks direct calls from production) ──────
-app.get('/api/proxy/mangadex/*', async (req, res) => {
-  const mdPath = req.params[0];
-  // Preserve raw query string intact so array params (includes[], contentRating[]) survive
-  const rawQuery = req.originalUrl.split('?').slice(1).join('?');
-  const targetUrl = `https://api.mangadex.org/${mdPath}${rawQuery ? '?' + rawQuery : ''}`;
-  try {
-    const response = await fetch(targetUrl, {
-      headers: { 'User-Agent': 'UmamiStream/1.0' }
-    });
-    if (!response.ok) return res.status(response.status).json({ error: 'MangaDex error', status: response.status });
-    res.json(await response.json());
   } catch (err) {
     res.status(502).json({ error: err.message });
   }

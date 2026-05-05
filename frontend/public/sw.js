@@ -60,6 +60,6 @@ self.addEventListener('fetch', event => {
         }
         return res;
       });
-    })
+    }).catch(() => caches.match('/'))
   );
 });

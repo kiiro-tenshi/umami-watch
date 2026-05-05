@@ -1,127 +1,108 @@
-const BASE = `${import.meta.env.VITE_API_BASE_URL}/api/proxy/mangadex`;
+const MD_API = 'https://api.mangadex.org';
 
-const mdFetch = async (path, params = {}) => {
-  const url = new URL(BASE + path);
-  Object.entries(params).forEach(([k, v]) => {
-    if (Array.isArray(v)) v.forEach(item => url.searchParams.append(k, item));
-    else url.searchParams.set(k, v);
-  });
-  const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`MangaDex error: ${res.status}`);
-  return res.json();
-};
-
-// Cover art URL helper — proxied through server to add required Referer header
-export const coverUrl = (mangaId, filename, size = 256) => {
-  const raw = `https://uploads.mangadex.org/covers/${mangaId}/${filename}.${size}.jpg`;
-  return `${import.meta.env.VITE_API_BASE_URL}/api/proxy/mangadex-cover?url=${encodeURIComponent(raw)}`;
-};
-
-// Extract cover filename from manga relationships
-export const getCoverFilename = (manga) => {
-  const rel = manga.relationships?.find(r => r.type === 'cover_art');
-  return rel?.attributes?.fileName || null;
-};
-
-// Extract author name from relationships
-export const getAuthor = (manga) => {
-  const rel = manga.relationships?.find(r => r.type === 'author');
-  return rel?.attributes?.name || null;
-};
-
-// Get localized title (prefer en, fallback to first available)
 export const getTitle = (manga) => {
-  const t = manga.attributes?.title;
-  return t?.en || t?.['ja-ro'] || t?.ja || Object.values(t || {})[0] || 'Unknown Title';
+  const t = manga?.attributes?.title || {};
+  return t.en || Object.values(t)[0] || '';
 };
 
-export const getDescription = (manga) => {
-  const d = manga.attributes?.description;
-  return d?.en || Object.values(d || {})[0] || '';
+export const getDescription = (manga) =>
+  manga?.attributes?.description?.en || '';
+
+export const getAuthor = (manga) =>
+  manga?.relationships?.find(r => r.type === 'author')?.attributes?.name || '';
+
+export const coverUrl = (manga, size = 256) => {
+  const filename = manga?.relationships?.find(r => r.type === 'cover_art')?.attributes?.fileName;
+  return filename
+    ? `https://uploads.mangadex.org/covers/${manga.id}/${filename}.${size}.jpg`
+    : '/placeholder.png';
 };
 
-export const getTrendingManga = async (limit = 20, offset = 0) => {
-  const data = await mdFetch('/manga', {
-    limit,
-    offset,
-    'order[followedCount]': 'desc',
-    'includes[]': ['cover_art', 'author'],
-    'contentRating[]': ['safe', 'suggestive'],
-    'availableTranslatedLanguage[]': ['en'],
-  });
-  return data.data || [];
-};
+export const SORT_OPTIONS = [
+  { value: 'followedCount', label: 'Most Popular' },
+  { value: 'latestUploadedChapter', label: 'Latest Update' },
+  { value: 'createdAt', label: 'New Releases' },
+  { value: 'relevance', label: 'Relevance' },
+];
 
-export const searchManga = async (title, limit = 20, offset = 0) => {
-  const data = await mdFetch('/manga', {
-    title,
-    limit,
-    offset,
-    'includes[]': ['cover_art', 'author'],
-    'contentRating[]': ['safe', 'suggestive'],
-    'availableTranslatedLanguage[]': ['en'],
-  });
-  return data.data || [];
-};
+export const STATUSES = [
+  { value: '', label: 'All Status' },
+  { value: 'ongoing', label: 'Ongoing' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'hiatus', label: 'Hiatus' },
+];
 
-export const getMangaByGenre = async (tagId, limit = 20, offset = 0) => {
-  const data = await mdFetch('/manga', {
-    limit,
-    offset,
-    'includedTags[]': [tagId],
-    'order[followedCount]': 'desc',
-    'includes[]': ['cover_art', 'author'],
-    'contentRating[]': ['safe', 'suggestive'],
-    'availableTranslatedLanguage[]': ['en'],
-  });
-  return data.data || [];
-};
+export async function getTags() {
+  const res = await fetch(`${MD_API}/manga/tag`);
+  if (!res.ok) return [];
+  const { data } = await res.json();
+  return data
+    .filter(t => t.attributes.group === 'genre')
+    .map(t => ({ id: t.id, name: t.attributes.name.en || '' }))
+    .filter(t => t.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
 
-export const browseManga = async ({ search, tag, status, sort = 'followedCount', offset = 0, limit = 24 } = {}) => {
-  const params = {
-    limit,
-    offset,
-    [`order[${sort}]`]: 'desc',
-    'includes[]': ['cover_art', 'author'],
-    'contentRating[]': ['safe', 'suggestive'],
-    'availableTranslatedLanguage[]': ['en'],
-  };
-  if (search) params.title = search;
-  if (tag) params['includedTags[]'] = [tag];
-  if (status) params['status[]'] = [status];
-  const data = await mdFetch('/manga', params);
-  return { data: data.data || [], total: data.total || 0 };
-};
+export async function browseManga({ query = '', tag = '', status = '', sort = 'followedCount', offset = 0 } = {}) {
+  const params = new URLSearchParams({ limit: 24, offset });
+  params.append('includes[]', 'cover_art');
+  if (query) params.set('title', query);
+  if (tag) params.append('includedTags[]', tag);
+  if (status) params.set('status', status);
+  if (sort) params.set(`order[${sort}]`, 'desc');
 
-export const getMangaById = async (id) => {
-  const data = await mdFetch(`/manga/${id}`, {
-    'includes[]': ['cover_art', 'author', 'artist'],
-  });
-  return data.data;
-};
+  const res = await fetch(`${MD_API}/manga?${params}`);
+  if (!res.ok) throw new Error(`MangaDex browse failed: ${res.status}`);
+  const json = await res.json();
+  return { data: json.data, total: json.total, hasMore: offset + json.data.length < json.total };
+}
 
-export const getMangaTags = async () => {
-  const data = await mdFetch('/manga/tag');
-  return (data.data || []).filter(t => t.attributes?.group === 'genre');
-};
+export async function getMangaById(id) {
+  const params = new URLSearchParams();
+  ['cover_art', 'author', 'artist'].forEach(t => params.append('includes[]', t));
+  const res = await fetch(`${MD_API}/manga/${id}?${params}`);
+  if (!res.ok) return null;
+  return (await res.json()).data;
+}
 
-export const getMangaChapters = async (mangaId, offset = 0, limit = 100) => {
-  const data = await mdFetch(`/manga/${mangaId}/feed`, {
-    'translatedLanguage[]': ['en'],
-    'order[chapter]': 'asc',
-    limit,
-    offset,
-    'includes[]': ['scanlation_group'],
-  });
-  return { data: data.data || [], total: data.total || 0 };
-};
+export async function getMangaChapters(mangaId) {
+  const all = [];
+  const limit = 500;
+  let offset = 0;
+  while (true) {
+    const params = new URLSearchParams({ limit, offset });
+    // No translatedLanguage filter — fetch all languages, filter client-side
+    // This avoids MangaDex silently returning 0 for licensed manga with removed EN chapters
+    params.set('order[chapter]', 'asc');
+    params.append('includes[]', 'scanlation_group');
+    ['safe', 'suggestive', 'erotica'].forEach(r => params.append('contentRating[]', r));
+    const res = await fetch(`${MD_API}/manga/${mangaId}/feed?${params}`);
+    if (!res.ok) {
+      console.error(`MangaDex /feed ${res.status} for manga ${mangaId}`);
+      break;
+    }
+    const json = await res.json();
+    const data = json.data;
+    const total = json.total ?? 0;
+    if (!Array.isArray(data)) break;
+    // Keep only English chapters — done client-side so we can see what's available
+    all.push(...data.filter(ch => ch.attributes?.translatedLanguage === 'en'));
+    if (all.length >= total || data.length < limit) break;
+    offset += limit;
+  }
+  return all;
+}
 
-export const getChapterPages = async (chapterId) => {
-  const data = await mdFetch(`/at-home/server/${chapterId}`);
-  return {
-    baseUrl: data.baseUrl,
-    hash: data.chapter?.hash,
-    data: data.chapter?.data || [],
-    dataSaver: data.chapter?.dataSaver || [],
-  };
-};
+export async function getChapter(chapterId) {
+  const res = await fetch(`${MD_API}/chapter/${chapterId}`);
+  if (!res.ok) return null;
+  return (await res.json()).data;
+}
+
+export async function getChapterPages(chapterId) {
+  const res = await fetch(`${MD_API}/at-home/server/${chapterId}`);
+  if (!res.ok) throw new Error(`at-home server failed: ${res.status}`);
+  const { baseUrl, chapter } = await res.json();
+  return { baseUrl, hash: chapter.hash, data: chapter.data, dataSaver: chapter.dataSaver };
+}
