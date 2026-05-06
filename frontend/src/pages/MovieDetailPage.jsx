@@ -1,21 +1,23 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getMovieDetail, getTVDetail, getTVSeason, tmdbImage } from '../api/tmdb';
 import { useAuth } from '../hooks/useAuth';
 import { useWatchlist } from '../hooks/useWatchlist';
 import LoadingSpinner from '../components/LoadingSpinner';
 import SeasonSelector from '../components/SeasonSelector';
-import { Link } from 'react-router-dom';
+import { auth } from '../firebase';
 
 export default function MovieDetailPage({ type }) {
   const { tmdbId } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { isInWatchlist, toggleWatchlist } = useWatchlist(user?.uid);
-  
+
   const [data, setData] = useState(null);
   const [selectedSeason, setSelectedSeason] = useState(1);
   const [seasonEpisodes, setSeasonEpisodes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
 
   const isMovie = type === 'movie';
   const title = data ? (isMovie ? data.title : data.name) : '';
@@ -43,6 +45,35 @@ export default function MovieDetailPage({ type }) {
       getTVSeason(tmdbId, selectedSeason).then(res => setSeasonEpisodes(res.episodes || []));
     }
   }, [tmdbId, selectedSeason, isMovie, data]);
+
+  async function handleWatchParty() {
+    if (!user || isCreatingRoom) return;
+    setIsCreatingRoom(true);
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/rooms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: `${user.displayName}'s Room`,
+          contentId: String(tmdbId),
+          contentType: type,
+          contentTitle: title,
+        }),
+      });
+      if (res.ok) {
+        const roomData = await res.json();
+        if (isMovie) {
+          navigate(`/watch?type=movie&tmdbId=${tmdbId}&roomId=${roomData.id}`);
+        } else {
+          navigate(`/watch?type=tv&tmdbId=${tmdbId}&season=${selectedSeason}&episode=1&roomId=${roomData.id}`);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    setIsCreatingRoom(false);
+  }
 
   if (loading) return <LoadingSpinner fullScreen />;
   if (!data) return <div className="p-8 text-center text-red-500 font-bold">Failed to load content.</div>;
@@ -91,6 +122,23 @@ export default function MovieDetailPage({ type }) {
                 className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold shadow-md transition-transform hover:scale-105 border ${inWatchlist ? 'bg-surface border-border text-red-600' : 'bg-surface-raised border-border text-primary'}`}>
                 <span className="text-xl">{inWatchlist ? '♥️' : '♡'}</span>
                 {inWatchlist ? 'In Watchlist' : 'Add to Watchlist'}
+              </button>
+              <button
+                onClick={handleWatchParty}
+                disabled={isCreatingRoom || !user}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold shadow-md transition-transform hover:scale-105 border bg-accent-purple border-accent-purple text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+              >
+                {isCreatingRoom ? (
+                  <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.9L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                  </svg>
+                )}
+                {isCreatingRoom ? 'Creating...' : 'Watch Together'}
               </button>
             </div>
           </div>

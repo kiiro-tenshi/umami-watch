@@ -5,7 +5,7 @@ import { useSocket } from '../hooks/useSocket';
 import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
 import { searchGogoanime, getGogoanimeSource, pickBestShow } from '../api/gogoanime';
 import { getAnimeById } from '../api/anilist';
-import { getMovieDetail, getTVDetail } from '../api/tmdb';
+import { getMovieDetail, getTVDetail, getTVSeason } from '../api/tmdb';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import VideoPlayer from '../components/VideoPlayer';
@@ -55,6 +55,8 @@ export default function WatchPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showContentPicker, setShowContentPicker] = useState(false);
   const [animeEpisodes, setAnimeEpisodes] = useState([]);
+  const [tvEpisodes, setTvEpisodes] = useState([]);
+  const [tvSeasonCount, setTvSeasonCount] = useState(0);
   const [mobileTab, setMobileTab] = useState('chat'); // 'chat' | 'episodes'
   const [epMenu, setEpMenu] = useState(null); // { x, y, epNum }
 
@@ -79,6 +81,13 @@ export default function WatchPage() {
   function buildEpUrl(ep) {
     const base = `/watch?type=anime&kitsuId=${kitsuId}&epNum=${ep.number}`;
     return roomId ? `${base}&roomId=${roomId}` : base;
+  }
+
+  function buildTvEpUrl(newSeason, newEpisode) {
+    const params = new URLSearchParams(searchParams);
+    params.set('season', String(newSeason));
+    params.set('episode', String(newEpisode));
+    return `/watch?${params.toString()}`;
   }
 
   // 1. Get fresh Firebase auth token
@@ -307,6 +316,24 @@ export default function WatchPage() {
           .catch(() => {});
       });
   }, [type, kitsuId]);
+
+  // 4b. Fetch TV season episodes + season count for the in-room sidebar
+  useEffect(() => {
+    if (type !== 'tv' || !tmdbId || !roomId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [detail, seasonData] = await Promise.all([
+          getTVDetail(tmdbId),
+          getTVSeason(tmdbId, parseInt(season || '1', 10)),
+        ]);
+        if (cancelled) return;
+        setTvSeasonCount(detail?.number_of_seasons || 0);
+        setTvEpisodes(seasonData?.episodes || []);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [type, tmdbId, roomId, season]);
 
   // 5. Auto-scroll episode list to current episode
   useEffect(() => {
@@ -540,7 +567,9 @@ export default function WatchPage() {
     isViewer: !!(roomId && !isHost),
   };
 
-  const hasEpisodeSidebar = type === 'anime' && animeEpisodes.length > 0;
+  const hasEpisodeSidebar =
+    (type === 'anime' && animeEpisodes.length > 0) ||
+    (type === 'tv' && !!roomId && tvEpisodes.length > 0);
   const hasChatSidebar = !!roomId;
   const hasSidebar = hasEpisodeSidebar || hasChatSidebar;
 
@@ -694,7 +723,7 @@ export default function WatchPage() {
                   onClick={() => setMobileTab('episodes')}
                   className={`flex-1 py-3 text-sm font-bold transition-colors ${mobileTab === 'episodes' ? 'text-accent-teal border-b-2 border-accent-teal' : 'text-muted'}`}
                 >
-                  Episodes ({animeEpisodes.length})
+                  Episodes ({type === 'anime' ? animeEpisodes.length : tvEpisodes.length})
                 </button>
               </div>
             )}
@@ -709,57 +738,97 @@ export default function WatchPage() {
               </div>
             )}
 
-            {/* Episode list (anime only) */}
+            {/* Episode list (anime + TV in-room) */}
             {hasEpisodeSidebar && (
               <div
                 className={`bg-surface border border-border lg:rounded-xl overflow-hidden flex flex-col ${hasEpisodeSidebar && hasChatSidebar ? (mobileTab === 'episodes' ? 'flex lg:flex' : 'hidden lg:flex') : 'flex'}`}
                 style={{ maxHeight: hasChatSidebar ? undefined : 'calc(100vh - 160px)', height: hasChatSidebar ? '60vh' : undefined }}
               >
-                <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0 gap-2">
-                  <span className="font-bold text-sm text-primary">Episodes</span>
-                  <div className="flex items-center gap-2">
-                    {user && animeEpisodes.length > 0 && (
-                      <button
-                        onClick={() => animeEpisodes.every(ep => watchedEps.has(ep.number)) ? markAllUnwatched() : markAllWatched(animeEpisodes)}
-                        className="text-xs px-2 py-1 rounded border border-border hover:bg-surface-raised transition-colors text-muted"
-                      >
-                        {animeEpisodes.every(ep => watchedEps.has(ep.number)) ? 'Unwatch all' : 'Watch all'}
-                      </button>
+                {type === 'anime' ? (
+                  <>
+                    <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0 gap-2">
+                      <span className="font-bold text-sm text-primary">Episodes</span>
+                      <div className="flex items-center gap-2">
+                        {user && animeEpisodes.length > 0 && (
+                          <button
+                            onClick={() => animeEpisodes.every(ep => watchedEps.has(ep.number)) ? markAllUnwatched() : markAllWatched(animeEpisodes)}
+                            className="text-xs px-2 py-1 rounded border border-border hover:bg-surface-raised transition-colors text-muted"
+                          >
+                            {animeEpisodes.every(ep => watchedEps.has(ep.number)) ? 'Unwatch all' : 'Watch all'}
+                          </button>
+                        )}
+                        <span className="text-xs text-muted">{animeEpisodes.length} eps</span>
+                      </div>
+                    </div>
+                    <div ref={episodeListRef} className="overflow-y-auto scrollbar-themed flex-1">
+                      {animeEpisodes.map(ep => (
+                        <Link
+                          key={ep.id}
+                          to={buildEpUrl(ep)}
+                          data-ep={ep.number}
+                          onContextMenu={(e) => { e.preventDefault(); setEpMenu({ x: e.clientX, y: e.clientY, epNum: ep.number }); }}
+                          className={`flex items-center gap-3 px-4 py-3 border-b border-border text-sm transition-colors hover:bg-surface-raised ${ep.number === epNum ? 'bg-accent-teal/10 border-l-4 border-l-accent-teal' : 'border-l-4 border-l-transparent'}`}
+                        >
+                          <span className={`font-bold w-7 text-right flex-shrink-0 text-xs ${ep.number === epNum ? 'text-accent-teal' : 'text-muted'}`}>{ep.number}</span>
+                          <span className={`truncate flex-1 ${ep.number === epNum ? 'text-primary font-semibold' : watchedEps.has(ep.number) ? 'text-muted' : 'text-secondary'}`}>
+                            {ep.title || `Episode ${ep.number}`}
+                          </span>
+                          {watchedEps.has(ep.number) && (
+                            <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                          {ep.isFiller && <span className="text-xs bg-orange-100 text-orange-600 px-1 py-0.5 rounded flex-shrink-0">F</span>}
+                        </Link>
+                      ))}
+                    </div>
+                    {epMenu && (
+                      <EpisodeContextMenu
+                        x={epMenu.x}
+                        y={epMenu.y}
+                        epNum={epMenu.epNum}
+                        isWatched={watchedEps.has(epMenu.epNum)}
+                        onToggle={toggleWatched}
+                        onClose={() => setEpMenu(null)}
+                      />
                     )}
-                    <span className="text-xs text-muted">{animeEpisodes.length} eps</span>
-                  </div>
-                </div>
-                <div ref={episodeListRef} className="overflow-y-auto scrollbar-themed flex-1">
-                  {animeEpisodes.map(ep => (
-                    <Link
-                      key={ep.id}
-                      to={buildEpUrl(ep)}
-                      data-ep={ep.number}
-                      onContextMenu={(e) => { e.preventDefault(); setEpMenu({ x: e.clientX, y: e.clientY, epNum: ep.number }); }}
-                      className={`flex items-center gap-3 px-4 py-3 border-b border-border text-sm transition-colors hover:bg-surface-raised ${ep.number === epNum ? 'bg-accent-teal/10 border-l-4 border-l-accent-teal' : 'border-l-4 border-l-transparent'}`}
-                    >
-                      <span className={`font-bold w-7 text-right flex-shrink-0 text-xs ${ep.number === epNum ? 'text-accent-teal' : 'text-muted'}`}>{ep.number}</span>
-                      <span className={`truncate flex-1 ${ep.number === epNum ? 'text-primary font-semibold' : watchedEps.has(ep.number) ? 'text-muted' : 'text-secondary'}`}>
-                        {ep.title || `Episode ${ep.number}`}
-                      </span>
-                      {watchedEps.has(ep.number) && (
-                        <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
+                  </>
+                ) : (
+                  <>
+                    <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0 gap-2">
+                      <span className="font-bold text-sm text-primary">Episodes</span>
+                      {tvSeasonCount > 1 ? (
+                        <select
+                          value={parseInt(season || '1', 10)}
+                          onChange={e => navigate(buildTvEpUrl(e.target.value, 1))}
+                          className="text-xs bg-surface border border-border rounded px-2 py-1 text-secondary"
+                        >
+                          {Array.from({ length: tvSeasonCount }, (_, i) => i + 1).map(s => (
+                            <option key={s} value={s}>Season {s}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-xs text-muted">Season {parseInt(season || '1', 10)}</span>
                       )}
-                      {ep.isFiller && <span className="text-xs bg-orange-100 text-orange-600 px-1 py-0.5 rounded flex-shrink-0">F</span>}
-                    </Link>
-                  ))}
-                </div>
-                {epMenu && (
-                  <EpisodeContextMenu
-                    x={epMenu.x}
-                    y={epMenu.y}
-                    epNum={epMenu.epNum}
-                    isWatched={watchedEps.has(epMenu.epNum)}
-                    onToggle={toggleWatched}
-                    onClose={() => setEpMenu(null)}
-                  />
+                    </div>
+                    <div className="overflow-y-auto scrollbar-themed flex-1">
+                      {tvEpisodes.map(ep => {
+                        const isActive = ep.episode_number === parseInt(episode || '1', 10);
+                        return (
+                          <button
+                            key={ep.id}
+                            onClick={() => navigate(buildTvEpUrl(parseInt(season || '1', 10), ep.episode_number))}
+                            className={`w-full flex items-center gap-3 px-4 py-3 border-b border-border text-sm transition-colors hover:bg-surface-raised text-left ${isActive ? 'bg-accent-teal/10 border-l-4 border-l-accent-teal' : 'border-l-4 border-l-transparent'}`}
+                          >
+                            <span className={`font-bold w-7 text-right flex-shrink-0 text-xs ${isActive ? 'text-accent-teal' : 'text-muted'}`}>{ep.episode_number}</span>
+                            <span className={`truncate flex-1 ${isActive ? 'text-primary font-semibold' : 'text-secondary'}`}>
+                              {ep.name || `Episode ${ep.episode_number}`}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
               </div>
             )}
