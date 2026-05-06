@@ -51,6 +51,8 @@ steps:
       - '--max-instances'
       - '5'
       - '--session-affinity'
+      - '--timeout'
+      - '3600'
       - '--set-secrets'
       - 'FIREBASE_PROJECT_ID=FIREBASE_PROJECT_ID:latest,FIREBASE_STORAGE_BUCKET=FIREBASE_STORAGE_BUCKET:latest,ALLOWED_ORIGINS=ALLOWED_ORIGINS:latest,TURNSTILE_SECRET_KEY=TURNSTILE_SECRET_KEY:latest,/run/secrets/firebase-sa.json=FIREBASE_SERVICE_ACCOUNT:latest'
       - '--set-env-vars'

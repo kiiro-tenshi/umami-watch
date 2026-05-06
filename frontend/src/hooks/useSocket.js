@@ -10,6 +10,7 @@ export function useSocket(apiBaseUrl, getToken) {
     if (!getToken || !apiBaseUrl) return;
 
     let socket;
+    let tokenRefreshTimer;
 
     getToken().then((token) => {
       if (!token) return;
@@ -53,9 +54,19 @@ export function useSocket(apiBaseUrl, getToken) {
       });
 
       socketRef.current = socket;
+
+      // Proactively refresh the token every 50 min so socket.auth never holds
+      // an expired credential when a disconnect/reconnect happens near the 1-hour mark.
+      tokenRefreshTimer = setInterval(async () => {
+        try {
+          const fresh = await getToken(true);
+          if (fresh) socket.auth = { token: fresh };
+        } catch {}
+      }, 50 * 60 * 1000);
     });
 
     return () => {
+      clearInterval(tokenRefreshTimer);
       socket?.disconnect();
     };
   }, [getToken, apiBaseUrl]);
