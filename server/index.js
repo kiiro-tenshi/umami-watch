@@ -31,6 +31,7 @@ import userRoutes from './routes/users.js';
 import createRoomRouter from './routes/rooms.js';
 import gogoanimeRoutes from './routes/gogoanime.js';
 import mangaRoutes from './routes/manga.js';
+import moviesRouter from './routes/movies.js';
 import setupSockets from './socket/roomSocket.js';
 import requireAuth from './middleware/requireAuth.js';
 
@@ -86,6 +87,7 @@ app.use('/api/me', userRoutes);
 app.use('/api/rooms', createRoomRouter(io));
 app.use('/api/anime/gogoanime', requireAuth, gogoanimeRoutes);
 app.use('/api/manga', mangaRoutes);
+app.use('/api/movies', moviesRouter);
 
 // ─── HLS Proxy (fallback when Cloudflare Worker is blocked by CDN) ──────────
 // In-memory LRU cache for .ts segments — avoids duplicate upstream fetches when
