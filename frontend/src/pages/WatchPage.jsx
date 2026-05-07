@@ -17,15 +17,16 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import InviteModal from '../components/InviteModal';
 import RoomContentModal from '../components/RoomContentModal';
 
-// Only two reliable embed sources for movies/TV
 function buildEmbedSources(type, { tmdbId, season, episode }) {
   if (type === 'movie') return [
-    { label: 'VidSrc CC', url: `https://vidsrc.cc/v2/embed/movie/${tmdbId}`, type: 'iframe' },
-    { label: 'VidSrc Net', url: `https://vidsrc.net/embed/movie?tmdb=${tmdbId}`, type: 'iframe' },
+    { label: 'VidSrc',  url: `https://vidsrc.cc/v2/embed/movie/${tmdbId}`, type: 'iframe' },
+    { label: 'VidLink', url: `https://vidlink.pro/movie/${tmdbId}`, type: 'iframe' },
+    { label: 'Embed.su', url: `https://embed.su/embed/movie/${tmdbId}`, type: 'iframe' },
   ];
   if (type === 'tv') return [
-    { label: 'VidSrc CC', url: `https://vidsrc.cc/v2/embed/tv/${tmdbId}/${season}/${episode}`, type: 'iframe' },
-    { label: 'VidSrc Net', url: `https://vidsrc.net/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episode}`, type: 'iframe' },
+    { label: 'VidSrc',  url: `https://vidsrc.cc/v2/embed/tv/${tmdbId}/${season}/${episode}`, type: 'iframe' },
+    { label: 'VidLink', url: `https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`, type: 'iframe' },
+    { label: 'Embed.su', url: `https://embed.su/embed/tv/${tmdbId}/${season}/${episode}`, type: 'iframe' },
   ];
   return [];
 }
@@ -120,7 +121,9 @@ export default function WatchPage() {
             setSources([{ type: srcType, url: data.streamUrl, label: 'Stream' }]);
             setActiveTracks(data.tracks || []);
           } else if (data.contentType) {
-            setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
+            const srcType = data.streamType || (data.streamUrl.includes('.m3u8') ? 'hls' : 'direct');
+            setSources([{ type: srcType, url: data.streamUrl, label: 'Stream' }]);
+            setActiveTracks(data.tracks || []);
           }
         }
         // If no content type to fetch, we're done loading
@@ -156,7 +159,7 @@ export default function WatchPage() {
         let poster = '';
         let url = null;
         let subtitleTracks = [];
-        let streamType = 'iframe';
+        let streamType = 'hls';
 
         if (type === 'anime') {
           if (!kitsuId) {
@@ -237,25 +240,25 @@ export default function WatchPage() {
           const data = await getMovieDetail(tmdbId);
           title = data.title;
           poster = `https://image.tmdb.org/t/p/w500${data.poster_path}`;
-          const srcs = buildEmbedSources('movie', { tmdbId });
+          const embedSources = buildEmbedSources('movie', { tmdbId });
           if (!cancelled) {
-            setSources(srcs);
+            setSources(embedSources);
             setActiveSourceIdx(0);
-            setActiveTracks([]);
           }
-          url = srcs[0].url;
+          url = embedSources[0].url;
+          streamType = 'iframe';
 
         } else if (type === 'tv') {
           const data = await getTVDetail(tmdbId);
           title = `${data.name} S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
           poster = `https://image.tmdb.org/t/p/w500${data.poster_path}`;
-          const srcs = buildEmbedSources('tv', { tmdbId, season, episode });
+          const embedSources = buildEmbedSources('tv', { tmdbId, season: season || 1, episode: episode || 1 });
           if (!cancelled) {
-            setSources(srcs);
+            setSources(embedSources);
             setActiveSourceIdx(0);
-            setActiveTracks([]);
           }
-          url = srcs[0].url;
+          url = embedSources[0].url;
+          streamType = 'iframe';
         }
 
         if (cancelled) return;
@@ -407,7 +410,9 @@ export default function WatchPage() {
           setSources([{ type: srcType, url: data.streamUrl, label: 'Stream' }]);
           setActiveTracks(data.tracks || []);
         } else {
-          setSources([{ type: 'iframe', url: data.streamUrl, label: 'Stream' }]);
+          const srcType = data.streamType || (data.streamUrl.includes('.m3u8') ? 'hls' : 'direct');
+          setSources([{ type: srcType, url: data.streamUrl, label: 'Stream' }]);
+          setActiveTracks(data.tracks || []);
         }
       }
     };
