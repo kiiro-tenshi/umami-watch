@@ -19,14 +19,10 @@ import RoomContentModal from '../components/RoomContentModal';
 
 function buildEmbedSources(type, { tmdbId, season, episode }) {
   if (type === 'movie') return [
-    { label: 'VidSrc',  url: `https://vidsrc.cc/v2/embed/movie/${tmdbId}`, type: 'iframe' },
     { label: 'VidLink', url: `https://vidlink.pro/movie/${tmdbId}`, type: 'iframe' },
-    { label: 'Embed.su', url: `https://embed.su/embed/movie/${tmdbId}`, type: 'iframe' },
   ];
   if (type === 'tv') return [
-    { label: 'VidSrc',  url: `https://vidsrc.cc/v2/embed/tv/${tmdbId}/${season}/${episode}`, type: 'iframe' },
     { label: 'VidLink', url: `https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`, type: 'iframe' },
-    { label: 'Embed.su', url: `https://embed.su/embed/tv/${tmdbId}/${season}/${episode}`, type: 'iframe' },
   ];
   return [];
 }

@@ -89,6 +89,19 @@ app.use('/api/anime/gogoanime', requireAuth, gogoanimeRoutes);
 app.use('/api/manga', mangaRoutes);
 app.use('/api/movies', moviesRouter);
 
+// ─── MangaDex API Proxy (CORS bypass) ──────────────────────────────────────
+app.use('/api/mangadex', async (req, res) => {
+  const target = `https://api.mangadex.org${req.url}`;
+  try {
+    const upstream = await fetch(target, { headers: { 'Accept': 'application/json' } });
+    const body = await upstream.arrayBuffer();
+    res.set('Content-Type', upstream.headers.get('Content-Type') || 'application/json');
+    res.status(upstream.status).send(Buffer.from(body));
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ─── HLS Proxy (fallback when Cloudflare Worker is blocked by CDN) ──────────
 // In-memory LRU cache for .ts segments — avoids duplicate upstream fetches when
 // multiple watch-party viewers request the same segment within seconds.
