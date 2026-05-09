@@ -1,4 +1,4 @@
-const MD_API = 'https://api.mangadex.org';
+const MD_API = `${import.meta.env.VITE_API_BASE_URL}/api/mangadex`;
 
 export const getTitle = (manga) => {
   const t = manga?.attributes?.title || {};
