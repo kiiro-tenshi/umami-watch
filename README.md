@@ -26,27 +26,24 @@ graph TD
 
     subgraph CFWorker [Cloudflare Worker: umami-hls-proxy]
         HLS_Worker[HLS Manifest Rewriter + Edge Cache]
-        Video_Worker[Direct MP4 Range Proxy]
     end
 
     CR_Main_Sub --> Firestore[(Firestore DB)]
     CR_Main_Sub --> Auth{Firebase Auth}
 
     User -->|HLS streams| CFWorker
-    User -->|Direct MP4 video| CFWorker
-    CFWorker -->|Referer-injected fetch| StreamCDNs[Stream CDNs: fast4speed, MegaCloud]
+    CFWorker -->|Referer-injected fetch| ByteDanceCDN[ByteDance CDN: p16-ad-sg.ibyteimg.com]
 
-    HLS_Fallback -.->|Fallback if Worker blocked| StreamCDNs
+    HLS_Fallback -.->|Fallback if Worker blocked| ByteDanceCDN
 
-    User --> AllAnime[AllAnime GraphQL API]
+    User --> GogoAnime[GogoAnime / anitaku.to]
     User --> TMDB[TMDB API: Movies/TV Meta]
     User --> Kitsu[Kitsu API: Anime Meta]
-    User --> MangaDex[MangaDex API]
-    User --> ComicK[ComicK]
+    User --> AniList[AniList GraphQL API]
 ```
 
 ### Real-time Synchronization Flow
-UmamiWatch uses a **Distributed Sync Strategy** to ensure all viewers stay within **< 1s** of the host's playback position.
+UmamiWatch uses a **Distributed Sync Strategy** to ensure all viewers stay within a few seconds of the host's playback position.
 
 ```mermaid
 sequenceDiagram
@@ -59,7 +56,7 @@ sequenceDiagram
     S->>V: playback:play (position)
     S->>F: Update playback state (async)
 
-    loop Heartbeat (Every 3s)
+    loop Heartbeat (Every 5s)
         H->>S: playback:heartbeat
         S->>V: sync:state (drift correction)
     end
@@ -74,52 +71,49 @@ sequenceDiagram
 
 ## Key Features
 
-- **Anime Portal** — Search and stream anime via AllAnime (allanime.to) with sub/dub support.
-- **Movies & TV** — Metadata via TMDB with multiple embed sources (VidSrc CC/Net).
+- **Anime Portal** — Search and stream anime via GogoAnime (anitaku.to) with HLS delivery through Cloudflare Worker.
+- **Movies & TV** — Metadata via TMDB, playback via VidLink iframe embed.
 - **Watch Party Rooms** — Create private rooms; host picks the episode and all viewers sync in real-time.
-- **Sync Playback** — Host-controlled play/pause/seek with automated drift correction for viewers.
-- **Live Chat** — Real-time room chat with history persisted in Firestore.
+- **Sync Playback** — Host-controlled play/pause/seek with automated drift correction for viewers (anime/HLS only).
+- **Live Chat** — Real-time room chat with GIF support, history persisted in Firestore.
 - **Personal Hub** — Continue-watching history, personal watchlist, and custom avatar upload.
 - **Bot Protection** — Cloudflare Turnstile integrated at the auth layer.
-- **Manga & Comics (Beta)** — Proxied metadata via MangaDex and ComicK with image proxy.
 
 ---
 
 ## Technical Deep Dive
 
-### 1. Anime Streaming via AllAnime
+### 1. Anime Streaming via GogoAnime
 
-Anime streams are sourced from **AllAnime** (`api.allanime.day` GraphQL API). The previous provider (aniwatch-api / HiAnime scraper) was DMCA'd by Crunchyroll in March 2026 and is no longer usable.
+Anime streams are sourced from **GogoAnime** (`anitaku.to`). The server scrapes episode pages to extract a vibeplayer embed ID, then constructs an HLS URL at `vibeplayer.site/public/stream/{id}/master.m3u8`.
 
-AllAnime source types:
-- **`iframe`** — embedded player URL, rendered directly in the browser.
-- **`direct` (XOR-encoded)** — URLs decoded with key 56 that resolve to `tools.fast4speed.rsvp`. These are direct MP4 files with no CORS headers, proxied through the Cloudflare Worker with `Range` header pass-through for seeking.
+Why GogoAnime:
+- No CAPTCHA, no token decryption, freely scrapable server-side.
+- Video segments are served by **ByteDance CDN** (`p16-ad-sg.ibyteimg.com`) which has no IP restrictions — the Cloudflare Worker can fetch them freely, meaning zero video egress through Cloud Run.
 
 ### 2. <img src="cloudflare-worker/CF%20Logo.webp" height="20" alt="Cloudflare" /> Worker Proxy (Zero Cloud Run Egress for Video)
 
-All video bandwidth is routed through the **Cloudflare Worker** (`umami-hls-proxy`) instead of Cloud Run, eliminating video egress charges entirely:
+All HLS bandwidth is routed through the **Cloudflare Worker** (`umami-hls-proxy`) instead of Cloud Run, eliminating video egress charges entirely:
 
 - **HLS path** — The Worker rewrites `.m3u8` manifests so all segment URLs point back through itself. Segments are cached at the Cloudflare edge (1h TTL), meaning watch party members sharing an episode hit cache after the first viewer loads each segment.
-- **Direct MP4 path** — The Worker forwards `Range` requests to fast4speed with `Referer: https://allanime.to/` injected and streams the response body directly without buffering. Returns `206 Partial Content` with correct `Content-Range` headers for seeking.
 - **Fallback** — Cloud Run retains an `/api/proxy/hls` fallback for cases where the Worker's IP range gets blocked by a CDN.
 
 A ~400MB episode stream generates **zero Cloud Run egress charges**.
 
-### 3. Distributed Playback Sync
+### 3. Movies & TV Streaming
+
+Movies and TV shows use **VidLink** (`vidlink.pro`) iframe embeds. No server-side stream extraction is performed — the client builds the embed URL directly from the TMDB ID. Because the player lives in a cross-origin iframe, automatic playback sync in watch parties is not supported; rooms show an informational notice and members start playback manually.
+
+### 4. Distributed Playback Sync
 
 Synchronization is handled via **Socket.IO** with a drift-correction algorithm:
-- **Heartbeat** — The host emits a heartbeat every 3 seconds. Viewers calculate their drift. If drift exceeds **1 second**, the viewer's player automatically seeks to match the host.
+- **Heartbeat** — The host emits a heartbeat every 5 seconds containing current position and play state. If a viewer's position differs by more than **6 seconds**, their player automatically seeks to match the host.
+- **On-demand sync** — Viewers emit `request-sync` every 20 seconds; the server routes it to the host socket which responds with the current position immediately.
 - **State Persistence** — Room playback state is written to Firestore asynchronously, allowing users to resume rooms even if the host disconnects.
-
-### 4. Manga & Comics
-
-Manga metadata and chapters are sourced from **MangaDex** (primary) with **ComicK** as a fallback when a title has fewer than 10 English chapters on MangaDex.
-
-ComicK uses the `comick.art` domain directly — `api.comick.dev` is protected by Cloudflare Bot Management and blocks requests from cloud server IPs. Chapter images are proxied through Cloud Run with `Referer: https://comick.art/` injection.
 
 ### 5. Security Model
 
-- **Firebase Admin SDK** — All database operations go through the Express backend. The frontend has no direct Firestore access.
+- **Firebase Admin SDK** — All database operations go through the Express backend. The frontend has no direct Firestore write access.
 - **JWT Auth** — Every API request and socket connection requires a valid Firebase ID token verified server-side.
 - **Turnstile Verification** — Cloudflare Turnstile tokens are verified on the server before granting access.
 
@@ -135,10 +129,10 @@ ComicK uses the `comick.art` domain directly — `api.comick.dev` is protected b
 | **Auth** | Firebase Authentication |
 | **Compute** | Google Cloud Run (Serverless) |
 | **Video Proxy** | <img src="cloudflare-worker/CF%20Logo.webp" height="16" alt="Cloudflare" /> Worker (free egress) |
-| **Anime Source** | AllAnime GraphQL API |
-| **Anime Metadata** | Kitsu API |
+| **Anime Source** | GogoAnime / anitaku.to (server-side scrape) |
+| **Anime Metadata** | Kitsu API + AniList GraphQL |
 | **Movie/TV Metadata** | TMDB API |
-| **Manga** | MangaDex API, ComicK |
+| **Movie/TV Playback** | VidLink iframe embed |
 | **CI/CD** | Cloud Build (auto-deploy on `git tag`) |
 
 ---
@@ -185,7 +179,7 @@ Deployments are fully automated via **Cloud Build tag triggers**.
    - The main app Docker image is built with Vite build-time vars baked in.
    - The image is deployed to Cloud Run with secrets mounted from Secret Manager.
 
-3. **Cloudflare Worker** — Deploy `cloudflare-worker/hls-proxy.js` separately via the Cloudflare dashboard or `wrangler deploy`. The Worker handles both HLS and direct MP4 proxying and must be redeployed independently of Cloud Run.
+3. **Cloudflare Worker** — Deploy `cloudflare-worker/hls-proxy.js` separately via the Cloudflare dashboard or `wrangler deploy`. The Worker handles HLS proxying and must be redeployed independently of Cloud Run.
 
 > [!TIP]
 > Cloud Run **Session Affinity** must be enabled for the main service to ensure WebSocket stability.
