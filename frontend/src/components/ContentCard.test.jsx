@@ -52,11 +52,6 @@ describe('ContentCard', () => {
     expect(screen.getByRole('link')).toHaveAttribute('href', '/tv/101');
   });
 
-  it('links to /manga/:id for manga', () => {
-    renderCard({ contentType: 'manga', id: '202' });
-    expect(screen.getByRole('link')).toHaveAttribute('href', '/manga/202');
-  });
-
   it('uses continueUrl over default href when provided', () => {
     renderCard({ continueUrl: '/watch?type=anime&kitsuId=123&epNum=5' });
     expect(screen.getByRole('link')).toHaveAttribute('href', '/watch?type=anime&kitsuId=123&epNum=5');

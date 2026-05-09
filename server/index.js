@@ -30,7 +30,6 @@ if (saPath && existsSync(saPath)) {
 import userRoutes from './routes/users.js';
 import createRoomRouter from './routes/rooms.js';
 import gogoanimeRoutes from './routes/gogoanime.js';
-import mangaRoutes from './routes/manga.js';
 import moviesRouter from './routes/movies.js';
 import setupSockets from './socket/roomSocket.js';
 import requireAuth from './middleware/requireAuth.js';
@@ -86,21 +85,7 @@ app.post('/api/verify-turnstile', async (req, res) => {
 app.use('/api/me', userRoutes);
 app.use('/api/rooms', createRoomRouter(io));
 app.use('/api/anime/gogoanime', requireAuth, gogoanimeRoutes);
-app.use('/api/manga', mangaRoutes);
 app.use('/api/movies', moviesRouter);
-
-// ─── MangaDex API Proxy (CORS bypass) ──────────────────────────────────────
-app.use('/api/mangadex', async (req, res) => {
-  const target = `https://api.mangadex.org${req.url}`;
-  try {
-    const upstream = await fetch(target, { headers: { 'Accept': 'application/json' } });
-    const body = await upstream.arrayBuffer();
-    res.set('Content-Type', upstream.headers.get('Content-Type') || 'application/json');
-    res.status(upstream.status).send(Buffer.from(body));
-  } catch (err) {
-    res.status(502).json({ error: err.message });
-  }
-});
 
 // ─── HLS Proxy (fallback when Cloudflare Worker is blocked by CDN) ──────────
 // In-memory LRU cache for .ts segments — avoids duplicate upstream fetches when
@@ -242,31 +227,6 @@ app.get('/api/proxy/video', async (req, res) => {
     const passHeaders = ['content-length', 'content-range', 'accept-ranges', 'cache-control'];
     passHeaders.forEach(h => { const v = upstream.headers.get(h); if (v) res.setHeader(h, v); });
     res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    Readable.fromWeb(upstream.body).pipe(res);
-  } catch (err) {
-    res.status(502).json({ error: err.message });
-  }
-});
-
-// ─── Manga Image Proxy (MangaBuddy CDN — requires Referer) ────────────────
-app.get('/api/proxy/manga-image', async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).json({ error: 'url required' });
-  const decoded = decodeURIComponent(url);
-  if (!/^https:\/\/s\d+\.mbcdns\w+\.org\//.test(decoded)) {
-    return res.status(400).json({ error: 'URL not allowed' });
-  }
-  try {
-    const upstream = await fetch(decoded, {
-      headers: {
-        'Referer': 'https://mangabuddy.com/',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      },
-    });
-    if (!upstream.ok) return res.status(upstream.status).end();
-    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/jpeg');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
     res.setHeader('Access-Control-Allow-Origin', '*');
     Readable.fromWeb(upstream.body).pipe(res);
   } catch (err) {

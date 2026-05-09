@@ -51,18 +51,6 @@ describe('BottomNav', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('returns null on a manga reader page', () => {
-    mockUseAuth.mockReturnValue({ user: { uid: 'u1' } });
-
-    const { container } = render(
-      <MemoryRouter initialEntries={['/manga/abc-def/chapter/ch-001']}>
-        <BottomNav />
-      </MemoryRouter>
-    );
-
-    expect(container).toBeEmptyDOMElement();
-  });
-
   it('applies active styling to the current tab', () => {
     mockUseAuth.mockReturnValue({ user: { uid: 'u1' } });
 

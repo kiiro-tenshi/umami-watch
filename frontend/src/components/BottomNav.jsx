@@ -54,7 +54,6 @@ export default function BottomNav() {
 
   if (!user) return null;
   if (pathname.startsWith('/watch')) return null;
-  if (/\/manga\/.+\/chapter\//.test(pathname)) return null;
 
   return (
     <nav
