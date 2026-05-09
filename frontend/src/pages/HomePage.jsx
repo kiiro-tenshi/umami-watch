@@ -64,7 +64,6 @@ export default function HomePage() {
                 if (item.contentType === 'anime') continueUrl = `/watch?type=anime&kitsuId=${item.contentId}&epNum=${item.epNum || 1}`;
                 else if (item.contentType === 'movie') continueUrl = `/watch?type=movie&tmdbId=${item.contentId}`;
                 else if (item.contentType === 'tv') continueUrl = `/watch?type=tv&tmdbId=${item.contentId}&season=${item.seasonNum || 1}&episode=${item.episodeNum || 1}`;
-                else if (item.contentType === 'manga' && item.chapterId) continueUrl = `/manga/${item.contentId}/chapter/${item.chapterId}`;
                 return (
                   <ContentCard
                     key={item.id}

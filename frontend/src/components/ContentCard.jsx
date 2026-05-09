@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom';
 export default function ContentCard({ id, title, posterUrl, contentType, rating, className, progress, continueUrl, source }) {
   const badgeColor =
     contentType === 'anime' ? 'bg-accent-teal' :
-    contentType === 'movie' ? 'bg-accent-blue' :
-    contentType === 'manga' ? 'bg-accent-purple' : 'bg-accent-orange';
+    contentType === 'movie' ? 'bg-accent-blue' : 'bg-accent-orange';
 
   const animeParams = new URLSearchParams();
   if (title) animeParams.set('title', title);
@@ -14,7 +13,6 @@ export default function ContentCard({ id, title, posterUrl, contentType, rating,
   const defaultLinkTo =
     contentType === 'tv' ? `/tv/${id}` :
     contentType === 'movie' ? `/movie/${id}` :
-    contentType === 'manga' ? `/manga/${id}` :
     `/anime/${id}${animeQuery ? `?${animeQuery}` : ''}`;
 
   const linkTo = continueUrl || defaultLinkTo;
