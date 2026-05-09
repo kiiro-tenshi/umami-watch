@@ -4,7 +4,7 @@
 
 ## 1. Project Overview
 
-UmamiStream is a private, invite-only streaming portal for anime, manga, movies, and TV shows, with real-time synchronized watch parties and live chat. It aggregates content metadata and streams from multiple third-party sources (GogoAnime/anitaku.to, Kitsu, AniList, TMDB, MangaDex, ComicK) and proxies video/image traffic to bypass CORS and CDN restrictions. The project targets a small, trusted user group ("PIW — Pure, Innocent, and Wholesome") and is deployed as a single Cloud Run service with a Cloudflare Worker handling video bandwidth.
+UmamiStream is a private, invite-only streaming portal for anime, movies, and TV shows, with real-time synchronized watch parties and live chat. It aggregates content metadata and streams from multiple third-party sources (GogoAnime/anitaku.to, Kitsu, AniList, TMDB) and proxies video/image traffic to bypass CORS and CDN restrictions. The project targets a small, trusted user group ("PIW — Pure, Innocent, and Wholesome") and is deployed as a single Cloud Run service with a Cloudflare Worker handling video bandwidth.
 
 **Status:** Deployed / production (tagged releases trigger Cloud Build → Cloud Run).
 
@@ -85,7 +85,7 @@ UmamiStream is a private, invite-only streaming portal for anime, manga, movies,
 - **REST API** — authenticated with Firebase ID tokens (`Authorization: Bearer <token>` or `?token=<token>` query param), handled by `server/middleware/requireAuth.js`
 - **Socket.IO** (WebSocket with polling fallback) — real-time watch party sync; auth via `socket.handshake.auth.token`
 - **Direct third-party API calls from browser** — Kitsu, AniList GraphQL, TMDB (no backend proxy needed for these)
-- **Backend-proxied calls** — GogoAnime, MangaDex, ComicK, video CDN (all require CORS bypass or Referer injection)
+- **Backend-proxied calls** — GogoAnime, video CDN (require CORS bypass or Referer injection)
 
 ### Data Flow (Anime Watch Example)
 1. User navigates to `/watch?type=anime&kitsuId=12345&epNum=3`
@@ -109,11 +109,6 @@ UmamiStream is a private, invite-only streaming portal for anime, manga, movies,
 | GogoAnime (`anitaku.to`) | Backend scrape | Anime search, episode list — no auth/CAPTCHA required |
 | vibeplayer.site | Backend → Cloudflare Worker | HLS master manifest; no auth required |
 | ByteDance CDN (`p16-ad-sg.ibyteimg.com`) | Frontend → Cloudflare Worker | HLS video segments; no IP restrictions, no Referer required |
-| MangaDex API (`api.mangadex.org`) | Frontend → backend proxy | Manga search, chapter metadata |
-| MangaDex CDN (`uploads.mangadex.org`) | Frontend → backend proxy | Cover images (Referer required) |
-| ComicK API (`comick.art/api`) | Frontend → backend proxy | Comics search, chapter lists |
-| ComicK HTML (`comick.art/comic/...`) | Backend scrape | Chapter image extraction |
-| ComicK CDN (`cdn*.comicknew.pictures`) | Frontend → backend proxy | Chapter images (Referer required) |
 | Giphy CDN (`media*.giphy.com`) | Frontend → direct | GIF chat messages (validated server-side) |
 | Cloudflare Turnstile | Frontend widget + backend verify | Bot protection on login |
 | Cloudflare Workers | Frontend → Worker → upstream | HLS proxy (primary video path) |
@@ -133,8 +128,6 @@ umami-watch/
 │   │   │   ├── kitsu.js         # Kitsu REST: anime info, episodes (with airdate), categories; normalizes to shared shape
 │   │   │   ├── tmdb.js          # TMDB REST: movies, TV, genres, trending
 │   │   │   ├── gogoanime.js     # GogoAnime via backend proxy: search, sources, pickBestShow; HLS from vibeplayer.site
-│   │   │   ├── mangadex.js      # MangaDex via backend proxy: manga, chapters, covers; browseManga with search/tag/status/sort/offset
-│   │   │   ├── comick.js        # ComicK via backend proxy: search, chapters, images
 │   │   │   └── torrentio.js     # Unused in pages; test file only
 │   │   ├── components/          # Reusable React components
 │   │   │   ├── VideoPlayer.jsx  # Core player: Plyr + HLS.js, double-tap seek, subtitle overlay (465 lines)
@@ -145,7 +138,7 @@ umami-watch/
 │   │   │   ├── AiringCalendar.jsx  # Weekly (Mon–Sun) airing schedule; fetches AniList airingSchedules; top 5 per day by popularity; prev/next week navigation; live countdown timers (updates every minute); shows "Released" for past episodes
 │   │   │   ├── ContentCard.jsx  # Poster card for all content types
 │   │   │   ├── Navbar.jsx       # Top nav: logo, links, dark mode toggle, user avatar
-│   │   │   ├── BottomNav.jsx    # Mobile bottom tab bar (hidden on /watch and manga reader)
+│   │   │   ├── BottomNav.jsx    # Mobile bottom tab bar (hidden on /watch)
 │   │   │   ├── ProtectedRoute.jsx      # Auth guard; redirects to /auth if no user
 │   │   │   ├── CreateRoomModal.jsx     # Modal to create a watch party room
 │   │   │   ├── InviteModal.jsx  # Modal showing room invite code with copy button
@@ -159,8 +152,7 @@ umami-watch/
 │   │   │   ├── useSocket.js     # Socket.IO connection manager with token refresh on reconnect
 │   │   │   ├── useWatchlist.js  # Firestore `watchlist` collection CRUD
 │   │   │   ├── useHistory.js    # Fetches last 20 history entries from `users/{uid}/history`
-│   │   │   ├── useWatchedEps.js # Tracks per-episode watched state for an anime (batch writes)
-│   │   │   └── useReadChapters.js      # Tracks per-chapter read state for manga (batch writes)
+│   │   │   └── useWatchedEps.js # Tracks per-episode watched state for an anime (batch writes)
 │   │   ├── pages/               # Route-level components
 │   │   │   ├── AuthPage.jsx     # Login + password reset with Turnstile CAPTCHA
 │   │   │   ├── HomePage.jsx     # Airing calendar + continue watching + seasonal trending + movies/TV rows (hero banner removed); personalized "Hi, {firstName}!" greeting in PIW motto
@@ -170,10 +162,7 @@ umami-watch/
 │   │   │   ├── MovieDetailPage.jsx     # Movie/TV detail: cast, trailer, seasons
 │   │   │   ├── WatchPage.jsx    # Video player + room sync + sidebar; most complex page (740 lines)
 │   │   │   ├── RoomsPage.jsx    # Create/join/list watch party rooms
-│   │   │   ├── ProfilePage.jsx  # Settings, watchlist, history, avatar upload
-│   │   │   ├── MangaBrowsePage.jsx     # Manga search + MangaDex browse with tag/status/sort filters + load more (offset-based pagination)
-│   │   │   ├── MangaDetailPage.jsx     # Manga detail: chapters, ComicK fallback, watchlist
-│   │   │   └── MangaReaderPage.jsx     # Chapter reader: vertical scroll + page-by-page modes
+│   │   │   └── ProfilePage.jsx  # Settings, watchlist, history, avatar upload
 │   │   ├── App.jsx              # BrowserRouter + ThemeProvider + Navbar + routes + BottomNav
 │   │   ├── main.jsx             # ReactDOM.createRoot + AuthProvider + PWA service worker registration
 │   │   ├── firebase.js          # Firebase app init; connects to emulators if VITE_USE_EMULATOR=true
@@ -194,6 +183,7 @@ umami-watch/
 │   │   ├── users.js             # GET/PATCH /api/me — user profile; DELETE /api/me/history
 │   │   ├── rooms.js             # Full CRUD for watch party rooms + room expiry cleanup job
 │   │   ├── gogoanime.js         # GogoAnime proxy: /search (scrapes anitaku.to), /episodes, /sources (picks vibeplayer ID → HLS URL + VTT subtitles)
+│   │   ├── movies.js            # Movies/TV stub (501 Not Implemented — client uses iframe embeds via VidLink)
 │   │   └── torrent.js           # Torrent streaming: /stream (FFmpeg remux), /seed (raw bytes), /status
 │   ├── socket/
 │   │   └── roomSocket.js        # Socket.IO server: auth middleware, room join/leave, playback sync, chat
@@ -235,7 +225,7 @@ umami-watch/
 - **Hooks:** `use` prefix, camelCase — e.g., `useWatchedEps`, `useReadChapters`
 - **API modules:** lowercase, named after the service — `anilist.js`, `kitsu.js`, `tmdb.js`
 - **Firestore collections:** lowercase snake_case — `users`, `watchlist`, `rooms`
-- **Firestore doc IDs:** compound strings with underscores — `{uid}_{contentId}` (watchlist), `anime_kitsu{id}_ep{n}` (history), `manga_{id}_ch_{n}` (chapter tracking)
+- **Firestore doc IDs:** compound strings with underscores — `{uid}_{contentId}` (watchlist), `anime_kitsu{id}_ep{n}` (history)
 
 ### Code Style
 - No linter or formatter config present (no `.eslintrc`, no `prettier.config.js`)
@@ -301,33 +291,27 @@ useEffect(() => {
 Document ID format varies by content type:
 - Anime episode: `anime_kitsu{kitsuId}_ep{epNum}`
 - Movie/TV: `{tmdbId}`
-- Manga progress: `manga_{mangaId}`
-- Manga chapter: `manga_{mangaId}_ch_{chapterNum}`
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `contentId` | string | Kitsu ID (anime), TMDB ID (movie/TV), MangaDex ID (manga) |
-| `contentType` | string | `"anime"`, `"movie"`, `"tv"`, `"manga"`, `"manga-chapter"` |
+| `contentId` | string | Kitsu ID (anime), TMDB ID (movie/TV) |
+| `contentType` | string | `"anime"`, `"movie"`, `"tv"` |
 | `title` | string | Display title |
 | `posterUrl` | string | Cover/poster image URL |
-| `position` | number | Seconds watched (video) or 0 (manga) |
+| `position` | number | Seconds watched |
 | `duration` | number | Total duration in seconds |
 | `updatedAt` | Timestamp | |
 | `epNum` | number | Anime: episode number |
 | `seasonNum` | number | TV: season number |
 | `episodeNum` | number | TV: episode number |
-| `chapterId` | string | Manga: chapter ID |
-| `chapterNum` | string | Manga: chapter number |
-| `pageNum` | number | Manga: 1-indexed page |
 | `manuallyWatched` | boolean \| undefined | `true` = force watched, `false` = force unwatched, `undefined` = auto (85% threshold) |
-| `manuallyRead` | boolean \| undefined | Same three-state logic for manga chapters |
 
 ### `watchlist/{uid}_{contentId}` (Firestore)
 | Field | Type | Notes |
 |-------|------|-------|
 | `uid` | string | |
 | `contentId` | string | Always coerced to string |
-| `contentType` | string | `"anime"`, `"movie"`, `"tv"`, `"manga"` |
+| `contentType` | string | `"anime"`, `"movie"`, `"tv"` |
 | `title` | string | |
 | `posterUrl` | string | |
 | `addedAt` | Timestamp | |
@@ -508,7 +492,10 @@ Three endpoints: `/search` scrapes `anitaku.to/search.html`, `/episodes` scrapes
 ### GogoAnime Title Matching (`frontend/src/api/gogoanime.js` — `pickBestShow()`)
 Word-count scoring: for each result, count how many search title words appear in the result title, then subtract a penalty of 0.5× extra words (words in result title beyond the search title length). Sorts descending by score. Determines which GogoAnime slug maps to a given Kitsu/AniList anime title.
 
-### Watch Position & Episode Completion (`frontend/src/pages/WatchPage.jsx` ~lines 428–454)
+### Movies & TV Streaming
+Movies and TV use client-side iframe embeds via **VidLink** (`vidlink.pro`). The server's `movies.js` route returns 501 — all source selection happens in `WatchPage.jsx` via `buildEmbedSources()`. Because the player is a cross-origin iframe, playback sync in watch parties is not supported; the room shows an informational notice.
+
+### Watch Position & Episode Completion (`frontend/src/pages/WatchPage.jsx`)
 Saves to Firestore every 15 seconds while playing. Auto-marks episode as watched at 85% of duration (`position >= duration * 0.85`). Three-state `manuallyWatched` flag overrides auto-detection.
 
 ### HLS Manifest Rewriting (`server/index.js` ~lines 105–204)
@@ -517,10 +504,7 @@ Intercepts `.m3u8` responses, rewrites all segment/variant URLs to point through
 ### Room Expiry Cleanup (`server/routes/rooms.js` lines ~8–19)
 `setInterval` runs every 10 minutes; queries Firestore for rooms where `expiresAt < now()` and batch-deletes them. Rooms live for 6 hours from creation.
 
-### Manga Chapter Source Fallback (`frontend/src/pages/MangaDetailPage.jsx` ~line 85)
-If MangaDex returns fewer than 10 chapters for a manga, the app searches ComicK by title and stores the ComicK slug in `localStorage` for that manga ID. The reader then uses ComicK images instead of MangaDex.
-
-### Batch Write Chunking (`frontend/src/hooks/useWatchedEps.js`, `useReadChapters.js`)
+### Batch Write Chunking (`frontend/src/hooks/useWatchedEps.js`)
 Firestore batch operations are split into chunks of 499 (`BATCH_LIMIT`) because the SDK limits a single batch to 500 operations. Handles anime with very large episode counts.
 
 ### Socket.IO Playback Sync (`server/socket/roomSocket.js`, `frontend/src/pages/WatchPage.jsx`)
@@ -592,9 +576,6 @@ This variable appears in `cloudbuild.yaml` as `$_VITE_CONSUMET_API_URL` from whe
 ### Kitsu ID Expiry
 Kitsu periodically renumbers or removes entries. `AnimeDetailPage.jsx` handles 404 responses by searching Kitsu by title and redirecting to the new ID. `WatchPage.jsx` does the same for watch party room content. If you see redirect loops, Kitsu may have deprecated that ID entirely.
 
-### ComicK Is Behind Cloudflare Bot Management
-Cloud Run's outbound IPs are frequently blocked by ComicK's Cloudflare protection. The backend proxy adds appropriate headers, but if ComicK returns 403, this is a CDN block — not a code bug. No reliable fix without residential proxies.
-
 ### HLS Compression Is Disabled
 `compression()` middleware explicitly skips the `/api/proxy/hls` path because gzip-compressing a streaming response breaks the pipe. If you add new streaming routes, exclude them from compression the same way.
 
@@ -608,7 +589,7 @@ Cloud Run's outbound IPs are frequently blocked by ComicK's Cloudflare protectio
 Socket.IO sync events (`sync:state`) can arrive before the video player mounts. `WatchPage.jsx` buffers them in `pendingSyncRef` and applies them in `handlePlayerReady`. If the player is ever re-instantiated (e.g., stream URL changes), the ref is cleared and re-populated — see line ~340 where `playerRef.current = null` is set when content updates.
 
 ### Watchlist Doc ID Is a Compound String
-Watchlist entries use `{uid}_{contentId}` as the document ID (not a subcollection). This means `contentId` values must not contain underscores, or the split will be ambiguous. All current content IDs (Kitsu, TMDB, MangaDex) are numeric or UUID-format, so this is safe in practice.
+Watchlist entries use `{uid}_{contentId}` as the document ID (not a subcollection). This means `contentId` values must not contain underscores, or the split will be ambiguous. All current content IDs (Kitsu, TMDB) are numeric, so this is safe in practice.
 
 ### No Linter or Formatter
 There is no ESLint or Prettier configuration. Code style is enforced only by convention.
