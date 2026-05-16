@@ -241,7 +241,7 @@ export default function ProfilePage() {
           <div className="animate-in fade-in">
             <h1 className="text-3xl font-bold text-primary mb-6 pb-4 border-b border-border flex items-center justify-between">
               Watchlist
-              <span className="text-sm font-semibold bg-surface-raised border border-border text-muted px-3 py-1 rounded-full">{watchlist.length} items</span>
+              <span className="text-sm font-semibold bg-surface-raised border border-border text-muted px-3 py-1 rounded-full">{videoWatchlist.length} items</span>
             </h1>
             {watchlist.length === 0 ? (
               <div className="text-center py-20 text-muted font-medium bg-page rounded-xl border border-dashed border-border">No anime, movies, or TV shows in your watchlist yet.</div>
