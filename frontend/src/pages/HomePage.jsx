@@ -44,41 +44,55 @@ export default function HomePage() {
           <AiringCalendar />
         </section>
         {/* Continue Watching */}
-        {history.filter(item => {
-          if (item.manuallyWatched === true) return false;
-          if (item.manuallyWatched === false) return true;
-          return !(item.position && item.duration && item.position >= item.duration * 0.85);
-        }).length > 0 && (
-          <section>
-            <h2 className="text-xl font-bold text-primary mb-4 border-l-4 border-accent-orange pl-2">Continue Watching</h2>
-            <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-4 snap-x">
-              {history.filter(item => {
-                if (item.manuallyWatched === true) return false;
-                if (item.manuallyWatched === false) return true;
-                return !(item.position && item.duration && item.position >= item.duration * 0.85);
-              }).map(item => {
-                const progress = item.duration > 0
-                  ? Math.min(100, Math.round((item.position / item.duration) * 100))
-                  : null;
-                let continueUrl = null;
-                if (item.contentType === 'anime') continueUrl = `/watch?type=anime&kitsuId=${item.contentId}&epNum=${item.epNum || 1}`;
-                else if (item.contentType === 'movie') continueUrl = `/watch?type=movie&tmdbId=${item.contentId}`;
-                else if (item.contentType === 'tv') continueUrl = `/watch?type=tv&tmdbId=${item.contentId}&season=${item.seasonNum || 1}&episode=${item.episodeNum || 1}`;
-                return (
-                  <ContentCard
-                    key={item.id}
-                    id={item.contentId}
-                    title={item.title}
-                    posterUrl={item.posterUrl}
-                    contentType={item.contentType}
-                    progress={progress}
-                    continueUrl={continueUrl}
-                  />
-                );
-              })}
-            </div>
-          </section>
-        )}
+        {(() => {
+          const seenAnime = new Set();
+          const dedupedHistory = history.filter(item => {
+            if (item.contentType !== 'anime') return true;
+            if (seenAnime.has(item.contentId)) return false;
+            seenAnime.add(item.contentId);
+            return true;
+          });
+          const continueItems = dedupedHistory.filter(item => {
+            if (item.manuallyWatched === true) return false;
+            if (item.manuallyWatched === false) return true;
+            if (item.contentType === 'anime') return true;
+            return !(item.position && item.duration && item.position >= item.duration * 0.85);
+          });
+          if (continueItems.length === 0) return null;
+          return (
+            <section>
+              <h2 className="text-xl font-bold text-primary mb-4 border-l-4 border-accent-orange pl-2">Continue Watching</h2>
+              <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-4 snap-x">
+                {continueItems.map(item => {
+                  const episodeDone = item.position && item.duration && item.position >= item.duration * 0.85;
+                  const progress = item.duration > 0
+                    ? Math.min(100, Math.round((item.position / item.duration) * 100))
+                    : null;
+                  let continueUrl = null;
+                  if (item.contentType === 'anime') {
+                    const ep = episodeDone ? (item.epNum || 1) + 1 : (item.epNum || 1);
+                    continueUrl = `/watch?type=anime&kitsuId=${item.contentId}&epNum=${ep}`;
+                  } else if (item.contentType === 'movie') {
+                    continueUrl = `/watch?type=movie&tmdbId=${item.contentId}`;
+                  } else if (item.contentType === 'tv') {
+                    continueUrl = `/watch?type=tv&tmdbId=${item.contentId}&season=${item.seasonNum || 1}&episode=${item.episodeNum || 1}`;
+                  }
+                  return (
+                    <ContentCard
+                      key={item.id}
+                      id={item.contentId}
+                      title={item.title}
+                      posterUrl={item.posterUrl}
+                      contentType={item.contentType}
+                      progress={episodeDone ? null : progress}
+                      continueUrl={continueUrl}
+                    />
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })()}
 
         {/* Trending Anime */}
         {trendingAnime.length > 0 && (
