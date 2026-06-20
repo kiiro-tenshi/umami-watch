@@ -1,7 +1,7 @@
 import express from 'express';
 
 const router = express.Router();
-const GOGO = 'https://anitaku.to';
+const GOGO = 'https://anineko.to';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
 async function fetchHtml(url) {
@@ -12,7 +12,7 @@ async function fetchHtml(url) {
 
 function parseSearchResults(html) {
   const shows = [];
-  const re = /href="\/category\/([^"]+)"[^>]*>[\s\S]*?<img[^>]+src="([^"]*)"[^>]*>[\s\S]*?class="name"[^>]*>[\s\S]*?<a[^>]*>([^<]+)</g;
+  const re = /<a class="nv-anime-thumb[^"]*" href="\/watch\/([^"\/]+)">\s*<img[^>]+src="([^"]*)"[^>]*alt="([^"]*)"/g;
   let m;
   while ((m = re.exec(html)) !== null) {
     const slug = m[1];
@@ -25,7 +25,7 @@ function parseSearchResults(html) {
 
 function parseEpisodeNumbers(html, slug) {
   const nums = new Set();
-  const re = new RegExp(`href="/${slug}-episode-(\\d+(?:\\.\\d+)?)"`, 'g');
+  const re = new RegExp(`href="/watch/${slug}/ep-(\\d+(?:\\.\\d+)?)"`, 'g');
   let m;
   while ((m = re.exec(html)) !== null) nums.add(parseFloat(m[1]));
   return [...nums].sort((a, b) => a - b).map(n => ({ number: n }));
@@ -57,7 +57,7 @@ router.get('/search', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.status(400).json({ error: 'q required' });
   try {
-    const html = await fetchHtml(`${GOGO}/search.html?keyword=${encodeURIComponent(q)}`);
+    const html = await fetchHtml(`${GOGO}/browse?keyword=${encodeURIComponent(q)}`);
     const shows = parseSearchResults(html);
     res.json({ shows });
   } catch (err) {
@@ -70,7 +70,7 @@ router.get('/episodes', async (req, res) => {
   const { slug } = req.query;
   if (!slug) return res.status(400).json({ error: 'slug required' });
   try {
-    const html = await fetchHtml(`${GOGO}/category/${encodeURIComponent(slug)}`);
+    const html = await fetchHtml(`${GOGO}/watch/${encodeURIComponent(slug)}`);
     const episodes = parseEpisodeNumbers(html, slug);
     res.json({ episodes });
   } catch (err) {
@@ -83,7 +83,7 @@ router.get('/sources', async (req, res) => {
   const { slug, ep } = req.query;
   if (!slug || !ep) return res.status(400).json({ error: 'slug and ep required' });
   try {
-    const html = await fetchHtml(`${GOGO}/${encodeURIComponent(slug)}-episode-${ep}`);
+    const html = await fetchHtml(`${GOGO}/watch/${encodeURIComponent(slug)}/ep-${ep}`);
     const embeds = parseEmbedUrls(html);
     const vibe = pickVibeId(embeds);
     if (!vibe) return res.status(404).json({ error: 'No vibeplayer source found for this episode' });
