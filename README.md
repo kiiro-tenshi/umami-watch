@@ -36,7 +36,7 @@ graph TD
 
     HLS_Fallback -.->|Fallback if Worker blocked| ByteDanceCDN
 
-    User --> GogoAnime[GogoAnime / anitaku.to]
+    User --> GogoAnime[GogoAnime / anineko.to]
     User --> TMDB[TMDB API: Movies/TV Meta]
     User --> Kitsu[Kitsu API: Anime Meta]
     User --> AniList[AniList GraphQL API]
@@ -71,7 +71,7 @@ sequenceDiagram
 
 ## Key Features
 
-- **Anime Portal** — Search and stream anime via GogoAnime (anitaku.to) with HLS delivery through Cloudflare Worker.
+- **Anime Portal** — Search and stream anime via GogoAnime (anineko.to) with HLS delivery through Cloudflare Worker.
 - **Movies & TV** — Metadata via TMDB, playback via VidLink iframe embed.
 - **Watch Party Rooms** — Create private rooms; host picks the episode and all viewers sync in real-time.
 - **Sync Playback** — Host-controlled play/pause/seek with automated drift correction for viewers (anime/HLS only).
@@ -85,7 +85,7 @@ sequenceDiagram
 
 ### 1. Anime Streaming via GogoAnime
 
-Anime streams are sourced from **GogoAnime** (`anitaku.to`). The server scrapes episode pages to extract a vibeplayer embed ID, then constructs an HLS URL at `vibeplayer.site/public/stream/{id}/master.m3u8`.
+Anime streams are sourced from **GogoAnime** (`anineko.to`). The server scrapes episode pages to extract a vibeplayer embed ID, then constructs an HLS URL at `vibeplayer.site/public/stream/{id}/master.m3u8`.
 
 Why GogoAnime:
 - No CAPTCHA, no token decryption, freely scrapable server-side.
@@ -129,7 +129,7 @@ Synchronization is handled via **Socket.IO** with a drift-correction algorithm:
 | **Auth** | Firebase Authentication |
 | **Compute** | Google Cloud Run (Serverless) |
 | **Video Proxy** | <img src="cloudflare-worker/CF%20Logo.webp" height="16" alt="Cloudflare" /> Worker (free egress) |
-| **Anime Source** | GogoAnime / anitaku.to (server-side scrape) |
+| **Anime Source** | GogoAnime / anineko.to (server-side scrape) |
 | **Anime Metadata** | Kitsu API + AniList GraphQL |
 | **Movie/TV Metadata** | TMDB API |
 | **Movie/TV Playback** | VidLink iframe embed |

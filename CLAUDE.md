@@ -4,7 +4,7 @@
 
 ## 1. Project Overview
 
-UmamiStream is a private, invite-only streaming portal for anime, movies, and TV shows, with real-time synchronized watch parties and live chat. It aggregates content metadata and streams from multiple third-party sources (GogoAnime/anitaku.to, Kitsu, AniList, TMDB) and proxies video/image traffic to bypass CORS and CDN restrictions. The project targets a small, trusted user group ("PIW — Pure, Innocent, and Wholesome") and is deployed as a single Cloud Run service with a Cloudflare Worker handling video bandwidth.
+UmamiStream is a private, invite-only streaming portal for anime, movies, and TV shows, with real-time synchronized watch parties and live chat. It aggregates content metadata and streams from multiple third-party sources (GogoAnime/anineko.to, Kitsu, AniList, TMDB) and proxies video/image traffic to bypass CORS and CDN restrictions. The project targets a small, trusted user group ("PIW — Pure, Innocent, and Wholesome") and is deployed as a single Cloud Run service with a Cloudflare Worker handling video bandwidth.
 
 **Status:** Deployed / production (tagged releases trigger Cloud Build → Cloud Run).
 
@@ -91,7 +91,7 @@ UmamiStream is a private, invite-only streaming portal for anime, movies, and TV
 1. User navigates to `/watch?type=anime&kitsuId=12345&epNum=3`
 2. Frontend fetches Firebase ID token → calls `GET /api/rooms/{roomId}` (if watch party)
 3. Frontend calls GogoAnime API via `GET /api/anime/gogoanime/search`, then `/sources`
-4. Server scrapes `anitaku.to` HTML to find the vibeplayer embed ID, returns `hlsUrl` pointing to `vibeplayer.site/public/stream/{id}/master.m3u8`
+4. Server scrapes `anineko.to` HTML to find the vibeplayer embed ID, returns `hlsUrl` pointing to `vibeplayer.site/public/stream/{id}/master.m3u8`
 5. Frontend proxies HLS stream through Cloudflare Worker (with `referer=vibeplayer.site`) or `GET /api/proxy/hls` — video segments served by ByteDance CDN with no IP restrictions
 6. Plyr + HLS.js render video; position saved to Firestore `users/{uid}/history` every 15 seconds
 7. If in a room: Socket.IO events (`playback:play`, `playback:pause`, `playback:seek`, `playback:heartbeat`) sync state between host and viewers; Firestore stores authoritative `rooms/{roomId}.playback`
@@ -106,7 +106,7 @@ UmamiStream is a private, invite-only streaming portal for anime, movies, and TV
 | AniList GraphQL (`graphql.anilist.co`) | Frontend → direct | Anime search, seasonal trending, detail pages |
 | Kitsu REST API (`kitsu.io/api/edge`) | Frontend → direct | Anime info, episode lists, category browse |
 | TMDB REST API v3 | Frontend → direct | Movie/TV metadata, genres, trailers, cast |
-| GogoAnime (`anitaku.to`) | Backend scrape | Anime search, episode list — no auth/CAPTCHA required |
+| GogoAnime (`anineko.to`) | Backend scrape | Anime search, episode list — no auth/CAPTCHA required |
 | vibeplayer.site | Backend → Cloudflare Worker | HLS master manifest; no auth required |
 | ByteDance CDN (`p16-ad-sg.ibyteimg.com`) | Frontend → Cloudflare Worker | HLS video segments; no IP restrictions, no Referer required |
 | Giphy CDN (`media*.giphy.com`) | Frontend → direct | GIF chat messages (validated server-side) |
@@ -182,7 +182,7 @@ umami-watch/
 │   ├── routes/
 │   │   ├── users.js             # GET/PATCH /api/me — user profile; DELETE /api/me/history
 │   │   ├── rooms.js             # Full CRUD for watch party rooms + room expiry cleanup job
-│   │   ├── gogoanime.js         # GogoAnime proxy: /search (scrapes anitaku.to), /episodes, /sources (picks vibeplayer ID → HLS URL + VTT subtitles)
+│   │   ├── gogoanime.js         # GogoAnime proxy: /search (scrapes anineko.to), /episodes, /sources (picks vibeplayer ID → HLS URL + VTT subtitles)
 │   │   ├── movies.js            # Movies/TV stub (501 Not Implemented — client uses iframe embeds via VidLink)
 │   │   └── torrent.js           # Torrent streaming: /stream (FFmpeg remux), /seed (raw bytes), /status
 │   ├── socket/
@@ -481,9 +481,9 @@ docker build -t umami-watch:local \
 ## 9. Key Business Logic Locations
 
 ### GogoAnime Stream Resolution (`server/routes/gogoanime.js`)
-Three endpoints: `/search` scrapes `anitaku.to/search.html`, `/episodes` scrapes `anitaku.to/category/{slug}`, `/sources` scrapes the episode page to extract `data-video` attributes. The sources endpoint picks the **short vibeplayer ID** (exactly 16 lowercase hex chars, no `ag` prefix, no trailing `h`) from the embed URLs — long IDs return 404. Returns `hlsUrl` = `https://vibeplayer.site/public/stream/{id}/master.m3u8` plus optional subtitle VTT from the `?sub=` query param on the embed URL.
+Three endpoints: `/search` scrapes `anineko.to/browse?keyword={q}`, `/episodes` scrapes `anineko.to/watch/{slug}`, `/sources` scrapes the episode page `anineko.to/watch/{slug}/ep-{n}` to extract `data-video` attributes. The sources endpoint picks the **short vibeplayer ID** (exactly 16 lowercase hex chars, no `ag` prefix, no trailing `h`) from the embed URLs — long IDs return 404. Returns `hlsUrl` = `https://vibeplayer.site/public/stream/{id}/master.m3u8` plus optional subtitle VTT from the `?sub=` query param on the embed URL.
 
-**Why GogoAnime:** No CAPTCHA, no token decryption, no third-party decoding service. anitaku.to is freely scrapable server-side; vibeplayer.site requires no auth; video segments are served by **ByteDance CDN** (`p16-ad-sg.ibyteimg.com`) which has no IP blocking — Cloudflare Worker can fetch segments freely, meaning zero video egress through Cloud Run.
+**Why GogoAnime:** No CAPTCHA, no token decryption, no third-party decoding service. anineko.to is freely scrapable server-side; vibeplayer.site requires no auth; video segments are served by **ByteDance CDN** (`p16-ad-sg.ibyteimg.com`) which has no IP blocking — Cloudflare Worker can fetch segments freely, meaning zero video egress through Cloud Run.
 
 **Why AllAnime was dropped (Apr 2026):** `api.allanime.day/api` returns `{"message":"NEED_CAPTCHA"}` at the application level on `sourceUrls` queries. The Cloudflare Turnstile site key (`0x4AAAAAADAXQmN7FOUbtiV8`) is validated server-side — fake tokens return "Error Re-captcha!" — requiring a paid CAPTCHA solving service (~$6 minimum top-up) per session.
 
@@ -515,7 +515,7 @@ Host emits heartbeat every 5 seconds; viewers emit `request-sync` every 20 secon
 - `frontend/src/components/VideoPlayer.jsx` — 465 lines; Plyr + HLS.js integration, subtitle system, double-tap seek, viewer mode controls
 - `frontend/src/pages/WatchPage.jsx` — 740 lines; the entire watch experience, room sync, history saving
 - `server/socket/roomSocket.js` — all real-time room logic; wrong dot-notation can corrupt `playback` field
-- `server/routes/gogoanime.js` — HTML regex scraping; if anitaku.to changes its markup, all anime streaming breaks
+- `server/routes/gogoanime.js` — HTML regex scraping; if anineko.to changes its markup or migrates domain (anitaku.to → anineko.to in Jun 2026), all anime streaming breaks
 
 ---
 
