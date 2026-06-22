@@ -327,6 +327,10 @@ Document ID format varies by content type:
 | `contentId` | string \| null | |
 | `contentType` | string \| null | `"anime"`, `"movie"`, `"tv"` |
 | `contentTitle` | string \| null | |
+| `posterUrl` | string \| null | Cover/poster image URL; lets watch-party viewers record Continue Watching history |
+| `epNum` | number \| null | Anime episode number; used by viewers to build the history doc ID |
+| `seasonNum` | number \| null | TV season number |
+| `episodeNum` | number \| null | TV episode number |
 | `streamUrl` | string \| null | HLS/MP4/iframe URL |
 | `streamType` | string \| null | `"hls"`, `"direct"`, `"iframe"` |
 | `tracks` | array \| null | Subtitle track objects |

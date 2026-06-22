@@ -25,7 +25,7 @@ function resizeImage(file, maxSize) {
 }
 
 export default function ProfilePage() {
-  const { user, updateUserProfile } = useAuth();
+  const { user, updateUserProfile, changePassword } = useAuth();
   const { watchlist, toggleWatchlist } = useWatchlist(user?.uid);
   const { history, setHistory } = useHistory(user?.uid);
   const [tab, setTab] = useState('settings');
@@ -38,6 +38,13 @@ export default function ProfilePage() {
   const fileInputRef = useRef(null);
 
   const [clearingHistory, setClearingHistory] = useState(false);
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordSaved, setPasswordSaved] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
 
   const handleLogout = async () => {
     try { await signOut(auth); } catch (e) { alert('Failed to log out'); }
@@ -55,6 +62,36 @@ export default function ProfilePage() {
       alert('Failed to update display name.');
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    setPasswordError('');
+    if (newPassword.length < 6) { setPasswordError('New password must be at least 6 characters.'); return; }
+    if (newPassword !== confirmPassword) { setPasswordError('New passwords do not match.'); return; }
+    if (newPassword === currentPassword) { setPasswordError('New password must be different from the current one.'); return; }
+
+    setSavingPassword(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      setPasswordSaved(true);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => setPasswordSaved(false), 2500);
+    } catch (err) {
+      const code = err?.code || '';
+      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        setPasswordError('Current password is incorrect.');
+      } else if (code === 'auth/weak-password') {
+        setPasswordError('New password is too weak.');
+      } else if (code === 'auth/too-many-requests') {
+        setPasswordError('Too many attempts. Please try again later.');
+      } else {
+        setPasswordError('Failed to change password. Please try again.');
+      }
+    } finally {
+      setSavingPassword(false);
     }
   };
 
@@ -224,6 +261,59 @@ export default function ProfilePage() {
             <div className="bg-surface rounded-2xl shadow-sm border border-border overflow-hidden">
               <div className="p-6 bg-surface-raised border-b border-border">
                 <h2 className="text-xl font-bold text-primary flex items-center gap-2 mb-1">
+                  <span>🔒</span> Password
+                </h2>
+                <p className="text-secondary text-sm font-medium">Change the password used to sign in.</p>
+              </div>
+              <div className="p-6 space-y-4 max-w-md">
+                <div>
+                  <label className="block text-sm font-semibold text-secondary mb-1.5">Current password</label>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={currentPassword}
+                    onChange={e => { setCurrentPassword(e.target.value); setPasswordError(''); setPasswordSaved(false); }}
+                    className="w-full bg-page border border-border rounded-lg px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent-teal/40"
+                    placeholder="••••••••"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-secondary mb-1.5">New password</label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={newPassword}
+                    onChange={e => { setNewPassword(e.target.value); setPasswordError(''); setPasswordSaved(false); }}
+                    className="w-full bg-page border border-border rounded-lg px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent-teal/40"
+                    placeholder="At least 6 characters"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-secondary mb-1.5">Confirm new password</label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={e => { setConfirmPassword(e.target.value); setPasswordError(''); setPasswordSaved(false); }}
+                    onKeyDown={e => e.key === 'Enter' && handleChangePassword()}
+                    className="w-full bg-page border border-border rounded-lg px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent-teal/40"
+                    placeholder="Re-enter new password"
+                  />
+                </div>
+                {passwordError && <p className="text-red-500 text-xs font-medium">{passwordError}</p>}
+                <button
+                  onClick={handleChangePassword}
+                  disabled={savingPassword || !currentPassword || !newPassword || !confirmPassword}
+                  className="px-4 py-2 rounded-lg text-sm font-bold transition-colors bg-accent-teal text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {savingPassword ? 'Updating…' : passwordSaved ? 'Password changed ✓' : 'Change password'}
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-surface rounded-2xl shadow-sm border border-border overflow-hidden">
+              <div className="p-6 bg-surface-raised border-b border-border">
+                <h2 className="text-xl font-bold text-primary flex items-center gap-2 mb-1">
                   <span>⚙️</span> Account
                 </h2>
                 <p className="text-secondary text-sm font-medium">Manage your session.</p>
@@ -241,7 +331,7 @@ export default function ProfilePage() {
           <div className="animate-in fade-in">
             <h1 className="text-3xl font-bold text-primary mb-6 pb-4 border-b border-border flex items-center justify-between">
               Watchlist
-              <span className="text-sm font-semibold bg-surface-raised border border-border text-muted px-3 py-1 rounded-full">{videoWatchlist.length} items</span>
+              <span className="text-sm font-semibold bg-surface-raised border border-border text-muted px-3 py-1 rounded-full">{watchlist.length} items</span>
             </h1>
             {watchlist.length === 0 ? (
               <div className="text-center py-20 text-muted font-medium bg-page rounded-xl border border-dashed border-border">No anime, movies, or TV shows in your watchlist yet.</div>

@@ -117,6 +117,10 @@ router.patch('/:roomId', async (req, res) => {
     if (req.body.contentId !== undefined) updates.contentId = req.body.contentId;
     if (req.body.contentType !== undefined) updates.contentType = req.body.contentType;
     if (req.body.contentTitle !== undefined) updates.contentTitle = req.body.contentTitle;
+    if (req.body.posterUrl !== undefined) updates.posterUrl = req.body.posterUrl;
+    if (req.body.epNum !== undefined) updates.epNum = req.body.epNum;
+    if (req.body.seasonNum !== undefined) updates.seasonNum = req.body.seasonNum;
+    if (req.body.episodeNum !== undefined) updates.episodeNum = req.body.episodeNum;
     if (req.body.episodeId !== undefined) updates.episodeId = req.body.episodeId;
     if (req.body.tracks !== undefined) updates.tracks = req.body.tracks;
     if (req.body.magnetFileIdx !== undefined) updates.magnetFileIdx = req.body.magnetFileIdx ?? null;

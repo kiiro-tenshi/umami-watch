@@ -275,7 +275,15 @@ export default function WatchPage() {
                 contentId: type === 'anime' ? kitsuId : tmdbId,
                 contentType: type,
                 contentTitle: title,
-                tracks: subtitleTracks
+                posterUrl: poster,
+                tracks: subtitleTracks,
+                // Stored so watch-party viewers (who have no content URL params) can
+                // record Continue Watching history from room data.
+                ...(type === 'anime' && { epNum }),
+                ...(type === 'tv' && {
+                  seasonNum: season ? parseInt(season, 10) : 1,
+                  episodeNum: episode ? parseInt(episode, 10) : 1,
+                }),
               })
             }).catch(console.error);
           }
@@ -487,9 +495,18 @@ export default function WatchPage() {
   }, [roomId, isHost, connected]);
 
   // 7. Save watch history per episode (solo + watch party)
+  // Watch-party viewers have no content URL params — their content arrives over the
+  // socket — so fall back to room data so they also record Continue Watching.
   useEffect(() => {
-    if (!type || !user) return;
-    const histKey = type === 'anime' ? `anime_kitsu${kitsuId}_ep${epNum}` : (tmdbId || 'unknown');
+    const isRoomViewer = !!roomId && !isHost;
+    const hType      = isRoomViewer ? roomData?.contentType : type;
+    const hContentId = isRoomViewer ? roomData?.contentId   : (type === 'anime' ? kitsuId : tmdbId);
+    const hEpNum     = isRoomViewer ? roomData?.epNum        : (type === 'anime' ? epNum : undefined);
+    const hSeason    = isRoomViewer ? roomData?.seasonNum    : season;
+    const hEpisode   = isRoomViewer ? roomData?.episodeNum   : episode;
+    if (!hType || !user || !hContentId) return;
+    if (hType === 'anime' && hEpNum == null) return; // need episode number for the key
+    const histKey = hType === 'anime' ? `anime_kitsu${hContentId}_ep${hEpNum}` : (hContentId || 'unknown');
     const interval = setInterval(async () => {
       const p = playerRef.current;
       if (!p || p.paused) return;
@@ -498,22 +515,22 @@ export default function WatchPage() {
       if (pos < 5 || !dur) return;
       const histRef = doc(db, 'users', user.uid, 'history', histKey);
       await setDoc(histRef, {
-        contentId: type === 'anime' ? kitsuId : tmdbId,
-        contentType: type,
-        title: contentDetails?.title || 'Unknown',
-        posterUrl: contentDetails?.posterUrl || '',
+        contentId: hContentId,
+        contentType: hType,
+        title: contentDetails?.title || roomData?.contentTitle || 'Unknown',
+        posterUrl: contentDetails?.posterUrl || roomData?.posterUrl || '',
         position: pos, duration: dur,
         updatedAt: serverTimestamp(),
-        ...(type === 'anime' && { epNum }),
-        ...(season && { seasonNum: season }),
-        ...(episode && { episodeNum: episode })
+        ...(hType === 'anime' && hEpNum != null && { epNum: hEpNum }),
+        ...(hSeason && { seasonNum: hSeason }),
+        ...(hEpisode && { episodeNum: hEpisode })
       }, { merge: true }).catch(console.error);
-      if (type === 'anime' && epNum && pos >= dur * 0.85) {
-        updateWatched(epNum, true);
+      if (!isRoomViewer && hType === 'anime' && hEpNum && pos >= dur * 0.85) {
+        updateWatched(hEpNum, true);
       }
     }, 15000);
     return () => clearInterval(interval);
-  }, [type, kitsuId, epNum, tmdbId, season, episode, user, contentDetails]);
+  }, [type, kitsuId, epNum, tmdbId, season, episode, user, contentDetails, roomId, isHost, roomData]);
 
   const handlePlayerReady = (player) => {
     playerRef.current = player;
