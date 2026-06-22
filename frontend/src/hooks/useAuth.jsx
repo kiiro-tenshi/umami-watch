@@ -1,6 +1,6 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { auth, db } from '../firebase';
-import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail, updateProfile } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail, updateProfile, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 const AuthContext = createContext({});
@@ -82,8 +82,16 @@ export const AuthProvider = ({ children }) => {
     await signInWithPopup(auth, provider);
   };
 
+  // Re-authenticate with the current password (Firebase requires a recent login
+  // for password changes), then set the new password.
+  const changePassword = async (currentPassword, newPassword) => {
+    const cred = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
+    await reauthenticateWithCredential(auth.currentUser, cred);
+    await updatePassword(auth.currentUser, newPassword);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout, resetPassword, loginWithGoogle, updateUserProfile }}>
+    <AuthContext.Provider value={{ user, loading, login, signup, logout, resetPassword, loginWithGoogle, updateUserProfile, changePassword }}>
       {!loading && children}
     </AuthContext.Provider>
   );
