@@ -39,14 +39,17 @@ function parseEmbedUrls(html) {
   return urls;
 }
 
-// Short vibeplayer ID: exactly 16 lowercase hex chars, no 'ag' prefix, no trailing 'h'
+// The vibeplayer-family embed is identified by its path alone: exactly 16 lowercase
+// hex chars with no '/e/' or '/embed/' prefix (sibling hosts like otakuhg.site/e/…,
+// otakuvid.online/embed/… fail this test). The host rotates frequently
+// (vibeplayer.site → vivibebe.site → …), so we read it dynamically instead of
+// hardcoding it — the stream path scheme (/public/stream/{id}/master.m3u8) is stable.
 function pickVibeId(embedUrls) {
   for (const u of embedUrls) {
     try {
       const parsed = new URL(u);
-      if (parsed.hostname !== 'vibeplayer.site') continue;
       const id = parsed.pathname.slice(1).split('?')[0];
-      if (/^[0-9a-f]{16}$/.test(id)) return { id, url: parsed };
+      if (/^[0-9a-f]{16}$/.test(id)) return { id, hostname: parsed.hostname, url: parsed };
     } catch { /* skip malformed */ }
   }
   return null;
@@ -88,11 +91,12 @@ router.get('/sources', async (req, res) => {
     const vibe = pickVibeId(embeds);
     if (!vibe) return res.status(404).json({ error: 'No vibeplayer source found for this episode' });
 
-    const hlsUrl = `https://vibeplayer.site/public/stream/${vibe.id}/master.m3u8`;
+    const hlsUrl = `https://${vibe.hostname}/public/stream/${vibe.id}/master.m3u8`;
+    const referer = `https://${vibe.hostname}/`;
     const subUrl = vibe.url.searchParams.get('sub') || null;
     const tracks = subUrl ? [{ kind: 'captions', label: 'English', src: subUrl }] : [];
 
-    res.json({ hlsUrl, tracks });
+    res.json({ hlsUrl, referer, tracks });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }

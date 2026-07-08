@@ -14,13 +14,16 @@ export default {
     }
 
     const targetUrl = url.searchParams.get('url');
-    const referer   = url.searchParams.get('referer') || 'https://vibeplayer.site/';
 
     if (!targetUrl) {
       return new Response('url parameter required', { status: 400, headers: CORS });
     }
 
-    const decodedUrl     = decodeURIComponent(targetUrl);
+    const decodedUrl = decodeURIComponent(targetUrl);
+    // The client (WatchPage) passes an explicit referer derived from the current
+    // player host, which rotates. Fall back to the target's own origin rather than a
+    // hardcoded host so a missing param never sends a stale referer.
+    const referer        = url.searchParams.get('referer') || new URL(decodedUrl).origin + '/';
     const decodedReferer = decodeURIComponent(referer);
 
     const contentType = (decodedUrl.match(/\.(m3u8|ts|vtt|srt|ass)(\?|$)/i) || [])[1] || '';

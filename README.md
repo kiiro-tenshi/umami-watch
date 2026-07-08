@@ -85,7 +85,7 @@ sequenceDiagram
 
 ### 1. Anime Streaming via GogoAnime
 
-Anime streams are sourced from **GogoAnime** (`anineko.to`). The server scrapes episode pages to extract a vibeplayer embed ID, then constructs an HLS URL at `vibeplayer.site/public/stream/{id}/master.m3u8`.
+Anime streams are sourced from **GogoAnime** (`anineko.to`). The server scrapes episode pages to extract a vibeplayer-family embed ID, then constructs an HLS URL at `{playerHost}/public/stream/{id}/master.m3u8`. The player host rotates periodically (e.g. `vibeplayer.site` → `vivibebe.site`), so it is detected dynamically from the embed rather than hardcoded.
 
 Why GogoAnime:
 - No CAPTCHA, no token decryption, freely scrapable server-side.

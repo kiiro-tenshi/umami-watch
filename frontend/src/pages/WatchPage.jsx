@@ -207,19 +207,22 @@ export default function WatchPage() {
           // Backend scrapes episode page and returns direct vibeplayer HLS URL.
           // ByteDance CDN (p16-ad-sg.ibyteimg.com) has no IP restrictions so the
           // Cloudflare Worker proxies segments with zero Cloud Run egress.
-          const { hlsUrl, tracks } = await getGogoanimeSource(matchedShow.slug, epNum);
+          const { hlsUrl, referer, tracks } = await getGogoanimeSource(matchedShow.slug, epNum);
+          // Referer is returned by the backend (derived from the current player host,
+          // which rotates); fall back to the HLS URL's own origin if absent.
+          const hlsReferer = referer || `${new URL(hlsUrl).origin}/`;
 
           const workerBase = import.meta.env.VITE_HLS_PROXY_URL;
           let proxiedUrl;
           if (workerBase) {
             const u = new URL(workerBase);
             u.searchParams.set('url', hlsUrl);
-            u.searchParams.set('referer', 'https://vibeplayer.site/');
+            u.searchParams.set('referer', hlsReferer);
             proxiedUrl = u.toString();
           } else {
             const u = new URL(`${import.meta.env.VITE_API_BASE_URL || ''}/api/proxy/hls`, window.location.origin);
             u.searchParams.set('url', hlsUrl);
-            u.searchParams.set('referer', 'https://vibeplayer.site/');
+            u.searchParams.set('referer', hlsReferer);
             proxiedUrl = u.toString();
           }
 
