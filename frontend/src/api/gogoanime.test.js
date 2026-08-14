@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { pickBestShow } from './gogoanime.js';
+import {
+  pickBestShow,
+  buildProxiedHlsSources,
+  findNextHlsSource,
+} from './gogoanime.js';
 
 const FRIEREN_SHOWS = [
   { slug: 'sousou-no-frieren-season-2', title: 'Frieren: Beyond Journey\'s End Season 2' },
@@ -98,5 +102,35 @@ describe('pickBestShow', () => {
     const shows = [{ slug: 'overlord-iv', title: 'Overlord IV: The Half-Elf Demihuman' }];
     expect(pickBestShow(shows, 'Overlord IV')).not.toBeNull();
     expect(pickBestShow(shows, 'Overlord IV').slug).toBe('overlord-iv');
+  });
+});
+
+describe('Cloudflare HLS source helpers', () => {
+  it('routes every embed through the configured Worker', () => {
+    const sources = buildProxiedHlsSources({
+      sources: [
+        { label: 'Hard Sub 1', embedUrl: 'https://vivibebe.site/abc', tracks: [] },
+        { label: 'Hard Sub 2', embedUrl: 'https://otakuhg.site/e/def', tracks: [] },
+      ],
+    }, 'https://worker.example/');
+
+    expect(sources).toHaveLength(2);
+    expect(sources.every(source => source.url.startsWith('https://worker.example/'))).toBe(true);
+    expect(new URL(sources[0].url).searchParams.get('embed')).toBe('https://vivibebe.site/abc');
+    expect(new URL(sources[1].url).searchParams.get('embed')).toBe('https://otakuhg.site/e/def');
+  });
+
+  it('refuses the old Cloud Run video fallback when the Worker is missing', () => {
+    expect(() => buildProxiedHlsSources({ sources: [] }, '')).toThrow(/Cloudflare HLS proxy/);
+  });
+
+  it('finds the next unfailed HLS source', () => {
+    const sources = [
+      { type: 'hls', url: 'one' },
+      { type: 'hls', url: 'two' },
+      { type: 'hls', url: 'three' },
+    ];
+    expect(findNextHlsSource(sources, 0, new Set(['two']))).toBe(2);
+    expect(findNextHlsSource(sources, 2)).toBe(-1);
   });
 });

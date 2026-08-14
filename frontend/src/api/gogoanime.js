@@ -17,6 +17,53 @@ export const searchGogoanime = (q) => backendGet('search', { q });
 export const getGogoanimeEpisodes = (slug) => backendGet('episodes', { slug });
 export const getGogoanimeSource = (slug, ep) => backendGet('sources', { slug, ep: String(ep) });
 
+export function buildProxiedHlsSources(sourceData, workerBase) {
+  if (!workerBase) {
+    throw new Error('Cloudflare HLS proxy is not configured. Refusing to send video through Cloud Run.');
+  }
+
+  const candidates = Array.isArray(sourceData?.sources)
+    ? sourceData.sources
+    : sourceData?.hlsUrl
+      ? [{
+          label: 'HLS 1',
+          hlsUrl: sourceData.hlsUrl,
+          referer: sourceData.referer,
+          tracks: sourceData.tracks || [],
+        }]
+      : [];
+
+  const seen = new Set();
+  return candidates.flatMap((source, index) => {
+    const target = source.embedUrl || source.hlsUrl;
+    if (!target || seen.has(target)) return [];
+    seen.add(target);
+
+    const workerUrl = new URL(workerBase);
+    if (source.embedUrl) {
+      workerUrl.searchParams.set('embed', source.embedUrl);
+      workerUrl.searchParams.set('referer', 'https://anineko.to/');
+    } else {
+      workerUrl.searchParams.set('url', source.hlsUrl);
+      workerUrl.searchParams.set('referer', source.referer || new URL(source.hlsUrl).origin + '/');
+    }
+
+    return [{
+      label: source.label || 'HLS ' + (index + 1),
+      url: workerUrl.toString(),
+      type: 'hls',
+      tracks: source.tracks || [],
+    }];
+  });
+}
+
+export function findNextHlsSource(sources, currentIndex, failedUrls = new Set()) {
+  for (let index = currentIndex + 1; index < sources.length; index += 1) {
+    if (sources[index]?.type === 'hls' && !failedUrls.has(sources[index].url)) return index;
+  }
+  return -1;
+}
+
 export function pickBestShow(shows, searchTitle) {
   if (!shows?.length) return null;
   const normalise = s => s.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();

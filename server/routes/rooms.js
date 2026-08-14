@@ -123,6 +123,7 @@ router.patch('/:roomId', async (req, res) => {
     if (req.body.episodeNum !== undefined) updates.episodeNum = req.body.episodeNum;
     if (req.body.episodeId !== undefined) updates.episodeId = req.body.episodeId;
     if (req.body.tracks !== undefined) updates.tracks = req.body.tracks;
+    if (req.body.streamSources !== undefined) updates.streamSources = req.body.streamSources;
     if (req.body.magnetFileIdx !== undefined) updates.magnetFileIdx = req.body.magnetFileIdx ?? null;
 
     await roomRef.update(updates);

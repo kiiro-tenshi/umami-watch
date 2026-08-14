@@ -85,18 +85,18 @@ sequenceDiagram
 
 ### 1. Anime Streaming via GogoAnime
 
-Anime streams are sourced from **GogoAnime** (`anineko.to`). The server scrapes episode pages to extract a vibeplayer-family embed ID, then constructs an HLS URL at `{playerHost}/public/stream/{id}/master.m3u8`. The player host rotates periodically (e.g. `vibeplayer.site` → `vivibebe.site`), so it is detected dynamically from the embed rather than hardcoded.
+Anime streams are sourced from **GogoAnime** (`anineko.to`). The server returns every supported HLS embed for each episode (hard-sub, soft-sub, and dub variants from `vivibebe.site`, `otakuhg.site`, and `otakuvid.online`). The browser sends only those embed URLs to the Cloudflare Worker.
 
 Why GogoAnime:
 - No CAPTCHA, no token decryption, freely scrapable server-side.
-- Video segments are served by **ByteDance CDN** (`p16-ad-sg.ibyteimg.com`) which has no IP restrictions — the Cloudflare Worker can fetch them freely, meaning zero video egress through Cloud Run.
+- The Worker resolves each provider's signed HLS manifest at the edge, rewrites every child manifest and segment URL through itself, and automatically falls back to the next HLS server when a source fails.
 
 ### 2. <img src="cloudflare-worker/CF%20Logo.webp" height="20" alt="Cloudflare" /> Worker Proxy (Zero Cloud Run Egress for Video)
 
 All HLS bandwidth is routed through the **Cloudflare Worker** (`umami-hls-proxy`) instead of Cloud Run, eliminating video egress charges entirely:
 
-- **HLS path** — The Worker rewrites `.m3u8` manifests so all segment URLs point back through itself. Segments are cached at the Cloudflare edge (1h TTL), meaning watch party members sharing an episode hit cache after the first viewer loads each segment.
-- **Fallback** — Cloud Run retains an `/api/proxy/hls` fallback for cases where the Worker's IP range gets blocked by a CDN.
+- **HLS path** — The Worker resolves provider embeds, rewrites `.m3u8` manifests so all segment URLs point back through itself, and caches segments at the Cloudflare edge (1h TTL).
+- **Fallback** — The player switches between Cloudflare-resolved HLS sources. Anime playback refuses to fall back to `/api/proxy/hls`, preventing accidental Cloud Run video egress.
 
 A ~400MB episode stream generates **zero Cloud Run egress charges**.
 

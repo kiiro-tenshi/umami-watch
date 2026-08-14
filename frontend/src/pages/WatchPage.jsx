@@ -3,7 +3,13 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
-import { searchGogoanime, getGogoanimeSource, pickBestShow } from '../api/gogoanime';
+import {
+  searchGogoanime,
+  getGogoanimeSource,
+  pickBestShow,
+  buildProxiedHlsSources,
+  findNextHlsSource,
+} from '../api/gogoanime';
 import { getAnimeById } from '../api/anilist';
 import { getMovieDetail, getTVDetail, getTVSeason } from '../api/tmdb';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -61,6 +67,7 @@ export default function WatchPage() {
   const hasJoinedRoomRef = useRef(false);
   const episodeListRef = useRef(null);
   const pendingSyncRef = useRef(null); // buffers sync:state that arrives before player is ready
+  const failedSourceUrlsRef = useRef(new Set());
 
   const getToken = useCallback((forceRefresh = false) => auth.currentUser?.getIdToken(forceRefresh), []);
   const { socketRef, connected, reconnecting } = useSocket(import.meta.env.VITE_API_BASE_URL, getToken);
@@ -112,15 +119,15 @@ export default function WatchPage() {
         // Restore stream for non-host viewers — host will re-fetch via fetchStream
         if (data.streamUrl && data.hostId !== user?.uid) {
           setStreamUrl(data.streamUrl);
-          if (data.contentType === 'anime') {
-            const srcType = data.streamType || (data.streamUrl.includes('.m3u8') ? 'hls' : 'direct');
-            setSources([{ type: srcType, url: data.streamUrl, label: 'Stream' }]);
-            setActiveTracks(data.tracks || []);
-          } else if (data.contentType) {
-            const srcType = data.streamType || (data.streamUrl.includes('.m3u8') ? 'hls' : 'direct');
-            setSources([{ type: srcType, url: data.streamUrl, label: 'Stream' }]);
-            setActiveTracks(data.tracks || []);
-          }
+          const srcType = data.streamType || (data.streamUrl.includes('.m3u8') ? 'hls' : 'direct');
+          const roomSources = data.streamSources?.length
+            ? data.streamSources
+            : [{ type: srcType, url: data.streamUrl, label: 'Stream', tracks: data.tracks || [] }];
+          const activeIndex = Math.max(0, roomSources.findIndex(source => source.url === data.streamUrl));
+          failedSourceUrlsRef.current = new Set();
+          setSources(roomSources);
+          setActiveSourceIdx(activeIndex);
+          setActiveTracks(roomSources[activeIndex]?.tracks || data.tracks || []);
         }
         // If no content type to fetch, we're done loading
         if (!type) setLoading(false);
@@ -156,6 +163,7 @@ export default function WatchPage() {
         let url = null;
         let subtitleTracks = [];
         let streamType = 'hls';
+        let streamSourceList = [];
 
         if (type === 'anime') {
           if (!kitsuId) {
@@ -204,36 +212,23 @@ export default function WatchPage() {
           }
           if (!matchedShow) throw new Error('Anime not found on the streaming service.');
 
-          // Backend scrapes episode page and returns direct vibeplayer HLS URL.
-          // ByteDance CDN (p16-ad-sg.ibyteimg.com) has no IP restrictions so the
-          // Cloudflare Worker proxies segments with zero Cloud Run egress.
-          const { hlsUrl, referer, tracks } = await getGogoanimeSource(matchedShow.slug, epNum);
-          // Referer is returned by the backend (derived from the current player host,
-          // which rotates); fall back to the HLS URL's own origin if absent.
-          const hlsReferer = referer || `${new URL(hlsUrl).origin}/`;
-
-          const workerBase = import.meta.env.VITE_HLS_PROXY_URL;
-          let proxiedUrl;
-          if (workerBase) {
-            const u = new URL(workerBase);
-            u.searchParams.set('url', hlsUrl);
-            u.searchParams.set('referer', hlsReferer);
-            proxiedUrl = u.toString();
-          } else {
-            const u = new URL(`${import.meta.env.VITE_API_BASE_URL || ''}/api/proxy/hls`, window.location.origin);
-            u.searchParams.set('url', hlsUrl);
-            u.searchParams.set('referer', hlsReferer);
-            proxiedUrl = u.toString();
-          }
+          // The Worker resolves embeds and fetches all manifests/segments itself.
+          // Signed URLs never pass through Cloud Run, so Google carries no video egress.
+          const sourceData = await getGogoanimeSource(matchedShow.slug, epNum);
+          const hlsSources = buildProxiedHlsSources(sourceData, import.meta.env.VITE_HLS_PROXY_URL);
+          if (!hlsSources.length) throw new Error('No HLS sources found for this episode.');
+          const firstSource = hlsSources[0];
 
           if (!cancelled) {
-            setSources([{ label: 'GogoAnime', url: proxiedUrl, type: 'hls', tracks }]);
+            failedSourceUrlsRef.current = new Set();
+            setSources(hlsSources);
             setActiveSourceIdx(0);
-            setActiveTracks(tracks);
+            setActiveTracks(firstSource.tracks);
           }
-          url = proxiedUrl;
+          url = firstSource.url;
           streamType = 'hls';
-          subtitleTracks = tracks;
+          subtitleTracks = firstSource.tracks;
+          streamSourceList = hlsSources;
 
         } else if (type === 'movie') {
           const data = await getMovieDetail(tmdbId);
@@ -280,6 +275,7 @@ export default function WatchPage() {
                 contentTitle: title,
                 posterUrl: poster,
                 tracks: subtitleTracks,
+                streamSources: streamSourceList,
                 // Stored so watch-party viewers (who have no content URL params) can
                 // record Continue Watching history from room data.
                 ...(type === 'anime' && { epNum }),
@@ -409,18 +405,17 @@ export default function WatchPage() {
       // Clear stale player ref so sync events during VideoPlayer remount buffer
       // in pendingSyncRef rather than being lost on the destroyed (zombie) Plyr.
       playerRef.current = null;
-      setActiveSourceIdx(0);
       if (data.streamUrl) {
         setStreamUrl(data.streamUrl);
-        if (data.contentType === 'anime') {
-          const srcType = data.streamType || (data.streamUrl.includes('.m3u8') ? 'hls' : 'direct');
-          setSources([{ type: srcType, url: data.streamUrl, label: 'Stream' }]);
-          setActiveTracks(data.tracks || []);
-        } else {
-          const srcType = data.streamType || (data.streamUrl.includes('.m3u8') ? 'hls' : 'direct');
-          setSources([{ type: srcType, url: data.streamUrl, label: 'Stream' }]);
-          setActiveTracks(data.tracks || []);
-        }
+        const srcType = data.streamType || (data.streamUrl.includes('.m3u8') ? 'hls' : 'direct');
+        const roomSources = data.streamSources?.length
+          ? data.streamSources
+          : [{ type: srcType, url: data.streamUrl, label: 'Stream', tracks: data.tracks || [] }];
+        const activeIndex = Math.max(0, roomSources.findIndex(source => source.url === data.streamUrl));
+        failedSourceUrlsRef.current = new Set();
+        setSources(roomSources);
+        setActiveSourceIdx(activeIndex);
+        setActiveTracks(roomSources[activeIndex]?.tracks || data.tracks || []);
       }
     };
 
@@ -567,9 +562,34 @@ export default function WatchPage() {
 
   const handleSourceSwitch = (idx) => {
     const src = sources[idx];
+    if (!src) return;
     setActiveSourceIdx(idx);
     setStreamUrl(src.url);
     setActiveTracks(src.tracks || []);
+
+    if (roomId && isHost) {
+      auth.currentUser?.getIdToken().then(t => fetch(
+        (import.meta.env.VITE_API_BASE_URL || '') + '/api/rooms/' + roomId,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t },
+          body: JSON.stringify({
+            streamUrl: src.url,
+            streamType: src.type,
+            tracks: src.tracks || [],
+            streamSources: sources,
+          }),
+        }
+      )).catch(console.error);
+    }
+  };
+
+  const handleStreamError = () => {
+    const current = sources[activeSourceIdx];
+    if (!current || failedSourceUrlsRef.current.has(current.url)) return;
+    failedSourceUrlsRef.current.add(current.url);
+    const nextIndex = findNextHlsSource(sources, activeSourceIdx, failedSourceUrlsRef.current);
+    if (nextIndex >= 0) handleSourceSwitch(nextIndex);
   };
 
 
@@ -635,7 +655,14 @@ export default function WatchPage() {
               </div>
             ) : streamUrl ? (
               (isHls || isDirect) ? (
-                <VideoPlayer key={streamUrl} options={videoOptions} tracks={activeTracks} onReady={handlePlayerReady} token={token} />
+                <VideoPlayer
+                  key={streamUrl}
+                  options={videoOptions}
+                  tracks={activeTracks}
+                  onReady={handlePlayerReady}
+                  onError={handleStreamError}
+                  token={token}
+                />
               ) : (
                 <iframe
                   key={streamUrl}

@@ -31,28 +31,74 @@ function parseEpisodeNumbers(html, slug) {
   return [...nums].sort((a, b) => a - b).map(n => ({ number: n }));
 }
 
-function parseEmbedUrls(html) {
-  const urls = [];
-  const re = /data-video="(https:\/\/[^"]+)"/g;
-  let m;
-  while ((m = re.exec(html)) !== null) urls.push(m[1]);
-  return urls;
+const HLS_EMBED_HOSTS = new Set(['vivibebe.site', 'otakuhg.site', 'otakuvid.online']);
+
+function decodeHtml(value) {
+  return value
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(?:39|x27);/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
 }
 
-// The vibeplayer-family embed is identified by its path alone: exactly 16 lowercase
-// hex chars with no '/e/' or '/embed/' prefix (sibling hosts like otakuhg.site/e/…,
-// otakuvid.online/embed/… fail this test). The host rotates frequently
-// (vibeplayer.site → vivibebe.site → …), so we read it dynamically instead of
-// hardcoding it — the stream path scheme (/public/stream/{id}/master.m3u8) is stable.
-function pickVibeId(embedUrls) {
-  for (const u of embedUrls) {
-    try {
-      const parsed = new URL(u);
-      const id = parsed.pathname.slice(1).split('?')[0];
-      if (/^[0-9a-f]{16}$/.test(id)) return { id, hostname: parsed.hostname, url: parsed };
-    } catch { /* skip malformed */ }
+function sourceKind(buttonHtml) {
+  const span = buttonHtml.match(/<span\b[^>]*>([\s\S]*?)<\/span>/i)?.[1] || buttonHtml;
+  const text = decodeHtml(span.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+  if (/hard\s*sub/i.test(text)) return 'Hard Sub';
+  // AniNeko currently spells this tab "Sort Sub"; accept both spellings.
+  if (/(?:soft|sort)\s*sub/i.test(text)) return 'Soft Sub';
+  if (/\bdub\b/i.test(text)) return 'Dub';
+  return 'HLS';
+}
+
+function subtitleTracks(url) {
+  const tracks = [];
+  const softSub = url.searchParams.get('sub');
+  if (softSub) tracks.push({ kind: 'captions', label: 'English', src: softSub });
+
+  for (let i = 1; i <= 10; i += 1) {
+    const src = url.searchParams.get('caption_' + i);
+    if (!src) continue;
+    tracks.push({
+      kind: 'captions',
+      label: url.searchParams.get('sub_' + i) || 'Subtitle ' + i,
+      src,
+    });
   }
-  return null;
+  return tracks;
+}
+
+// Return every supported HLS embed instead of locking playback to AniNeko's first
+// server. The Cloudflare Worker resolves each embed so IP/ASN-bound manifest tokens
+// are minted and consumed at Cloudflare, never at Cloud Run.
+export function parseHlsEmbedSources(html) {
+  const raw = [];
+  const buttonRe = /<button\b([^>]*)>([\s\S]*?)<\/button>/gi;
+  let button;
+
+  while ((button = buttonRe.exec(html)) !== null) {
+    const attr = button[1].match(/\bdata-video=(['"])(https:\/\/.*?)\1/i);
+    if (!attr) continue;
+
+    try {
+      const url = new URL(decodeHtml(attr[2]));
+      if (!HLS_EMBED_HOSTS.has(url.hostname)) continue;
+      raw.push({ kind: sourceKind(button[2]), embedUrl: url.href, tracks: subtitleTracks(url) });
+    } catch { /* skip malformed embed URLs */ }
+  }
+
+  const seen = new Set();
+  const providerCounts = new Map();
+  return raw.filter(source => {
+    if (seen.has(source.embedUrl)) return false;
+    seen.add(source.embedUrl);
+    return true;
+  }).map(source => {
+    const count = (providerCounts.get(source.kind) || 0) + 1;
+    providerCounts.set(source.kind, count);
+    return { ...source, label: source.kind + ' ' + count };
+  });
 }
 
 // GET /api/anime/gogoanime/search?q=
@@ -87,16 +133,10 @@ router.get('/sources', async (req, res) => {
   if (!slug || !ep) return res.status(400).json({ error: 'slug and ep required' });
   try {
     const html = await fetchHtml(`${GOGO}/watch/${encodeURIComponent(slug)}/ep-${ep}`);
-    const embeds = parseEmbedUrls(html);
-    const vibe = pickVibeId(embeds);
-    if (!vibe) return res.status(404).json({ error: 'No vibeplayer source found for this episode' });
+    const sources = parseHlsEmbedSources(html);
+    if (!sources.length) return res.status(404).json({ error: 'No supported HLS source found for this episode' });
 
-    const hlsUrl = `https://${vibe.hostname}/public/stream/${vibe.id}/master.m3u8`;
-    const referer = `https://${vibe.hostname}/`;
-    const subUrl = vibe.url.searchParams.get('sub') || null;
-    const tracks = subUrl ? [{ kind: 'captions', label: 'English', src: subUrl }] : [];
-
-    res.json({ hlsUrl, referer, tracks });
+    res.json({ sources });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }

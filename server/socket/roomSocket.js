@@ -45,6 +45,7 @@ export default function setupSockets(io) {
           contentType:  roomData.contentType,
           contentTitle: roomData.contentTitle,
           tracks:       roomData.tracks || [],
+          streamSources: roomData.streamSources || [],
         });
       }
 

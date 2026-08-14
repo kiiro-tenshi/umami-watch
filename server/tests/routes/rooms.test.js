@@ -230,12 +230,23 @@ describe('PATCH /api/rooms/:roomId', () => {
     const res = await request(app)
       .patch('/room-123')
       .set(AUTH)
-      .send({ streamUrl: 'https://example.com/video.mp4', contentType: 'movie' });
+      .send({
+        streamUrl: 'https://worker.example/source-1',
+        contentType: 'anime',
+        streamSources: [
+          { label: 'Hard Sub 1', type: 'hls', url: 'https://worker.example/source-1' },
+          { label: 'Hard Sub 2', type: 'hls', url: 'https://worker.example/source-2' },
+        ],
+      });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true });
     expect(mockFsUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ streamUrl: 'https://example.com/video.mp4', contentType: 'movie' })
+      expect.objectContaining({
+        streamUrl: 'https://worker.example/source-1',
+        contentType: 'anime',
+        streamSources: expect.any(Array),
+      })
     );
     expect(io.to).toHaveBeenCalledWith('room-123');
     expect(mockIoEmit).toHaveBeenCalledWith('room:content-updated', expect.any(Object));
