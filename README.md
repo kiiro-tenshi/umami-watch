@@ -85,11 +85,11 @@ sequenceDiagram
 
 ### 1. Anime Streaming via GogoAnime
 
-Anime streams are sourced from **GogoAnime** (`anineko.to`). The server returns every supported HLS embed for each episode (hard-sub, soft-sub, and dub variants from `vivibebe.site`, `otakuhg.site`, and `otakuvid.online`). The browser sends only those embed URLs to the Cloudflare Worker.
+Anime streams are sourced from **GogoAnime** (`anineko.to`). The server returns at most two HLS embeds for each episode, preferring Hard Sub 3 (`otakuvid.online`) and Hard Sub 2 (`otakuhg.site`). The browser sends only those embed URLs to the Cloudflare Worker.
 
 Why GogoAnime:
 - No CAPTCHA, no token decryption, freely scrapable server-side.
-- The Worker resolves each provider's signed HLS manifest at the edge, rewrites every child manifest and segment URL through itself, and automatically falls back to the next HLS server when a source fails.
+- The Worker resolves each provider's signed HLS manifest at the edge, rewrites every child manifest and segment URL through itself, and streams segment bytes without first buffering the complete segment. The player automatically falls back to the second HLS server on fatal errors, startup timeouts, or prolonged stalls.
 
 ### 2. <img src="cloudflare-worker/CF%20Logo.webp" height="20" alt="Cloudflare" /> Worker Proxy (Zero Cloud Run Egress for Video)
 

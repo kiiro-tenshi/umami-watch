@@ -131,6 +131,37 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
     };
 
     let cleanedUp = false;
+    let sourceFailed = false;
+    let startupTimer = null;
+    let stallTimer = null;
+
+    const reportStreamFailure = (message, detail) => {
+      if (cleanedUp || sourceFailed) return;
+      sourceFailed = true;
+      clearTimeout(startupTimer);
+      clearTimeout(stallTimer);
+      setPlayerError(message);
+      setIsLoading(false);
+      if (onError) onError(detail || new Error(message));
+    };
+
+    const clearStallTimer = () => {
+      clearTimeout(stallTimer);
+      stallTimer = null;
+    };
+
+    const armStallTimer = () => {
+      if (video.paused || sourceFailed) return;
+      clearStallTimer();
+      stallTimer = setTimeout(() => {
+        reportStreamFailure('Stream stalled. Switching source...', { fatal: true, type: 'stall' });
+      }, 15_000);
+    };
+
+    video.addEventListener('waiting', armStallTimer);
+    video.addEventListener('stalled', armStallTimer);
+    video.addEventListener('playing', clearStallTimer);
+    video.addEventListener('canplay', clearStallTimer);
 
     if (isM3u8 && Hls.isSupported()) {
       const hls = new Hls({
@@ -163,10 +194,19 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
 
       hls.on(Hls.Events.ERROR, (_e, data) => {
         if (data.fatal) {
-          setPlayerError(`Stream error: ${data.type}`);
-          setIsLoading(false);
-          if (onError) onError(data);
+          reportStreamFailure(`Stream error: ${data.type}`, data);
         }
+      });
+
+      // A manifest may parse even though its first media segment never arrives.
+      // Fail over promptly instead of leaving the loading spinner indefinitely.
+      startupTimer = setTimeout(() => {
+        reportStreamFailure('Stream startup timed out. Switching source...', { fatal: true, type: 'startup-timeout' });
+      }, 20_000);
+
+      hls.on(Hls.Events.FRAG_BUFFERED, () => {
+        clearTimeout(startupTimer);
+        startupTimer = null;
       });
 
       hls.loadSource(src);
@@ -228,6 +268,12 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
 
     return () => {
       cleanedUp = true;
+      clearTimeout(startupTimer);
+      clearStallTimer();
+      video.removeEventListener('waiting', armStallTimer);
+      video.removeEventListener('stalled', armStallTimer);
+      video.removeEventListener('playing', clearStallTimer);
+      video.removeEventListener('canplay', clearStallTimer);
       if (playerRef.current) { playerRef.current.destroy(); playerRef.current = null; }
       if (hlsRef.current)    { hlsRef.current.destroy();    hlsRef.current    = null; }
       setPlyrContainer(null);

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
 import { getAnimeById, getStudioByTitle } from '../api/anilist';
+import { buildAnimeWatchUrl, findExactAnimeTitleMatch, normalizeAnimeSource } from '../utils/animeRouting';
 import { useAuth } from '../hooks/useAuth';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { auth } from '../firebase';
@@ -14,6 +15,7 @@ export default function AnimeDetailPage() {
   const roomId = searchParams.get('roomId');
   const titleHint = searchParams.get('title');
   const source = searchParams.get('source');
+  const animeSource = normalizeAnimeSource(source);
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isInWatchlist, toggleWatchlist } = useWatchlist(user?.uid);
@@ -28,6 +30,11 @@ export default function AnimeDetailPage() {
 
   async function handleWatchParty(epNum) {
     if (!user || isCreatingRoom) return;
+    const watchUrl = buildAnimeWatchUrl({ animeId: kitsuId, epNum, roomId, animeSource });
+    if (roomId) {
+      navigate(watchUrl);
+      return;
+    }
     setIsCreatingRoom(true);
     try {
       const token = await auth.currentUser.getIdToken();
@@ -38,12 +45,13 @@ export default function AnimeDetailPage() {
           name: `${user.displayName}'s Room`,
           contentId: kitsuId,
           contentType: 'anime',
+          contentSource: animeSource,
           contentTitle: anime?.title?.english || anime?.title?.romaji || '',
         }),
       });
       if (res.ok) {
         const data = await res.json();
-        navigate(`/watch?type=anime&kitsuId=${kitsuId}&epNum=${epNum}&roomId=${data.id}`);
+        navigate(buildAnimeWatchUrl({ animeId: kitsuId, epNum, roomId: data.id, animeSource }));
       }
     } catch (err) {
       console.error(err);
@@ -56,33 +64,9 @@ export default function AnimeDetailPage() {
       setLoading(true);
       setError(null);
 
-      // ID is from AniList — skip the Kitsu ID lookup and search by title directly
-      if (source === 'anilist' && titleHint) {
-        const results = await searchAnimeKitsu(titleHint).catch(() => []);
-        const normalized = str => str.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
-        const hintWords = normalized(titleHint).split(/\s+/).filter(w => w.length > 3);
-        // Extract season number from the hint (e.g. "Season 4" → "4")
-        const hintSeason = titleHint.match(/(?:season|s)\s*(\d+)/i)?.[1] ?? null;
-        const match = results.find(r => {
-          const candidate = normalized([r.title?.english, r.title?.romaji].filter(Boolean).join(' '));
-          // Require ≥80% of hint words to appear in the candidate
-          const wordHits = hintWords.filter(w => candidate.includes(w)).length;
-          if (wordHits < Math.ceil(hintWords.length * 0.8)) return false;
-          // If the search title has a season number, the candidate must match it exactly
-          if (hintSeason) {
-            const candidateSeason = candidate.match(/(?:season|s)\s*(\d+)/i)?.[1] ?? null;
-            return candidateSeason === hintSeason;
-          }
-          return true;
-        });
-        if (match) {
-          const qs = new URLSearchParams();
-          if (roomId) qs.set('roomId', roomId);
-          qs.set('title', titleHint);
-          navigate(`/anime/${match.id}?${qs.toString()}`, { replace: true });
-          return;
-        }
-        // Kitsu doesn't have it yet — fall back to AniList data using the AniList ID
+      // AniList and Kitsu IDs overlap numerically but identify different records.
+      // Keep explicit AniList routes in AniList instead of fuzzy-matching a Kitsu title.
+      if (animeSource === 'anilist') {
         try {
           const anilistData = await getAnimeById(kitsuId);
           if (anilistData) {
@@ -146,8 +130,9 @@ export default function AnimeDetailPage() {
 
           if (recoveryTitle) {
             const results = await searchAnimeKitsu(recoveryTitle).catch(() => []);
-            if (results.length > 0) {
-              const newId = results[0].id;
+            const match = findExactAnimeTitleMatch(results, recoveryTitle);
+            if (match) {
+              const newId = match.id;
               const qs = new URLSearchParams();
               if (roomId) qs.set('roomId', roomId);
               qs.set('title', recoveryTitle);
@@ -164,7 +149,7 @@ export default function AnimeDetailPage() {
       setLoading(false);
     };
     fetchAll();
-  }, [kitsuId]);
+  }, [kitsuId, animeSource, roomId, titleHint, navigate]);
 
   if (loading) return <LoadingSpinner fullScreen />;
   if (staleLink) return (
@@ -270,7 +255,7 @@ export default function AnimeDetailPage() {
         {/* Content grid */}
         <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 flex flex-col gap-8">
-            {!error && <EpisodeList episodes={episodes} animeId={kitsuId} roomId={roomId} onWatchParty={user ? handleWatchParty : null} user={user} animeTitle={anime?.title?.english || anime?.title?.romaji} posterUrl={anime?.coverImage?.large} />}
+            {!error && <EpisodeList episodes={episodes} animeId={kitsuId} animeSource={animeSource} roomId={roomId} onWatchParty={user ? handleWatchParty : null} user={user} animeTitle={anime?.title?.english || anime?.title?.romaji} posterUrl={anime?.coverImage?.large} />}
           </div>
 
           {/* Info sidebar */}

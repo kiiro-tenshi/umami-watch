@@ -43,6 +43,7 @@ export default function setupSockets(io) {
         socket.emit('room:content-updated', {
           streamUrl:    roomData.streamUrl,
           contentType:  roomData.contentType,
+          contentSource: roomData.contentSource || null,
           contentTitle: roomData.contentTitle,
           tracks:       roomData.tracks || [],
           streamSources: roomData.streamSources || [],

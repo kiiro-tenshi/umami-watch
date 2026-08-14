@@ -180,9 +180,11 @@ export default {
       });
     }
 
-    // Binary content: TS segments, VTT subtitles, etc.
-    const body = await response.arrayBuffer();
-    const resp = new Response(body, {
+    // Stream media bytes immediately. Buffering the full segment with
+    // arrayBuffer() delayed the first byte until the upstream download finished,
+    // which made the player repeatedly enter a long buffering state.
+    const resp = new Response(response.body, {
+      status: response.status,
       headers: { ...CORS, 'Content-Type': upstreamCT || 'application/octet-stream', 'Cache-Control': 'public, max-age=3600, immutable' },
     });
 

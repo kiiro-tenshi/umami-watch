@@ -41,7 +41,7 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { name, contentId, contentType, contentTitle, streamUrl } = req.body;
+    const { name, contentId, contentType, contentSource, contentTitle, streamUrl } = req.body;
     const inviteCode = crypto.randomBytes(3).toString('hex').toUpperCase(); // 6 chars
     
     const roomRef = admin.firestore().collection('rooms').doc();
@@ -53,6 +53,7 @@ router.post('/', async (req, res) => {
       inviteCode,
       contentId: contentId || null,
       contentType: contentType || null,
+      contentSource: contentSource || null,
       contentTitle: contentTitle || null,
       streamUrl: streamUrl || null,
       playback: { playing: false, position: 0, updatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedBy: req.user.uid },
@@ -116,6 +117,7 @@ router.patch('/:roomId', async (req, res) => {
     if (req.body.streamType !== undefined) updates.streamType = req.body.streamType;
     if (req.body.contentId !== undefined) updates.contentId = req.body.contentId;
     if (req.body.contentType !== undefined) updates.contentType = req.body.contentType;
+    if (req.body.contentSource !== undefined) updates.contentSource = req.body.contentSource;
     if (req.body.contentTitle !== undefined) updates.contentTitle = req.body.contentTitle;
     if (req.body.posterUrl !== undefined) updates.posterUrl = req.body.posterUrl;
     if (req.body.epNum !== undefined) updates.epNum = req.body.epNum;

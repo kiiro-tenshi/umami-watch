@@ -11,6 +11,7 @@ import {
   findNextHlsSource,
 } from '../api/gogoanime';
 import { getAnimeById } from '../api/anilist';
+import { buildAnimeWatchUrl, findExactAnimeTitleMatch, getAnimeHistoryKey, normalizeAnimeSource } from '../utils/animeRouting';
 import { getMovieDetail, getTVDetail, getTVSeason } from '../api/tmdb';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
@@ -41,6 +42,7 @@ export default function WatchPage() {
   const roomId = searchParams.get('roomId');
   const type = searchParams.get('type'); // anime | movie | tv
   const kitsuId = searchParams.get('kitsuId');
+  const animeSource = normalizeAnimeSource(searchParams.get('animeSource'));
   const epNum = parseInt(searchParams.get('epNum') || '1', 10);
   const tmdbId = searchParams.get('tmdbId');
   const season = searchParams.get('season');
@@ -68,11 +70,13 @@ export default function WatchPage() {
   const episodeListRef = useRef(null);
   const pendingSyncRef = useRef(null); // buffers sync:state that arrives before player is ready
   const failedSourceUrlsRef = useRef(new Set());
+  const resumePositionRef = useRef(null);
+  const resumePlayingRef = useRef(false);
 
   const getToken = useCallback((forceRefresh = false) => auth.currentUser?.getIdToken(forceRefresh), []);
   const { socketRef, connected, reconnecting } = useSocket(import.meta.env.VITE_API_BASE_URL, getToken);
   const { watchedEps, toggleWatched, markAllWatched, markAllUnwatched, updateWatched } = useWatchedEps(
-    type === 'anime' ? kitsuId : null, user, contentDetails?.title, contentDetails?.posterUrl
+    type === 'anime' ? kitsuId : null, user, contentDetails?.title, contentDetails?.posterUrl, animeSource
   );
   const isHost = roomData?.hostId === user?.uid;
 
@@ -83,8 +87,7 @@ export default function WatchPage() {
     : null;
 
   function buildEpUrl(ep) {
-    const base = `/watch?type=anime&kitsuId=${kitsuId}&epNum=${ep.number}`;
-    return roomId ? `${base}&roomId=${roomId}` : base;
+    return buildAnimeWatchUrl({ animeId: kitsuId, epNum: ep.number, roomId, animeSource });
   }
 
   function buildTvEpUrl(newSeason, newEpisode) {
@@ -172,20 +175,18 @@ export default function WatchPage() {
             return;
           }
 
-          let animeData = await getAnimeKitsuInfo(kitsuId).catch(async err => {
+          let animeData = animeSource === 'anilist'
+            ? await getAnimeById(kitsuId)
+            : await getAnimeKitsuInfo(kitsuId).catch(async err => {
             if (err.status !== 404) throw err;
             // Kitsu periodically renumbers entries — fall back to a title search.
             // roomData.contentTitle is "Anime Title — Episode N", strip the suffix.
             const storedTitle = roomData?.contentTitle?.replace(/\s*—\s*Episode\s*\d+.*$/i, '').trim();
             if (storedTitle) {
               const results = await searchAnimeKitsu(storedTitle);
-              if (results.length) return results[0];
+              const match = findExactAnimeTitleMatch(results, storedTitle);
+              if (match) return match;
             }
-            // kitsuId may actually be an AniList ID (AnimeDetailPage AniList fallback path)
-            try {
-              const anilistData = await getAnimeById(kitsuId);
-              if (anilistData) return anilistData;
-            } catch { /* ignore */ }
             throw new Error('Anime not found (Kitsu ID expired). Please re-open from the search page.');
           });
           title = `${animeData.title?.english || animeData.title?.romaji || 'Anime'} — Episode ${epNum}`;
@@ -272,6 +273,7 @@ export default function WatchPage() {
                 streamType,
                 contentId: type === 'anime' ? kitsuId : tmdbId,
                 contentType: type,
+                contentSource: type === 'anime' ? animeSource : null,
                 contentTitle: title,
                 posterUrl: poster,
                 tracks: subtitleTracks,
@@ -299,14 +301,17 @@ export default function WatchPage() {
     fetchStream();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, kitsuId, epNum, tmdbId, season, episode, isHost, roomId, roomData !== null]);
+  }, [type, kitsuId, animeSource, epNum, tmdbId, season, episode, isHost, roomId, roomData !== null]);
 
   // 4. Fetch all episodes for the sidebar (anime only)
   // kitsuId may actually be an AniList ID when Kitsu doesn't have the anime yet —
   // fall back to AniList episode count in that case.
   useEffect(() => {
     if (type !== 'anime' || !kitsuId) return;
-    getKitsuEpisodes(kitsuId)
+    const episodesRequest = animeSource === 'anilist'
+      ? Promise.reject(new Error('Use AniList episode count'))
+      : getKitsuEpisodes(kitsuId);
+    episodesRequest
       .then(eps => {
         if (eps.length > 0) { setAnimeEpisodes(eps); return; }
         throw new Error('empty');
@@ -321,7 +326,7 @@ export default function WatchPage() {
           })
           .catch(() => {});
       });
-  }, [type, kitsuId]);
+  }, [type, kitsuId, animeSource]);
 
   // 4b. Fetch TV season episodes + season count for the in-room sidebar
   useEffect(() => {
@@ -499,12 +504,13 @@ export default function WatchPage() {
     const isRoomViewer = !!roomId && !isHost;
     const hType      = isRoomViewer ? roomData?.contentType : type;
     const hContentId = isRoomViewer ? roomData?.contentId   : (type === 'anime' ? kitsuId : tmdbId);
+    const hContentSource = isRoomViewer ? roomData?.contentSource : (type === 'anime' ? animeSource : null);
     const hEpNum     = isRoomViewer ? roomData?.epNum        : (type === 'anime' ? epNum : undefined);
     const hSeason    = isRoomViewer ? roomData?.seasonNum    : season;
     const hEpisode   = isRoomViewer ? roomData?.episodeNum   : episode;
     if (!hType || !user || !hContentId) return;
     if (hType === 'anime' && hEpNum == null) return; // need episode number for the key
-    const histKey = hType === 'anime' ? `anime_kitsu${hContentId}_ep${hEpNum}` : (hContentId || 'unknown');
+    const histKey = hType === 'anime' ? getAnimeHistoryKey(hContentId, hEpNum, hContentSource) : (hContentId || 'unknown');
     const interval = setInterval(async () => {
       const p = playerRef.current;
       if (!p || p.paused) return;
@@ -515,6 +521,7 @@ export default function WatchPage() {
       await setDoc(histRef, {
         contentId: hContentId,
         contentType: hType,
+        ...(hType === 'anime' && { contentSource: normalizeAnimeSource(hContentSource) }),
         title: contentDetails?.title || roomData?.contentTitle || 'Unknown',
         posterUrl: contentDetails?.posterUrl || roomData?.posterUrl || '',
         position: pos, duration: dur,
@@ -528,12 +535,18 @@ export default function WatchPage() {
       }
     }, 15000);
     return () => clearInterval(interval);
-  }, [type, kitsuId, epNum, tmdbId, season, episode, user, contentDetails, roomId, isHost, roomData]);
+  }, [type, kitsuId, animeSource, epNum, tmdbId, season, episode, user, contentDetails, roomId, isHost, roomData]);
 
   const handlePlayerReady = (player) => {
     playerRef.current = player;
-    if (!roomId && user && type === 'anime' && kitsuId) {
-      const histKey = `anime_kitsu${kitsuId}_ep${epNum}`;
+    const resumePosition = resumePositionRef.current;
+    if (resumePosition != null) {
+      player.currentTime = resumePosition;
+      resumePositionRef.current = null;
+      if (resumePlayingRef.current) player.play().catch(() => {});
+      resumePlayingRef.current = false;
+    } else if (!roomId && user && type === 'anime' && kitsuId) {
+      const histKey = getAnimeHistoryKey(kitsuId, epNum, animeSource);
       getDoc(doc(db, 'users', user.uid, 'history', histKey)).then(snap => {
         if (snap.exists() && snap.data().position) player.currentTime = snap.data().position;
       });
@@ -587,6 +600,11 @@ export default function WatchPage() {
   const handleStreamError = () => {
     const current = sources[activeSourceIdx];
     if (!current || failedSourceUrlsRef.current.has(current.url)) return;
+    const currentTime = playerRef.current?.currentTime;
+    if (Number.isFinite(currentTime) && currentTime > 0) {
+      resumePositionRef.current = currentTime;
+      resumePlayingRef.current = !playerRef.current.paused;
+    }
     failedSourceUrlsRef.current.add(current.url);
     const nextIndex = findNextHlsSource(sources, activeSourceIdx, failedSourceUrlsRef.current);
     if (nextIndex >= 0) handleSourceSwitch(nextIndex);

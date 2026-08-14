@@ -6,7 +6,7 @@ describe('parseHlsEmbedSources', () => {
     const html = [
       '<button data-video="https://vivibebe.site/aaaaaaaaaaaaaaaa">HD-1 <span>Hard Sub</span></button>',
       '<button data-video="https://otakuhg.site/e/server2">HD-2 <span>Hard Sub</span></button>',
-      '<button data-video="https://otakuvid.online/embed/server3?caption_1=https%3A%2F%2Fsub.example%2Fen.vtt&amp;sub_1=English">HD-3 <span>Sort Sub</span></button>',
+      '<button data-video="https://otakuvid.online/embed/server3">HD-3 <span>Hard Sub</span></button>',
       '<button data-video="https://playmogo.com/e/not-supported">HD-4 <span>Hard Sub</span></button>',
       '<button data-video="https://vivibebe.site/bbbbbbbbbbbbbbbb">HD-1 <span>DUB</span></button>',
     ].join('');
@@ -14,26 +14,14 @@ describe('parseHlsEmbedSources', () => {
     expect(parseHlsEmbedSources(html)).toEqual([
       {
         kind: 'Hard Sub',
-        label: 'Hard Sub 1',
-        embedUrl: 'https://vivibebe.site/aaaaaaaaaaaaaaaa',
+        label: 'Hard Sub 3',
+        embedUrl: 'https://otakuvid.online/embed/server3',
         tracks: [],
       },
       {
         kind: 'Hard Sub',
         label: 'Hard Sub 2',
         embedUrl: 'https://otakuhg.site/e/server2',
-        tracks: [],
-      },
-      {
-        kind: 'Soft Sub',
-        label: 'Soft Sub 1',
-        embedUrl: 'https://otakuvid.online/embed/server3?caption_1=https%3A%2F%2Fsub.example%2Fen.vtt&sub_1=English',
-        tracks: [{ kind: 'captions', label: 'English', src: 'https://sub.example/en.vtt' }],
-      },
-      {
-        kind: 'Dub',
-        label: 'Dub 1',
-        embedUrl: 'https://vivibebe.site/bbbbbbbbbbbbbbbb',
         tracks: [],
       },
     ]);

@@ -1,3 +1,5 @@
+import { buildAnimeWatchUrl, normalizeAnimeSource } from '../utils/animeRouting';
+
 const WATCHED_THRESHOLD = 0.85;
 
 export function isHistoryItemComplete(item) {
@@ -25,7 +27,7 @@ function getContinueUrl(item, complete) {
   if (item.contentType === 'anime') {
     const currentEpisode = Number(item.epNum) || 1;
     const episode = complete ? currentEpisode + 1 : currentEpisode;
-    return `/watch?type=anime&kitsuId=${item.contentId}&epNum=${episode}`;
+    return buildAnimeWatchUrl({ animeId: item.contentId, epNum: episode, animeSource: item.contentSource });
   }
 
   if (item.contentType === 'movie') {
@@ -46,7 +48,7 @@ export function getContinueWatchingItems(history) {
     const complete = isHistoryItemComplete(item);
 
     if (item.contentType === 'anime') {
-      const animeId = String(item.contentId);
+      const animeId = `${normalizeAnimeSource(item.contentSource)}:${item.contentId}`;
       if (seenAnime.has(animeId)) return [];
       seenAnime.add(animeId);
     } else if (complete) {

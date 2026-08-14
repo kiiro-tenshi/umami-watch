@@ -69,9 +69,9 @@ function subtitleTracks(url) {
   return tracks;
 }
 
-// Return every supported HLS embed instead of locking playback to AniNeko's first
-// server. The Cloudflare Worker resolves each embed so IP/ASN-bound manifest tokens
-// are minted and consumed at Cloudflare, never at Cloud Run.
+// Parse the supported embeds, then return only the two preferred HLS mirrors.
+// The Cloudflare Worker resolves each embed so IP/ASN-bound manifest tokens are
+// minted and consumed at Cloudflare, never at Cloud Run.
 export function parseHlsEmbedSources(html) {
   const raw = [];
   const buttonRe = /<button\b([^>]*)>([\s\S]*?)<\/button>/gi;
@@ -90,7 +90,7 @@ export function parseHlsEmbedSources(html) {
 
   const seen = new Set();
   const providerCounts = new Map();
-  return raw.filter(source => {
+  const labeled = raw.filter(source => {
     if (seen.has(source.embedUrl)) return false;
     seen.add(source.embedUrl);
     return true;
@@ -99,6 +99,19 @@ export function parseHlsEmbedSources(html) {
     providerCounts.set(source.kind, count);
     return { ...source, label: source.kind + ' ' + count };
   });
+
+  // Most mirrors are dead or intermittently blocked. Prefer the two hard-sub
+  // providers that consistently resolve through the Cloudflare Worker instead
+  // of making the player walk through every button on the page.
+  const preferredHosts = ['otakuvid.online', 'otakuhg.site'];
+  const preferred = preferredHosts.flatMap(host =>
+    labeled.filter(source => source.kind === 'Hard Sub' && new URL(source.embedUrl).hostname === host)
+  );
+  if (preferred.length >= 2) return preferred.slice(0, 2);
+
+  // Keep playback available on unusual pages that do not expose both preferred
+  // mirrors, but still cap the UI and automatic fallback at two sources.
+  return [...preferred, ...labeled.filter(source => !preferred.includes(source))].slice(0, 2);
 }
 
 // GET /api/anime/gogoanime/search?q=

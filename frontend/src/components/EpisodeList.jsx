@@ -2,14 +2,15 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useWatchedEps } from '../hooks/useWatchedEps';
 import EpisodeContextMenu from './EpisodeContextMenu';
+import { buildAnimeWatchUrl } from '../utils/animeRouting';
 
-export default function EpisodeList({ episodes, animeId, currentEpisodeId, roomId, onWatchParty, user, animeTitle, posterUrl }) {
+export default function EpisodeList({ episodes, animeId, animeSource = 'kitsu', currentEpisodeId, roomId, onWatchParty, user, animeTitle, posterUrl }) {
   const [page, setPage] = useState(0);
   const [creatingFor, setCreatingFor] = useState(null);
   const [menu, setMenu] = useState(null); // { x, y, epNum }
   const perPage = 100;
 
-  const { watchedEps, toggleWatched, markAllWatched, markAllUnwatched } = useWatchedEps(animeId, user, animeTitle, posterUrl);
+  const { watchedEps, toggleWatched, markAllWatched, markAllUnwatched } = useWatchedEps(animeId, user, animeTitle, posterUrl, animeSource);
 
   if (!episodes || episodes.length === 0) return <p className="text-secondary py-4 font-medium">No episodes available.</p>;
 
@@ -95,7 +96,7 @@ export default function EpisodeList({ episodes, animeId, currentEpisodeId, roomI
                   </button>
                 )}
                 <Link
-                  to={`/watch?type=anime&kitsuId=${animeId}&epNum=${ep.number}${roomId ? `&roomId=${roomId}` : ''}`}
+                  to={buildAnimeWatchUrl({ animeId, epNum: ep.number, roomId, animeSource })}
                   className={`px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-transform hover:scale-105 ${isCurrent ? 'bg-accent-teal text-white' : 'bg-accent-blue hover:bg-red-700 text-white'}`}
                 >
                   {isCurrent ? 'Playing' : 'Watch'}
