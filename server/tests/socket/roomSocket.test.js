@@ -126,6 +126,31 @@ describe('setupSockets', () => {
       expect(socket.join).not.toHaveBeenCalled();
       expect(socket.emit).toHaveBeenCalledWith('error', 'Room access denied');
     });
+
+    it('requests live host state for a reconnecting viewer instead of stale playback', async () => {
+      const stalePlayback = { playing: true, position: 0 };
+      const viewerSocket = makeSocket({
+        id: 'viewer-socket',
+        user: { uid: 'uid-viewer' },
+      });
+      const hostSocket = makeSocket({
+        id: 'host-socket',
+        user: { uid: 'uid-host' },
+        isHost: true,
+        emit: vi.fn(),
+      });
+      connectionHandler(viewerSocket);
+      mockFsGet.mockResolvedValueOnce({
+        exists: true,
+        data: () => ({ members: ['uid-viewer'], hostId: 'uid-host', playback: stalePlayback }),
+      });
+      io.in = vi.fn(() => ({ fetchSockets: vi.fn().mockResolvedValue([hostSocket, viewerSocket]) }));
+
+      await viewerSocket._trigger('join-room', { roomId: 'r1', displayName: 'Viewer' });
+
+      expect(hostSocket.emit).toHaveBeenCalledWith('viewer-needs-sync', 'viewer-socket');
+      expect(viewerSocket.emit).not.toHaveBeenCalledWith('sync:state', stalePlayback);
+    });
   });
 
   describe('playback sync (host only)', () => {
@@ -167,6 +192,18 @@ describe('setupSockets', () => {
 
       expect(socket.to).toHaveBeenCalledWith('r1');
       expect(socket._toEmit).toHaveBeenCalledWith('sync:state', { position: 60, playing: true });
+    });
+
+    it('persists a throttled heartbeat fallback for reconnects', () => {
+      socket._trigger('playback:heartbeat', { position: 600, playing: true });
+      socket._trigger('playback:heartbeat', { position: 605, playing: true });
+
+      expect(mockFsUpdate).toHaveBeenCalledTimes(1);
+      expect(mockFsUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        'playback.position': 600,
+        'playback.playing': true,
+        'playback.updatedBy': 'uid-host',
+      }));
     });
   });
 
@@ -393,15 +430,17 @@ describe('setupSockets', () => {
     });
 
     it('emits warning when host is not connected', async () => {
+      const playback = { playing: true, position: 580 };
       mockFsGet.mockResolvedValueOnce({
         exists: true,
-        data: () => ({ members: ['uid-viewer'], hostId: 'uid-host', playback: {} }),
+        data: () => ({ members: ['uid-viewer'], hostId: 'uid-host', playback }),
       });
       // No host socket in the room
       io.in = vi.fn(() => ({ fetchSockets: vi.fn().mockResolvedValue([socket]) }));
 
       await socket._trigger('join-room', { roomId: 'r1', displayName: 'Viewer', photoURL: null });
 
+      expect(socket.emit).toHaveBeenCalledWith('sync:state', playback);
       expect(socket.emit).toHaveBeenCalledWith('warning', expect.stringContaining('Host is not connected'));
     });
   });

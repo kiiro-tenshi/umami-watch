@@ -12,6 +12,7 @@ import {
 } from '../api/gogoanime';
 import { getAnimeById } from '../api/anilist';
 import { buildAnimeWatchUrl, findExactAnimeTitleMatch, getAnimeHistoryKey, normalizeAnimeSource } from '../utils/animeRouting';
+import { reconcileRoomStream, shouldJoinRoomSocket } from '../utils/watchPartySync';
 import { getMovieDetail, getTVDetail, getTVSeason } from '../api/tmdb';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
@@ -66,10 +67,11 @@ export default function WatchPage() {
   const [epMenu, setEpMenu] = useState(null); // { x, y, epNum }
 
   const playerRef = useRef(null);
-  const hasJoinedRoomRef = useRef(false);
+  const joinedConnectionRef = useRef(null);
   const episodeListRef = useRef(null);
   const pendingSyncRef = useRef(null); // buffers sync:state that arrives before player is ready
   const failedSourceUrlsRef = useRef(new Set());
+  const streamUrlRef = useRef(null);
   const resumePositionRef = useRef(null);
   const resumePlayingRef = useRef(false);
 
@@ -79,6 +81,10 @@ export default function WatchPage() {
     type === 'anime' ? kitsuId : null, user, contentDetails?.title, contentDetails?.posterUrl, animeSource
   );
   const isHost = roomData?.hostId === user?.uid;
+
+  useEffect(() => {
+    streamUrlRef.current = streamUrl;
+  }, [streamUrl]);
 
   // Derived: current episode index + next episode
   const currentEpIdx = animeEpisodes.findIndex(ep => ep.number === epNum);
@@ -358,11 +364,6 @@ export default function WatchPage() {
     const socket = socketRef.current;
     if (!connected || !socket || !roomId || !roomData || !token) return;
 
-    if (!hasJoinedRoomRef.current) {
-      hasJoinedRoomRef.current = true;
-      socket.emit('join-room', { roomId, displayName: user?.displayName || 'Viewer', photoURL: user?.photoURL || null });
-    }
-
     // Viewer: apply sync state from server (periodic heartbeat or join event)
     const onSyncState = ({ position, playing } = {}) => {
       if (isHost) return;
@@ -407,20 +408,18 @@ export default function WatchPage() {
       // Always update room metadata (title, contentType, etc.) so "Now Watching" stays current for everyone
       setRoomData(prev => prev ? { ...prev, ...data } : prev);
       if (isHost) return; // host already has the new stream; skip player/source updates
-      // Clear stale player ref so sync events during VideoPlayer remount buffer
-      // in pendingSyncRef rather than being lost on the destroyed (zombie) Plyr.
-      playerRef.current = null;
-      if (data.streamUrl) {
-        setStreamUrl(data.streamUrl);
-        const srcType = data.streamType || (data.streamUrl.includes('.m3u8') ? 'hls' : 'direct');
-        const roomSources = data.streamSources?.length
-          ? data.streamSources
-          : [{ type: srcType, url: data.streamUrl, label: 'Stream', tracks: data.tracks || [] }];
-        const activeIndex = Math.max(0, roomSources.findIndex(source => source.url === data.streamUrl));
+      const nextStream = reconcileRoomStream(streamUrlRef.current, data);
+      if (nextStream) {
+        // Only clear the ref when React will really remount VideoPlayer. Reconnects
+        // resend the same URL; clearing it then made all future sync events miss
+        // the still-mounted player.
+        if (nextStream.streamChanged) playerRef.current = null;
+        streamUrlRef.current = nextStream.streamUrl;
+        setStreamUrl(nextStream.streamUrl);
         failedSourceUrlsRef.current = new Set();
-        setSources(roomSources);
-        setActiveSourceIdx(activeIndex);
-        setActiveTracks(roomSources[activeIndex]?.tracks || data.tracks || []);
+        setSources(nextStream.sources);
+        setActiveSourceIdx(nextStream.activeIndex);
+        setActiveTracks(nextStream.tracks);
       }
     };
 
@@ -434,6 +433,15 @@ export default function WatchPage() {
     socket.on('viewer-needs-sync', onViewerNeedsSync);
     socket.on('room:content-updated', onRoomContentUpdated);
     socket.on('room:deleted', onRoomDeleted);
+
+    // Register every receiver before announcing the join. Socket.IO assigns a new
+    // id after reconnect, so this runs exactly once per live connection and cannot
+    // miss a fast sync response from the host.
+    const connectionKey = `${roomId}:${socket.id}`;
+    if (shouldJoinRoomSocket(joinedConnectionRef.current, connectionKey)) {
+      joinedConnectionRef.current = connectionKey;
+      socket.emit('join-room', { roomId, displayName: user?.displayName || 'Viewer', photoURL: user?.photoURL || null });
+    }
 
     return () => {
       socket.off('sync:state', onSyncState);
@@ -461,21 +469,6 @@ export default function WatchPage() {
       screen.orientation?.unlock?.();
     };
   }, []);
-
-  // Re-join room on socket reconnect (server drops socket rooms on disconnect)
-  useEffect(() => {
-    const socket = socketRef.current;
-    if (!socket || !roomId) return;
-    const onConnect = () => {
-      if (hasJoinedRoomRef.current) {
-        // Reconnect — the server's socket lost its room membership, re-join immediately
-        socket.emit('join-room', { roomId, displayName: user?.displayName || 'Viewer', photoURL: user?.photoURL || null });
-      }
-      // Initial connect is handled by the main socket effect
-    };
-    socket.on('connect', onConnect);
-    return () => socket.off('connect', onConnect);
-  }, [connected, roomId, user?.displayName, user?.photoURL]);
 
   // Host: emit heartbeat every 3s so viewers auto-correct drift
   useEffect(() => {

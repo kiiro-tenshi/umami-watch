@@ -1,5 +1,7 @@
 import admin from 'firebase-admin';
 
+const HEARTBEAT_PERSIST_INTERVAL_MS = 15_000;
+
 export default function setupSockets(io) {
   // auth middleware
   io.use(async (socket, next) => {
@@ -34,9 +36,6 @@ export default function setupSockets(io) {
 
       socket.to(roomId).emit('user-joined', { uid, displayName });
 
-      // Send current playback state to the joining viewer
-      socket.emit('sync:state', roomData.playback);
-
       // Send current stream info so viewers who join after the host already
       // loaded a source don't get a white screen (they missed room:content-updated)
       if (roomData.streamUrl) {
@@ -50,9 +49,18 @@ export default function setupSockets(io) {
         });
       }
 
-      const hostSockets = await io.in(roomId).fetchSockets();
-      const hostConnected = hostSockets.some(s => s.user.uid === roomData.hostId);
-      if (!hostConnected && !socket.isHost) {
+      const roomSockets = await io.in(roomId).fetchSockets();
+      const hostSocket = roomSockets.find(s => s.user.uid === roomData.hostId && s.id !== socket.id);
+
+      if (socket.isHost) {
+        // Useful when the host reloads and no live player exists to answer a sync request.
+        socket.emit('sync:state', roomData.playback);
+      } else if (hostSocket) {
+        // A reconnecting viewer must receive the host's live position. Firestore is
+        // only a fallback and can be several seconds behind.
+        hostSocket.emit('viewer-needs-sync', socket.id);
+      } else {
+        socket.emit('sync:state', roomData.playback);
         socket.emit('warning', 'Host is not connected. Playback may be out of sync.');
       }
     });
@@ -113,6 +121,20 @@ export default function setupSockets(io) {
     socket.on('playback:heartbeat', ({ position, playing }) => {
       if (!guardHost()) return;
       socket.to(socket.roomId).emit('sync:state', { position, playing });
+
+      // Keep a recent fallback for reconnects where the host is temporarily
+      // unavailable. Throttle writes to avoid a Firestore write every heartbeat.
+      const now = Date.now();
+      if (now - (socket.lastHeartbeatPersistAt || 0) < HEARTBEAT_PERSIST_INTERVAL_MS) return;
+      socket.lastHeartbeatPersistAt = now;
+      admin.firestore().collection('rooms').doc(socket.roomId)
+        .update({
+          'playback.position': position,
+          'playback.playing': playing,
+          'playback.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+          'playback.updatedBy': uid,
+        })
+        .catch(() => {});
     });
 
     // Viewer requests a sync (e.g. after buffering)
