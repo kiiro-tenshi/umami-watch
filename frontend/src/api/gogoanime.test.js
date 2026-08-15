@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   pickBestShow,
   buildProxiedHlsSources,
+  filterAvailableHlsSources,
+  probeAvailableHlsSources,
   findNextHlsSource,
 } from './gogoanime.js';
 
@@ -132,5 +134,75 @@ describe('Cloudflare HLS source helpers', () => {
     ];
     expect(findNextHlsSource(sources, 0, new Set(['two']))).toBe(2);
     expect(findNextHlsSource(sources, 2)).toBe(-1);
+  });
+
+  it('keeps only verified sources and caps the displayed list at two', async () => {
+    const sources = [
+      { type: 'hls', label: 'Soft Sub 3', url: 'https://worker.example/?embed=three' },
+      { type: 'hls', label: 'Soft Sub 2', url: 'https://worker.example/?embed=two' },
+      { type: 'hls', label: 'Soft Sub 1', url: 'https://worker.example/?embed=one' },
+    ];
+    const fetchFn = async url => Response.json({ available: !url.includes('embed=two') });
+
+    await expect(filterAvailableHlsSources(sources, fetchFn)).resolves.toEqual([
+      sources[0],
+      sources[2],
+    ]);
+  });
+
+  it('accepts a manifest response from an older Worker during deployment', async () => {
+    const source = { type: 'hls', url: 'https://worker.example/?embed=one' };
+    const fetchFn = async () => new Response('#EXTM3U', {
+      headers: { 'Content-Type': 'application/vnd.apple.mpegurl' },
+    });
+
+    await expect(filterAvailableHlsSources([source], fetchFn)).resolves.toEqual([source]);
+  });
+
+  it('returns the first working source immediately and adds a second in the background', async () => {
+    const sources = [
+      { type: 'hls', label: 'Slow', url: 'https://worker.example/?embed=slow' },
+      { type: 'hls', label: 'Fast', url: 'https://worker.example/?embed=fast' },
+      { type: 'hls', label: 'Backup', url: 'https://worker.example/?embed=backup' },
+    ];
+    let resolveBackup;
+    let slowAborted = false;
+    const fetchFn = (url, { signal }) => {
+      const embed = new URL(url).searchParams.get('embed');
+      if (embed === 'fast') return Promise.resolve(Response.json({ available: true }));
+      if (embed === 'backup') {
+        return new Promise(resolve => { resolveBackup = resolve; });
+      }
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          slowAborted = true;
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      });
+    };
+
+    const probe = probeAvailableHlsSources(sources, fetchFn);
+    await expect(probe.first).resolves.toBe(sources[1]);
+
+    resolveBackup(Response.json({ available: true }));
+    await expect(probe.complete).resolves.toEqual([sources[1], sources[2]]);
+    expect(slowAborted).toBe(true);
+  });
+
+  it('stops waiting for an unresponsive source after four seconds', async () => {
+    vi.useFakeTimers();
+    const source = { type: 'hls', url: 'https://worker.example/?embed=slow' };
+    const fetchFn = (_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+    });
+
+    try {
+      const probe = probeAvailableHlsSources([source], fetchFn);
+      await vi.advanceTimersByTimeAsync(4_000);
+      await expect(probe.first).resolves.toBeNull();
+      await expect(probe.complete).resolves.toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

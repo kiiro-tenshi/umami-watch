@@ -57,6 +57,86 @@ export function buildProxiedHlsSources(sourceData, workerBase) {
   });
 }
 
+const SOURCE_PROBE_TIMEOUT_MS = 4_000;
+
+async function checkHlsSource(source, fetchFn, controllers) {
+  if (source.type !== 'hls') return null;
+  const probeUrl = new URL(source.url);
+  probeUrl.searchParams.set('probe', '1');
+  const controller = new AbortController();
+  controllers.add(controller);
+  const timeout = setTimeout(() => controller.abort(), SOURCE_PROBE_TIMEOUT_MS);
+
+  try {
+    const response = await fetchFn(probeUrl.toString(), { signal: controller.signal });
+    if (!response.ok) return null;
+
+    const contentType = response.headers?.get?.('content-type') || '';
+    // Backward compatibility while the updated Worker is being deployed: the
+    // previous Worker ignores probe=1 and returns the HLS manifest itself.
+    if (/mpegurl/i.test(contentType)) return source;
+
+    const result = await response.json();
+    return result?.available ? source : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+    controllers.delete(controller);
+  }
+}
+
+// Starts every check together. `first` resolves as soon as one mirror works;
+// `complete` keeps going only until a second mirror is found (or all checks end).
+export function probeAvailableHlsSources(sources, fetchFn = fetch, maxSources = 2) {
+  const candidates = sources.filter(source => source.type === 'hls');
+  const controllers = new Set();
+  let available = [];
+  let settled = 0;
+  let finished = false;
+  let resolveFirst;
+  let resolveComplete;
+  const first = new Promise(resolve => { resolveFirst = resolve; });
+  const complete = new Promise(resolve => { resolveComplete = resolve; });
+
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    const result = [...available];
+    resolveFirst(result[0] || null);
+    resolveComplete(result);
+    controllers.forEach(controller => controller.abort());
+    controllers.clear();
+  };
+
+  if (!candidates.length || maxSources < 1) {
+    finish();
+  } else {
+    candidates.forEach(source => {
+      checkHlsSource(source, fetchFn, controllers).then(result => {
+        settled += 1;
+        if (finished) return;
+        if (result) {
+          available = [...available, result];
+          if (available.length === 1) resolveFirst(result);
+        }
+        if (available.length >= maxSources || settled === candidates.length) finish();
+      });
+    });
+  }
+
+  return {
+    first,
+    complete,
+    cancel: finish,
+  };
+}
+
+export async function filterAvailableHlsSources(sources, fetchFn = fetch, maxSources = 2) {
+  const probe = probeAvailableHlsSources(sources, fetchFn, maxSources);
+  return probe.complete;
+}
+
 export function findNextHlsSource(sources, currentIndex, failedUrls = new Set()) {
   for (let index = currentIndex + 1; index < sources.length; index += 1) {
     if (sources[index]?.type === 'hls' && !failedUrls.has(sources[index].url)) return index;

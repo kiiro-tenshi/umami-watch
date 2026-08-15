@@ -69,9 +69,9 @@ function subtitleTracks(url) {
   return tracks;
 }
 
-// Parse the supported embeds, then return only the two preferred HLS mirrors.
-// The Cloudflare Worker resolves each embed so IP/ASN-bound manifest tokens are
-// minted and consumed at Cloudflare, never at Cloud Run.
+// Parse and prioritize a small HLS candidate pool. The Cloudflare Worker verifies
+// availability and resolves each embed so IP/ASN-bound manifest tokens are minted
+// and consumed at Cloudflare, never at Cloud Run.
 export function parseHlsEmbedSources(html) {
   const raw = [];
   const buttonRe = /<button\b([^>]*)>([\s\S]*?)<\/button>/gi;
@@ -100,18 +100,18 @@ export function parseHlsEmbedSources(html) {
     return { ...source, label: source.kind + ' ' + count };
   });
 
-  // Most mirrors are dead or intermittently blocked. Prefer the two hard-sub
-  // providers that consistently resolve through the Cloudflare Worker instead
-  // of making the player walk through every button on the page.
-  const preferredHosts = ['otakuvid.online', 'otakuhg.site'];
-  const preferred = preferredHosts.flatMap(host =>
-    labeled.filter(source => source.kind === 'Hard Sub' && new URL(source.embedUrl).hostname === host)
-  );
-  if (preferred.length >= 2) return preferred.slice(0, 2);
-
-  // Keep playback available on unusual pages that do not expose both preferred
-  // mirrors, but still cap the UI and automatic fallback at two sources.
-  return [...preferred, ...labeled.filter(source => !preferred.includes(source))].slice(0, 2);
+  // Return a small prioritized candidate pool. The browser asks the Cloudflare
+  // Worker to verify these and displays only the first two that really work.
+  // Provider priority applies to both hard and soft subs, which matters for shows
+  // such as Grand Blue that do not expose any hard-sub mirrors.
+  const kindRank = { 'Hard Sub': 0, 'Soft Sub': 1, Dub: 2, HLS: 3 };
+  const hostRank = { 'otakuvid.online': 0, 'otakuhg.site': 1, 'vivibebe.site': 2 };
+  return labeled.sort((left, right) => {
+    const leftUrl = new URL(left.embedUrl);
+    const rightUrl = new URL(right.embedUrl);
+    return ((kindRank[left.kind] ?? 9) * 10 + (hostRank[leftUrl.hostname] ?? 9))
+      - ((kindRank[right.kind] ?? 9) * 10 + (hostRank[rightUrl.hostname] ?? 9));
+  }).slice(0, 4);
 }
 
 // GET /api/anime/gogoanime/search?q=

@@ -8,6 +8,7 @@ import {
   getGogoanimeSource,
   pickBestShow,
   buildProxiedHlsSources,
+  probeAvailableHlsSources,
   findNextHlsSource,
 } from '../api/gogoanime';
 import { getAnimeById } from '../api/anilist';
@@ -162,6 +163,7 @@ export default function WatchPage() {
     if (roomId && roomData === null) return;
 
     let cancelled = false;
+    let cancelSourceProbe = () => {};
 
     async function fetchStream() {
       setLoading(true);
@@ -173,6 +175,7 @@ export default function WatchPage() {
         let subtitleTracks = [];
         let streamType = 'hls';
         let streamSourceList = [];
+        let progressiveSourcesPromise = null;
 
         if (type === 'anime') {
           if (!kitsuId) {
@@ -222,9 +225,13 @@ export default function WatchPage() {
           // The Worker resolves embeds and fetches all manifests/segments itself.
           // Signed URLs never pass through Cloud Run, so Google carries no video egress.
           const sourceData = await getGogoanimeSource(matchedShow.slug, epNum);
-          const hlsSources = buildProxiedHlsSources(sourceData, import.meta.env.VITE_HLS_PROXY_URL);
-          if (!hlsSources.length) throw new Error('No HLS sources found for this episode.');
-          const firstSource = hlsSources[0];
+          const candidates = buildProxiedHlsSources(sourceData, import.meta.env.VITE_HLS_PROXY_URL);
+          const sourceProbe = probeAvailableHlsSources(candidates);
+          cancelSourceProbe = sourceProbe.cancel;
+          const firstSource = await sourceProbe.first;
+          if (!firstSource) throw new Error('No HLS sources found for this episode.');
+          const hlsSources = [firstSource];
+          progressiveSourcesPromise = sourceProbe.complete;
 
           if (!cancelled) {
             failedSourceUrlsRef.current = new Set();
@@ -294,6 +301,33 @@ export default function WatchPage() {
               })
             }).catch(console.error);
           }
+
+          // Playback starts after the first successful probe. Add the second
+          // verified mirror later without replacing or restarting the player.
+          if (progressiveSourcesPromise) {
+            const initialSourceCount = streamSourceList.length;
+            void progressiveSourcesPromise.then(async verifiedSources => {
+              if (cancelled || verifiedSources.length <= initialSourceCount) return;
+              setSources(verifiedSources);
+
+              // Keep watch-party viewers' fallback list in step with the host.
+              // Re-sending the same streamUrl updates sources without remounting.
+              if (roomId && isHost) {
+                const t = await auth.currentUser.getIdToken();
+                if (cancelled) return;
+                await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/rooms/${roomId}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+                  body: JSON.stringify({
+                    streamUrl: url,
+                    streamType,
+                    tracks: subtitleTracks,
+                    streamSources: verifiedSources,
+                  }),
+                }).catch(console.error);
+              }
+            });
+          }
         } else {
           setError('No stream found for this content.');
         }
@@ -305,7 +339,10 @@ export default function WatchPage() {
     }
 
     fetchStream();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      cancelSourceProbe();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, kitsuId, animeSource, epNum, tmdbId, season, episode, isHost, roomId, roomData !== null]);
 

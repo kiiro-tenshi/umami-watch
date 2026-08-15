@@ -1,5 +1,8 @@
 const SUPPORTED_EMBED_HOSTS = new Set(['vivibebe.site', 'otakuhg.site', 'otakuvid.online']);
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+const PROBE_TIMEOUT_MS = 3_500;
+const AVAILABLE_CACHE_SECONDS = 60;
+const UNAVAILABLE_CACHE_SECONDS = 15;
 
 function decodeJsString(value) {
   return value.replace(/\\(x[0-9a-f]{2}|u[0-9a-f]{4}|n|r|t|b|f|v|0|\\|'|")/gi, (_match, escape) => {
@@ -48,13 +51,14 @@ export function extractHlsFromEmbedHtml(html, embedUrl) {
   return unpacked.match(/https?:\/\/[^"'\s<>]+\.m3u8[^"'\s<>]*/i)?.[0] || null;
 }
 
-async function resolveEmbed(embedUrl, pageReferer) {
+async function resolveEmbed(embedUrl, pageReferer, signal) {
   const parsed = new URL(embedUrl);
   if (parsed.protocol !== 'https:' || !SUPPORTED_EMBED_HOSTS.has(parsed.hostname)) {
     throw new Error('Unsupported embed host');
   }
 
   const response = await fetch(parsed.href, {
+    signal,
     headers: {
       'Referer': pageReferer,
       'Origin': new URL(pageReferer).origin,
@@ -66,6 +70,54 @@ async function resolveEmbed(embedUrl, pageReferer) {
   const hlsUrl = extractHlsFromEmbedHtml(await response.text(), parsed.href);
   if (!hlsUrl) throw new Error('No HLS manifest found in embed');
   return { hlsUrl, referer: parsed.origin + '/' };
+}
+
+function upstreamHeaders(referer, extra = {}) {
+  return {
+    'Referer': referer,
+    'Origin': new URL(referer).origin,
+    'User-Agent': UA,
+    ...extra,
+  };
+}
+
+async function probeHls(hlsUrl, referer, signal) {
+  let manifestUrl = hlsUrl;
+
+  // Follow a master playlist into its first media playlist. Two levels covers
+  // the providers used here while keeping probes cheap at the Worker edge.
+  for (let depth = 0; depth < 2; depth += 1) {
+    const response = await fetch(manifestUrl, { signal, headers: upstreamHeaders(referer) });
+    const contentType = response.headers.get('content-type') || '';
+    if (!response.ok || contentType.includes('text/html')) return false;
+
+    const manifest = await response.text();
+    if (!manifest.includes('#EXTM3U')) return false;
+    const firstUri = manifest.split('\n')
+      .map(line => line.trim())
+      .find(line => line && !line.startsWith('#'));
+    if (!firstUri) return false;
+
+    const resolvedUri = new URL(firstUri, manifestUrl).href;
+    if (manifest.includes('#EXT-X-STREAM-INF')) {
+      manifestUrl = resolvedUri;
+      continue;
+    }
+
+    // Validate that the CDN will actually serve media, not just a manifest.
+    // Cancel immediately after headers arrive so the availability check does not
+    // download a complete segment.
+    const segment = await fetch(resolvedUri, {
+      signal,
+      headers: upstreamHeaders(referer, { Range: 'bytes=0-1023' }),
+    });
+    const segmentType = segment.headers.get('content-type') || '';
+    const available = segment.ok && !segmentType.includes('text/html');
+    await segment.body?.cancel().catch(() => {});
+    return available;
+  }
+
+  return false;
 }
 
 export default {
@@ -85,9 +137,47 @@ export default {
 
     const targetUrl = url.searchParams.get('url');
     const embedUrl = url.searchParams.get('embed');
+    const wantsProbe = url.searchParams.get('probe') === '1';
 
     if (!targetUrl && !embedUrl) {
       return new Response('url or embed parameter required', { status: 400, headers: CORS });
+    }
+
+    // Probe responses are short-lived at the edge: working streams usually return
+    // instantly on repeat visits, while a temporary failure is retried after 15 s.
+    if (wantsProbe) {
+      const cache = caches.default;
+      const cached = await cache.match(request);
+      if (cached) return cached;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      let available = false;
+      try {
+        let hlsUrl = targetUrl;
+        let probeReferer;
+        if (embedUrl) {
+          const resolved = await resolveEmbed(
+            embedUrl,
+            url.searchParams.get('referer') || 'https://anineko.to/',
+            controller.signal
+          );
+          hlsUrl = resolved.hlsUrl;
+          probeReferer = resolved.referer;
+        }
+        probeReferer = probeReferer
+          || url.searchParams.get('referer')
+          || new URL(hlsUrl).origin + '/';
+        available = await probeHls(hlsUrl, probeReferer, controller.signal);
+      } catch { /* unavailable or timed out */ }
+      finally { clearTimeout(timeout); }
+
+      const maxAge = available ? AVAILABLE_CACHE_SECONDS : UNAVAILABLE_CACHE_SECONDS;
+      const response = Response.json({ available }, {
+        headers: { ...CORS, 'Cache-Control': `public, max-age=${maxAge}` },
+      });
+      ctx.waitUntil(cache.put(request, response.clone()));
+      return response;
     }
 
     let decodedUrl;

@@ -85,7 +85,7 @@ sequenceDiagram
 
 ### 1. Anime Streaming via GogoAnime
 
-Anime streams are sourced from **GogoAnime** (`anineko.to`). The server returns at most two HLS embeds for each episode, preferring Hard Sub 3 (`otakuvid.online`) and Hard Sub 2 (`otakuhg.site`). The browser sends only those embed URLs to the Cloudflare Worker.
+Anime streams are sourced from **GogoAnime** (`anineko.to`). The server returns up to four prioritized HLS candidates, preferring `otakuvid.online` and `otakuhg.site` for both hard and soft subs. The browser asks the Cloudflare Worker to verify each candidate, starts playback as soon as the first mirror succeeds, and adds at most one verified backup in the background. Probe results are cached at the Cloudflare edge for 60 seconds when available and 15 seconds when unavailable.
 
 Why GogoAnime:
 - No CAPTCHA, no token decryption, freely scrapable server-side.
