@@ -23,6 +23,7 @@ const mockHlsInstance = {
   destroy: vi.fn(),
   levels: [],
   currentLevel: -1,
+  config: {},
 };
 
 vi.mock('plyr', () => ({
@@ -31,7 +32,10 @@ vi.mock('plyr', () => ({
 
 vi.mock('hls.js', () => ({
   default: Object.assign(
-    vi.fn(() => mockHlsInstance),
+    vi.fn(config => {
+      mockHlsInstance.config = { ...config };
+      return mockHlsInstance;
+    }),
     {
       isSupported: vi.fn(() => false), // force non-HLS path for most tests
       Events: { ERROR: 'hlsError', MANIFEST_PARSED: 'manifestParsed', FRAG_BUFFERED: 'fragBuffered' },
@@ -41,7 +45,7 @@ vi.mock('hls.js', () => ({
 
 vi.mock('plyr/dist/plyr.css', () => ({}));
 
-import VideoPlayer from './VideoPlayer.jsx';
+import VideoPlayer, { getAdaptiveBufferConfig } from './VideoPlayer.jsx';
 import Plyr from 'plyr';
 import Hls from 'hls.js';
 
@@ -52,7 +56,58 @@ describe('VideoPlayer', () => {
     mockHlsHandlers.clear();
     mockPlyrInstance.elements.container.replaceChildren();
     mockPlyrInstance.elements.controls.replaceChildren();
+    mockHlsInstance.config = {};
     Hls.isSupported.mockReturnValue(false);
+  });
+
+  it('uses conservative, balanced, and fast adaptive buffer profiles', () => {
+    expect(getAdaptiveBufferConfig({
+      userAgent: 'Mobile',
+      deviceMemory: 4,
+      connection: { type: 'cellular', effectiveType: '4g', downlink: 20 },
+    })).toMatchObject({ maxBufferLength: 30, maxMaxBufferLength: 60 });
+
+    expect(getAdaptiveBufferConfig({ userAgent: 'Desktop', deviceMemory: 4 }))
+      .toMatchObject({ maxBufferLength: 60, maxMaxBufferLength: 120 });
+
+    expect(getAdaptiveBufferConfig({
+      userAgent: 'Desktop',
+      deviceMemory: 8,
+      connection: { type: 'wifi', effectiveType: '4g', downlink: 20 },
+    })).toMatchObject({ maxBufferLength: 90, maxMaxBufferLength: 180 });
+  });
+
+  it('updates the active HLS buffer profile when the network changes', () => {
+    Hls.isSupported.mockReturnValue(true);
+    const originalConnection = Object.getOwnPropertyDescriptor(navigator, 'connection');
+    let changeHandler;
+    const connection = {
+      type: 'wifi',
+      effectiveType: '4g',
+      downlink: 20,
+      saveData: false,
+      addEventListener: vi.fn((_event, handler) => { changeHandler = handler; }),
+      removeEventListener: vi.fn(),
+    };
+    Object.defineProperty(navigator, 'connection', { configurable: true, value: connection });
+
+    try {
+      const { unmount } = render(
+        <VideoPlayer options={{ sources: [{ src: 'https://worker.example/stream.m3u8', type: 'application/x-mpegURL' }] }} />
+      );
+      expect(mockHlsInstance.config).toMatchObject({ maxBufferLength: 90, maxMaxBufferLength: 180 });
+
+      connection.type = 'cellular';
+      connection.effectiveType = '3g';
+      act(() => changeHandler());
+      expect(mockHlsInstance.config).toMatchObject({ maxBufferLength: 30, maxMaxBufferLength: 60 });
+
+      unmount();
+      expect(connection.removeEventListener).toHaveBeenCalledWith('change', changeHandler);
+    } finally {
+      if (originalConnection) Object.defineProperty(navigator, 'connection', originalConnection);
+      else delete navigator.connection;
+    }
   });
 
   it('renders a video element', () => {

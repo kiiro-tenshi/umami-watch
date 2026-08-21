@@ -90,6 +90,7 @@ Anime streams are sourced from **GogoAnime** (`anineko.to`). The server returns 
 Why GogoAnime:
 - No CAPTCHA, no token decryption, freely scrapable server-side.
 - The Worker resolves each provider's signed HLS manifest at the edge, rewrites every child manifest and segment URL through itself, and streams segment bytes without first buffering the complete segment. The player automatically falls back to the second HLS server on fatal errors, startup timeouts, or prolonged stalls.
+- HLS buffering adapts to the browser's reported connection: 30–60 seconds on constrained/mobile networks, 60–120 seconds by default, and 90–180 seconds on fast connections. The profile updates when the network changes.
 
 ### 2. <img src="cloudflare-worker/CF%20Logo.webp" height="20" alt="Cloudflare" /> Worker Proxy (Zero Cloud Run Egress for Video)
 

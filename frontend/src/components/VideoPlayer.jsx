@@ -13,6 +13,53 @@ const TEXT_COLORS = [
 
 const DEFAULT_CC = { enabled: false, activeLang: '', size: 100, bgOpacity: 75, color: '#ffffff', bold: false };
 
+const MB = 1024 * 1024;
+
+export function getAdaptiveBufferConfig(navigatorLike = globalThis.navigator) {
+  const connection = navigatorLike?.connection
+    || navigatorLike?.mozConnection
+    || navigatorLike?.webkitConnection;
+  const effectiveType = connection?.effectiveType || '';
+  const connectionType = connection?.type || '';
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigatorLike?.userAgent || '');
+  const lowMemory = Number(navigatorLike?.deviceMemory) > 0 && Number(navigatorLike.deviceMemory) <= 2;
+  const constrained = connection?.saveData
+    || ['slow-2g', '2g', '3g'].includes(effectiveType)
+    || connectionType === 'cellular'
+    || (isMobile && connectionType !== 'wifi')
+    || lowMemory;
+
+  if (constrained) {
+    return {
+      maxBufferLength: 30,
+      maxMaxBufferLength: 60,
+      maxBufferSize: 30 * MB,
+      backBufferLength: 30,
+      abrEwmaDefaultEstimate: 750_000,
+    };
+  }
+
+  const fast = connectionType === 'wifi'
+    || (effectiveType === '4g' && Number(connection?.downlink) >= 5);
+  if (fast) {
+    return {
+      maxBufferLength: 90,
+      maxMaxBufferLength: 180,
+      maxBufferSize: 100 * MB,
+      backBufferLength: 90,
+      abrEwmaDefaultEstimate: 3_000_000,
+    };
+  }
+
+  return {
+    maxBufferLength: 60,
+    maxMaxBufferLength: 120,
+    maxBufferSize: 60 * MB,
+    backBufferLength: 60,
+    abrEwmaDefaultEstimate: 1_500_000,
+  };
+}
+
 function parseCueText(text) {
   return (text || '')
     .replace(/<\d{2}:\d{2}:\d{2}\.\d{3}>/g, '')
@@ -140,6 +187,8 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
     let sourceFailed = false;
     let startupTimer = null;
     let stallTimer = null;
+    let connection = null;
+    let handleConnectionChange = null;
 
     const reportStreamFailure = (message, detail) => {
       if (cleanedUp || sourceFailed) return;
@@ -188,15 +237,12 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
     video.addEventListener('canplay', handlePlaybackResumed);
 
     if (isM3u8 && Hls.isSupported()) {
+      const adaptiveBuffer = getAdaptiveBufferConfig();
       const hls = new Hls({
         enableWorker: true,
         autoStartLoad: true,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
-        maxBufferSize: 30 * 1000 * 1000,
-        backBufferLength: 30,
+        ...adaptiveBuffer,
         startLevel: -1,
-        abrEwmaDefaultEstimate: 1_000_000,
         fragLoadPolicy: {
           default: {
             maxTimeToFirstByteMs: 10_000,
@@ -215,6 +261,12 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
         },
       });
       hlsRef.current = hls;
+
+      connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      handleConnectionChange = () => {
+        Object.assign(hls.config, getAdaptiveBufferConfig());
+      };
+      connection?.addEventListener?.('change', handleConnectionChange);
 
       hls.on(Hls.Events.ERROR, (_e, data) => {
         if (data.fatal) {
@@ -298,6 +350,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
       video.removeEventListener('stalled', armStallTimer);
       video.removeEventListener('playing', handlePlaybackResumed);
       video.removeEventListener('canplay', handlePlaybackResumed);
+      connection?.removeEventListener?.('change', handleConnectionChange);
       if (playerRef.current) { playerRef.current.destroy(); playerRef.current = null; }
       if (hlsRef.current)    { hlsRef.current.destroy();    hlsRef.current    = null; }
       setPlyrContainer(null);
