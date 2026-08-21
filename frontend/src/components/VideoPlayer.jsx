@@ -22,11 +22,17 @@ function parseCueText(text) {
     .replace(/<rt>.*?<\/rt>/gs, '');
 }
 
-export default function VideoPlayer({ options, tracks = [], onReady, onError, token, loadingMessage }) {
+export default function VideoPlayer({ options, tracks = [], onReady, onError, onRetry, token, loadingMessage }) {
   const videoRef    = useRef(null);
   const playerRef   = useRef(null);
   const hlsRef      = useRef(null);
   const cueTrackRef = useRef(null);
+  const onReadyRef  = useRef(onReady);
+  const onErrorRef  = useRef(onError);
+  const onRetryRef  = useRef(onRetry);
+  onReadyRef.current = onReady;
+  onErrorRef.current = onError;
+  onRetryRef.current = onRetry;
 
   const [isLoading,     setIsLoading]     = useState(true);
   const [playerError,   setPlayerError]   = useState(null);
@@ -140,9 +146,9 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       sourceFailed = true;
       clearTimeout(startupTimer);
       clearTimeout(stallTimer);
-      setPlayerError(message);
       setIsLoading(false);
-      if (onError) onError(detail || new Error(message));
+      const handled = onErrorRef.current?.(detail || new Error(message)) === true;
+      if (!handled) setPlayerError(message);
     };
 
     const clearStallTimer = () => {
@@ -152,16 +158,34 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
 
     const armStallTimer = () => {
       if (video.paused || sourceFailed) return;
-      clearStallTimer();
+      // Repeated `waiting` events must not restart the clock forever. That left
+      // some streams buffering indefinitely without ever reaching recovery.
+      if (stallTimer) return;
+      const stalledAt = video.currentTime;
       stallTimer = setTimeout(() => {
+        stallTimer = null;
+        // Some browsers omit `playing` after a short recovery. Current-time
+        // progress is authoritative and avoids switching a stream that resumed.
+        if (video.paused || video.currentTime > stalledAt + 0.5) return;
         reportStreamFailure('Stream stalled. Switching source...', { fatal: true, type: 'stall' });
       }, 15_000);
     };
 
+    const handlePlaybackResumed = () => {
+      clearStallTimer();
+      // HLS may recover after its own retry finishes. Never leave a stale error
+      // over video that is visibly advancing again.
+      if (sourceFailed) {
+        sourceFailed = false;
+        setPlayerError(null);
+        setIsLoading(false);
+      }
+    };
+
     video.addEventListener('waiting', armStallTimer);
     video.addEventListener('stalled', armStallTimer);
-    video.addEventListener('playing', clearStallTimer);
-    video.addEventListener('canplay', clearStallTimer);
+    video.addEventListener('playing', handlePlaybackResumed);
+    video.addEventListener('canplay', handlePlaybackResumed);
 
     if (isM3u8 && Hls.isSupported()) {
       const hls = new Hls({
@@ -225,7 +249,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
         });
         initPlayer(player);
         setIsLoading(false);
-        if (onReady) onReady(player);
+        if (onReadyRef.current) onReadyRef.current(player);
       });
 
     } else {
@@ -241,8 +265,8 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
         if (settled || cleanedUp) return;
         settled = true;
         setIsLoading(false);
-        if (errMsg) { setPlayerError(errMsg); if (onError) onError(new Error(errMsg)); }
-        else if (onReady) { try { onReady(player); } catch(e) { console.error('[VideoPlayer] onReady threw:', e); } }
+        if (errMsg) { setPlayerError(errMsg); if (onErrorRef.current) onErrorRef.current(new Error(errMsg)); }
+        else if (onReadyRef.current) { try { onReadyRef.current(player); } catch(e) { console.error('[VideoPlayer] onReady threw:', e); } }
       };
 
       const timeout = setTimeout(
@@ -272,8 +296,8 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       clearStallTimer();
       video.removeEventListener('waiting', armStallTimer);
       video.removeEventListener('stalled', armStallTimer);
-      video.removeEventListener('playing', clearStallTimer);
-      video.removeEventListener('canplay', clearStallTimer);
+      video.removeEventListener('playing', handlePlaybackResumed);
+      video.removeEventListener('canplay', handlePlaybackResumed);
       if (playerRef.current) { playerRef.current.destroy(); playerRef.current = null; }
       if (hlsRef.current)    { hlsRef.current.destroy();    hlsRef.current    = null; }
       setPlyrContainer(null);
@@ -362,6 +386,32 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
   };
 
   const hasTracks = tracks.length > 0;
+  const retryPlayback = () => {
+    setPlayerError(null);
+    const handled = onRetryRef.current?.() === true;
+    if (!handled) {
+      setIsLoading(true);
+      videoRef.current?.load();
+    }
+  };
+  const loadingOverlay = (
+    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-10">
+      <div className="w-10 h-10 border-4 border-white/20 border-t-white rounded-full animate-spin mb-3" />
+      <p className="text-white/60 text-sm font-medium">{loadingMessage || 'Loading stream...'}</p>
+    </div>
+  );
+  const errorOverlay = (
+    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-10 gap-3 p-6 text-center">
+      <svg className="w-10 h-10 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <p className="text-red-400 font-semibold">{playerError}</p>
+      <button
+        onClick={retryPlayback}
+        className="text-sm bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition-colors"
+      >Retry</button>
+    </div>
+  );
 
   return (
     <div className="w-full h-full relative bg-black" onTouchEnd={handleTouchEnd}>
@@ -479,26 +529,14 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, to
       )}
 
       {/* Loading overlay */}
-      {isLoading && !playerError && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-10">
-          <div className="w-10 h-10 border-4 border-white/20 border-t-white rounded-full animate-spin mb-3" />
-          <p className="text-white/60 text-sm font-medium">{loadingMessage || 'Loading stream...'}</p>
-        </div>
-      )}
+      {isLoading && !playerError && (plyrContainer
+        ? createPortal(loadingOverlay, plyrContainer)
+        : loadingOverlay)}
 
       {/* Error overlay */}
-      {playerError && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-10 gap-3 p-6 text-center">
-          <svg className="w-10 h-10 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <p className="text-red-400 font-semibold">{playerError}</p>
-          <button
-            onClick={() => { setPlayerError(null); setIsLoading(true); videoRef.current?.load(); }}
-            className="text-sm bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition-colors"
-          >Retry</button>
-        </div>
-      )}
+      {playerError && (plyrContainer
+        ? createPortal(errorOverlay, plyrContainer)
+        : errorOverlay)}
 
       {/* Double-tap seek indicator — rendered last so React appends rather than
           insertBefore the <video>, which Plyr has moved inside its own wrapper */}

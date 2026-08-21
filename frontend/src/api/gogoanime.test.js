@@ -5,6 +5,7 @@ import {
   filterAvailableHlsSources,
   probeAvailableHlsSources,
   findNextHlsSource,
+  planHlsRecovery,
 } from './gogoanime.js';
 
 const FRIEREN_SHOWS = [
@@ -133,7 +134,19 @@ describe('Cloudflare HLS source helpers', () => {
       { type: 'hls', url: 'three' },
     ];
     expect(findNextHlsSource(sources, 0, new Set(['two']))).toBe(2);
-    expect(findNextHlsSource(sources, 2)).toBe(-1);
+    expect(findNextHlsSource(sources, 2)).toBe(0);
+    expect(findNextHlsSource(sources, 2, new Set(['one', 'two']))).toBe(-1);
+  });
+
+  it('switches circularly, retries a sole source once, then stops', () => {
+    const sources = [
+      { type: 'hls', url: 'one' },
+      { type: 'hls', url: 'two' },
+    ];
+    expect(planHlsRecovery(sources, 1, new Set(), 0)).toEqual({ action: 'switch', nextIndex: 0 });
+    expect(planHlsRecovery([sources[0]], 0, new Set(), 0)).toEqual({ action: 'retry' });
+    expect(planHlsRecovery([sources[0]], 0, new Set(), 1)).toEqual({ action: 'error' });
+    expect(planHlsRecovery(sources, 1, new Set(['one']), 1)).toEqual({ action: 'error' });
   });
 
   it('keeps only verified sources and caps the displayed list at two', async () => {

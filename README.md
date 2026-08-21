@@ -96,7 +96,7 @@ Why GogoAnime:
 All HLS bandwidth is routed through the **Cloudflare Worker** (`umami-hls-proxy`) instead of Cloud Run, eliminating video egress charges entirely:
 
 - **HLS path** — The Worker resolves provider embeds, rewrites `.m3u8` manifests so all segment URLs point back through itself, and caches segments at the Cloudflare edge (1h TTL).
-- **Fallback** — The player switches between Cloudflare-resolved HLS sources. Anime playback refuses to fall back to `/api/proxy/hls`, preventing accidental Cloud Run video egress.
+- **Fallback** — The player switches circularly between verified Cloudflare-resolved HLS sources, retries a sole stalled source once, and preserves watch-party position during recovery. Anime playback refuses to fall back to `/api/proxy/hls`, preventing accidental Cloud Run video egress.
 
 A ~400MB episode stream generates **zero Cloud Run egress charges**.
 

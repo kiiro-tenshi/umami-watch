@@ -138,10 +138,23 @@ export async function filterAvailableHlsSources(sources, fetchFn = fetch, maxSou
 }
 
 export function findNextHlsSource(sources, currentIndex, failedUrls = new Set()) {
-  for (let index = currentIndex + 1; index < sources.length; index += 1) {
+  for (let offset = 1; offset < sources.length; offset += 1) {
+    const index = (currentIndex + offset) % sources.length;
     if (sources[index]?.type === 'hls' && !failedUrls.has(sources[index].url)) return index;
   }
   return -1;
+}
+
+export function planHlsRecovery(sources, currentIndex, failedUrls = new Set(), retryCount = 0) {
+  const current = sources[currentIndex];
+  if (!current) return { action: 'error' };
+
+  const unavailable = new Set(failedUrls);
+  unavailable.add(current.url);
+  const nextIndex = findNextHlsSource(sources, currentIndex, unavailable);
+  if (nextIndex >= 0) return { action: 'switch', nextIndex };
+  if (retryCount < 1) return { action: 'retry' };
+  return { action: 'error' };
 }
 
 export function pickBestShow(shows, searchTitle) {

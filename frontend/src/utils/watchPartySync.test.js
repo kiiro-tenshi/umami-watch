@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reconcileRoomStream, shouldJoinRoomSocket } from './watchPartySync';
+import { canApplySyncPosition, reconcileRoomStream, shouldJoinRoomSocket } from './watchPartySync';
 
 describe('reconcileRoomStream', () => {
   const streamUrl = 'https://worker.example/manifest.m3u8';
@@ -31,5 +31,17 @@ describe('shouldJoinRoomSocket', () => {
     expect(shouldJoinRoomSocket(null, 'socket-1')).toBe(true);
     expect(shouldJoinRoomSocket('socket-1', 'socket-1')).toBe(false);
     expect(shouldJoinRoomSocket('socket-1', 'socket-2')).toBe(true);
+  });
+});
+
+describe('canApplySyncPosition', () => {
+  it('defers heartbeat seeks while the viewer is buffering', () => {
+    expect(canApplySyncPosition({ media: { readyState: 2, seeking: false } })).toBe(false);
+    expect(canApplySyncPosition({ media: { readyState: 4, seeking: true } })).toBe(false);
+  });
+
+  it('allows a single catch-up seek after playback can advance', () => {
+    expect(canApplySyncPosition({ media: { readyState: 3, seeking: false } })).toBe(true);
+    expect(canApplySyncPosition({ readyState: 4, seeking: false })).toBe(true);
   });
 });

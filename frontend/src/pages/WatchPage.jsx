@@ -9,11 +9,11 @@ import {
   pickBestShow,
   buildProxiedHlsSources,
   probeAvailableHlsSources,
-  findNextHlsSource,
+  planHlsRecovery,
 } from '../api/gogoanime';
 import { getAnimeById } from '../api/anilist';
 import { buildAnimeWatchUrl, findExactAnimeTitleMatch, getAnimeHistoryKey, normalizeAnimeSource } from '../utils/animeRouting';
-import { reconcileRoomStream, shouldJoinRoomSocket } from '../utils/watchPartySync';
+import { canApplySyncPosition, reconcileRoomStream, shouldJoinRoomSocket } from '../utils/watchPartySync';
 import { getMovieDetail, getTVDetail, getTVSeason } from '../api/tmdb';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
@@ -55,6 +55,7 @@ export default function WatchPage() {
   const [streamUrl, setStreamUrl] = useState(null);
   const [sources, setSources] = useState([]);
   const [activeSourceIdx, setActiveSourceIdx] = useState(0);
+  const [streamRetryNonce, setStreamRetryNonce] = useState(0);
   const [activeTracks, setActiveTracks] = useState([]);
   const [contentDetails, setContentDetails] = useState(null);
   const [roomData, setRoomData] = useState(null);
@@ -72,6 +73,7 @@ export default function WatchPage() {
   const episodeListRef = useRef(null);
   const pendingSyncRef = useRef(null); // buffers sync:state that arrives before player is ready
   const failedSourceUrlsRef = useRef(new Set());
+  const sourceRetryCountsRef = useRef(new Map());
   const streamUrlRef = useRef(null);
   const resumePositionRef = useRef(null);
   const resumePlayingRef = useRef(false);
@@ -135,6 +137,8 @@ export default function WatchPage() {
             : [{ type: srcType, url: data.streamUrl, label: 'Stream', tracks: data.tracks || [] }];
           const activeIndex = Math.max(0, roomSources.findIndex(source => source.url === data.streamUrl));
           failedSourceUrlsRef.current = new Set();
+          sourceRetryCountsRef.current = new Map();
+          setStreamRetryNonce(0);
           setSources(roomSources);
           setActiveSourceIdx(activeIndex);
           setActiveTracks(roomSources[activeIndex]?.tracks || data.tracks || []);
@@ -235,6 +239,8 @@ export default function WatchPage() {
 
           if (!cancelled) {
             failedSourceUrlsRef.current = new Set();
+            sourceRetryCountsRef.current = new Map();
+            setStreamRetryNonce(0);
             setSources(hlsSources);
             setActiveSourceIdx(0);
             setActiveTracks(firstSource.tracks);
@@ -411,7 +417,8 @@ export default function WatchPage() {
         return;
       }
       if (typeof position === 'number' && Math.abs(p.currentTime - position) > 6) {
-        p.currentTime = position;
+        if (canApplySyncPosition(p)) p.currentTime = position;
+        else pendingSyncRef.current = { position, playing };
       }
       if (playing && p.paused) p.play().catch(() => {});
       if (!playing && !p.paused) p.pause();
@@ -419,20 +426,27 @@ export default function WatchPage() {
     const onPlay = (pos) => {
       const p = playerRef.current;
       if (!p || isHost) return;
-      if (Math.abs(p.currentTime - pos) > 6) p.currentTime = pos;
+      if (Math.abs(p.currentTime - pos) > 6) {
+        if (canApplySyncPosition(p)) p.currentTime = pos;
+        else pendingSyncRef.current = { position: pos, playing: true };
+      }
       p.play().catch(() => {});
     };
     const onPause = (pos) => {
       const p = playerRef.current;
       if (!p || isHost) return;
       // Only re-seek if significantly out of sync; minor drift doesn't need a seek on pause
-      if (Math.abs(p.currentTime - pos) > 5) p.currentTime = pos;
+      if (Math.abs(p.currentTime - pos) > 5) {
+        if (canApplySyncPosition(p)) p.currentTime = pos;
+        else pendingSyncRef.current = { position: pos, playing: false };
+      }
       p.pause();
     };
     const onSeek = (pos) => {
       const p = playerRef.current;
       if (!p || isHost) return;
-      p.currentTime = pos;
+      if (canApplySyncPosition(p)) p.currentTime = pos;
+      else pendingSyncRef.current = { position: pos, playing: !p.paused };
     };
     // Host: a viewer needs an immediate sync
     const onViewerNeedsSync = (viewerSocketId) => {
@@ -447,13 +461,16 @@ export default function WatchPage() {
       if (isHost) return; // host already has the new stream; skip player/source updates
       const nextStream = reconcileRoomStream(streamUrlRef.current, data);
       if (nextStream) {
-        // Only clear the ref when React will really remount VideoPlayer. Reconnects
-        // resend the same URL; clearing it then made all future sync events miss
-        // the still-mounted player.
-        if (nextStream.streamChanged) playerRef.current = null;
-        streamUrlRef.current = nextStream.streamUrl;
-        setStreamUrl(nextStream.streamUrl);
-        failedSourceUrlsRef.current = new Set();
+        // A same-URL update only adds verified fallback metadata. Do not reset the
+        // active player or its recovery state while it is already playing.
+        if (nextStream.streamChanged) {
+          playerRef.current = null;
+          streamUrlRef.current = nextStream.streamUrl;
+          setStreamUrl(nextStream.streamUrl);
+          failedSourceUrlsRef.current = new Set();
+          sourceRetryCountsRef.current = new Map();
+          setStreamRetryNonce(0);
+        }
         setSources(nextStream.sources);
         setActiveSourceIdx(nextStream.activeIndex);
         setActiveTracks(nextStream.tracks);
@@ -569,6 +586,18 @@ export default function WatchPage() {
 
   const handlePlayerReady = (player) => {
     playerRef.current = player;
+    const applyPendingSync = () => {
+      const pending = pendingSyncRef.current;
+      if (!pending) return;
+      pendingSyncRef.current = null;
+      if (typeof pending.position === 'number') player.currentTime = pending.position;
+      if (pending.playing) player.play().catch(() => {});
+      else player.pause();
+    };
+    player.on('playing', () => {
+      const currentUrl = streamUrlRef.current;
+      if (currentUrl) sourceRetryCountsRef.current.delete(currentUrl);
+    });
     const resumePosition = resumePositionRef.current;
     if (resumePosition != null) {
       player.currentTime = resumePosition;
@@ -589,13 +618,14 @@ export default function WatchPage() {
         clearTimeout(seekTimer);
         seekTimer = setTimeout(() => socketRef.current?.emit('playback:seek', player.currentTime), 150);
       });
+    } else if (roomId) {
+      // Coalesce heartbeats received during buffering and catch up once media
+      // advances again instead of repeatedly cancelling slow fragment downloads.
+      player.on('playing', applyPendingSync);
     }
     // Apply buffered sync:state that arrived before player was ready
     if (roomId && !isHost && pendingSyncRef.current) {
-      const { position, playing } = pendingSyncRef.current;
-      pendingSyncRef.current = null;
-      if (typeof position === 'number') player.currentTime = position;
-      if (playing) player.play().catch(() => {});
+      applyPendingSync();
     } else if (roomId && !isHost) {
       // No buffered sync — request one immediately so we don't wait up to
       // 5 s for the next host heartbeat after a content change.
@@ -606,9 +636,12 @@ export default function WatchPage() {
   const handleSourceSwitch = (idx) => {
     const src = sources[idx];
     if (!src) return;
+    playerRef.current = null;
+    streamUrlRef.current = src.url;
     setActiveSourceIdx(idx);
     setStreamUrl(src.url);
     setActiveTracks(src.tracks || []);
+    setStreamRetryNonce(0);
 
     if (roomId && isHost) {
       auth.currentUser?.getIdToken().then(t => fetch(
@@ -629,15 +662,53 @@ export default function WatchPage() {
 
   const handleStreamError = () => {
     const current = sources[activeSourceIdx];
-    if (!current || failedSourceUrlsRef.current.has(current.url)) return;
-    const currentTime = playerRef.current?.currentTime;
+    if (!current) return false;
+    const player = playerRef.current;
+    const currentTime = player?.currentTime;
     if (Number.isFinite(currentTime) && currentTime > 0) {
       resumePositionRef.current = currentTime;
-      resumePlayingRef.current = !playerRef.current.paused;
+      resumePlayingRef.current = !player.paused;
     }
+
+    const retryCount = sourceRetryCountsRef.current.get(current.url) || 0;
+    const recovery = planHlsRecovery(
+      sources,
+      activeSourceIdx,
+      failedSourceUrlsRef.current,
+      retryCount
+    );
+    if (recovery.action === 'switch') {
+      failedSourceUrlsRef.current.add(current.url);
+      handleSourceSwitch(recovery.nextIndex);
+      return true;
+    }
+
+    // A verified mirror can still suffer a temporary CDN failure later. If no
+    // fallback remains, remount the same URL once before showing a terminal error.
+    if (recovery.action === 'retry') {
+      sourceRetryCountsRef.current.set(current.url, retryCount + 1);
+      playerRef.current = null;
+      setStreamRetryNonce(nonce => nonce + 1);
+      return true;
+    }
+
     failedSourceUrlsRef.current.add(current.url);
-    const nextIndex = findNextHlsSource(sources, activeSourceIdx, failedSourceUrlsRef.current);
-    if (nextIndex >= 0) handleSourceSwitch(nextIndex);
+    return false;
+  };
+
+  const handleStreamRetry = () => {
+    const current = sources[activeSourceIdx];
+    if (!current) return false;
+    const player = playerRef.current;
+    if (Number.isFinite(player?.currentTime) && player.currentTime > 0) {
+      resumePositionRef.current = player.currentTime;
+      resumePlayingRef.current = !player.paused;
+    }
+    failedSourceUrlsRef.current.delete(current.url);
+    sourceRetryCountsRef.current.set(current.url, 0);
+    playerRef.current = null;
+    setStreamRetryNonce(nonce => nonce + 1);
+    return true;
   };
 
 
@@ -704,11 +775,12 @@ export default function WatchPage() {
             ) : streamUrl ? (
               (isHls || isDirect) ? (
                 <VideoPlayer
-                  key={streamUrl}
+                  key={`${streamUrl}:${streamRetryNonce}`}
                   options={videoOptions}
                   tracks={activeTracks}
                   onReady={handlePlayerReady}
                   onError={handleStreamError}
+                  onRetry={handleStreamRetry}
                   token={token}
                 />
               ) : (

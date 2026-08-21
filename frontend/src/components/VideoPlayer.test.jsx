@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
@@ -15,6 +15,15 @@ const mockPlyrInstance = {
   togglePlay: vi.fn(),
   paused: true,
 };
+const mockHlsHandlers = new Map();
+const mockHlsInstance = {
+  loadSource: vi.fn(),
+  attachMedia: vi.fn(),
+  on: vi.fn((event, handler) => mockHlsHandlers.set(event, handler)),
+  destroy: vi.fn(),
+  levels: [],
+  currentLevel: -1,
+};
 
 vi.mock('plyr', () => ({
   default: vi.fn(() => mockPlyrInstance),
@@ -22,17 +31,10 @@ vi.mock('plyr', () => ({
 
 vi.mock('hls.js', () => ({
   default: Object.assign(
-    vi.fn(() => ({
-      loadSource: vi.fn(),
-      attachMedia: vi.fn(),
-      on: vi.fn(),
-      destroy: vi.fn(),
-      levels: [],
-      currentLevel: -1,
-    })),
+    vi.fn(() => mockHlsInstance),
     {
       isSupported: vi.fn(() => false), // force non-HLS path for most tests
-      Events: { ERROR: 'hlsError', MANIFEST_PARSED: 'manifestParsed' },
+      Events: { ERROR: 'hlsError', MANIFEST_PARSED: 'manifestParsed', FRAG_BUFFERED: 'fragBuffered' },
     }
   ),
 }));
@@ -41,10 +43,17 @@ vi.mock('plyr/dist/plyr.css', () => ({}));
 
 import VideoPlayer from './VideoPlayer.jsx';
 import Plyr from 'plyr';
+import Hls from 'hls.js';
 
 // ── Tests ──────────────────────────────────────────────────────────────────
 describe('VideoPlayer', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockHlsHandlers.clear();
+    mockPlyrInstance.elements.container.replaceChildren();
+    mockPlyrInstance.elements.controls.replaceChildren();
+    Hls.isSupported.mockReturnValue(false);
+  });
 
   it('renders a video element', () => {
     render(<VideoPlayer options={{ sources: [] }} />);
@@ -136,5 +145,92 @@ describe('VideoPlayer', () => {
     unmount();
 
     expect(mockPlyrDestroy).toHaveBeenCalled();
+  });
+
+  it('uses the latest recovery callback without remounting the HLS player', async () => {
+    vi.useFakeTimers();
+    Hls.isSupported.mockReturnValue(true);
+    const staleHandler = vi.fn(() => false);
+    const recoveryHandler = vi.fn(() => true);
+    const options = { sources: [{ src: 'https://worker.example/stream.m3u8', type: 'application/x-mpegURL' }] };
+
+    try {
+      const { rerender } = render(<VideoPlayer options={options} onError={staleHandler} />);
+      act(() => mockHlsHandlers.get('manifestParsed')());
+      act(() => mockHlsHandlers.get('fragBuffered')());
+      rerender(<VideoPlayer options={options} onError={recoveryHandler} />);
+
+      const video = document.querySelector('video');
+      Object.defineProperty(video, 'paused', { configurable: true, value: false });
+      act(() => video.dispatchEvent(new Event('waiting')));
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      act(() => video.dispatchEvent(new Event('waiting')));
+      await act(() => vi.advanceTimersByTimeAsync(5_000));
+
+      expect(staleHandler).not.toHaveBeenCalled();
+      expect(recoveryHandler).toHaveBeenCalledWith(expect.objectContaining({ type: 'stall' }));
+      expect(screen.queryByText('Stream stalled. Switching source...')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not report a stall when playback time is still advancing', async () => {
+    vi.useFakeTimers();
+    Hls.isSupported.mockReturnValue(true);
+    const onError = vi.fn(() => false);
+
+    try {
+      render(
+        <VideoPlayer
+          options={{ sources: [{ src: 'https://worker.example/stream.m3u8', type: 'application/x-mpegURL' }] }}
+          onError={onError}
+        />
+      );
+      act(() => mockHlsHandlers.get('manifestParsed')());
+      act(() => mockHlsHandlers.get('fragBuffered')());
+
+      const video = document.querySelector('video');
+      Object.defineProperty(video, 'paused', { configurable: true, value: false });
+      video.currentTime = 10;
+      act(() => video.dispatchEvent(new Event('waiting')));
+      video.currentTime = 11;
+      await act(() => vi.advanceTimersByTimeAsync(15_000));
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(screen.queryByText('Stream stalled. Switching source...')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a terminal HLS error visible in fullscreen and clears it if playback resumes', async () => {
+    vi.useFakeTimers();
+    Hls.isSupported.mockReturnValue(true);
+    document.body.appendChild(mockPlyrInstance.elements.container);
+
+    try {
+      render(
+        <VideoPlayer
+          options={{ sources: [{ src: 'https://worker.example/stream.m3u8', type: 'application/x-mpegURL' }] }}
+          onError={() => false}
+        />
+      );
+      act(() => mockHlsHandlers.get('manifestParsed')());
+      act(() => mockHlsHandlers.get('fragBuffered')());
+
+      const video = document.querySelector('video');
+      Object.defineProperty(video, 'paused', { configurable: true, value: false });
+      act(() => video.dispatchEvent(new Event('stalled')));
+      await act(() => vi.advanceTimersByTimeAsync(15_000));
+
+      expect(mockPlyrInstance.elements.container).toHaveTextContent('Stream stalled. Switching source...');
+
+      await act(async () => video.dispatchEvent(new Event('playing')));
+      expect(mockPlyrInstance.elements.container).not.toHaveTextContent('Stream stalled. Switching source...');
+    } finally {
+      mockPlyrInstance.elements.container.remove();
+      vi.useRealTimers();
+    }
   });
 });

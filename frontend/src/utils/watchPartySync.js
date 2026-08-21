@@ -21,3 +21,10 @@ export function reconcileRoomStream(currentUrl, data) {
 export function shouldJoinRoomSocket(lastSocketId, currentSocketId) {
   return Boolean(currentSocketId && lastSocketId !== currentSocketId);
 }
+
+export function canApplySyncPosition(player) {
+  const media = player?.media || player;
+  if (!media) return false;
+  if (media.seeking) return false;
+  return typeof media.readyState !== 'number' || media.readyState >= 3;
+}
