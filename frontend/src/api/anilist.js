@@ -121,10 +121,12 @@ export const getAnimeGenres = async () => {
 };
 
 export const getWeekAiringSchedule = async (weekStart) => {
-  const start = Math.floor(weekStart.getTime() / 1000);
+  // AniList's greater/lesser filters are exclusive, so expand the lower
+  // boundary by one second and use next Monday as the upper boundary.
+  const start = Math.floor(weekStart.getTime() / 1000) - 1;
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 7);
-  const end = Math.floor(weekEnd.getTime() / 1000) - 1;
+  const end = Math.floor(weekEnd.getTime() / 1000);
   const gql = `query($page:Int,$gt:Int,$lt:Int){
     Page(page:$page,perPage:50){
       pageInfo{hasNextPage}
@@ -135,10 +137,10 @@ export const getWeekAiringSchedule = async (weekStart) => {
     }
   }`;
   const all = [];
-  for (let page = 1; page <= 2; page++) {
+  for (let page = 1; ; page += 1) {
     const data = await gqlFetch(gql, { page, gt: start, lt: end });
-    all.push(...data.Page.airingSchedules);
-    if (!data.Page.pageInfo.hasNextPage) break;
+    all.push(...(data.Page.airingSchedules || []));
+    if (!data.Page.pageInfo?.hasNextPage) break;
   }
   return all;
 };

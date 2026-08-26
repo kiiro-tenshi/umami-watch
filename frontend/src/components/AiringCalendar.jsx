@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { getWeekAiringSchedule } from '../api/anilist';
+import { prioritizeAiringSchedules } from '../utils/airingCalendar';
 import LoadingSpinner from './LoadingSpinner';
 
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -49,7 +50,7 @@ function formatWeekRange(weekStart) {
   return `${MONTH_SHORT[s.getMonth()]} ${s.getDate()} – ${MONTH_SHORT[e.getMonth()]} ${e.getDate()}, ${e.getFullYear()}`;
 }
 
-export default function AiringCalendar() {
+export default function AiringCalendar({ currentlyWatching = [] }) {
   const today = new Date();
   const [weekStart, setWeekStart] = useState(() => getWeekStart());
   const [schedules, setSchedules] = useState([]);
@@ -72,7 +73,7 @@ export default function AiringCalendar() {
     return () => { cancelled = true; };
   }, [weekStart]);
 
-  // Group by day, sort each day by popularity desc, cap at 5
+  // Keep five compact cards per day, pinning the user's current anime first.
   const dayMap = useMemo(() => {
     const map = {};
     for (const s of schedules) {
@@ -81,11 +82,10 @@ export default function AiringCalendar() {
       map[key].push(s);
     }
     for (const key of Object.keys(map)) {
-      map[key].sort((a, b) => (b.media.popularity || 0) - (a.media.popularity || 0));
-      map[key] = map[key].slice(0, 5);
+      map[key] = prioritizeAiringSchedules(map[key], currentlyWatching);
     }
     return map;
-  }, [schedules]);
+  }, [schedules, currentlyWatching]);
 
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStart);
@@ -170,7 +170,10 @@ export default function AiringCalendar() {
                               <p className="text-[11px] font-semibold text-primary group-hover:text-accent-teal transition-colors line-clamp-2 leading-tight">
                                 {title}
                               </p>
-                              <p className="text-[10px] text-muted mt-0.5">Ep {ep.episode}{ep.media.episodes ? ` / ${ep.media.episodes}` : ''}</p>
+                              <p className="text-[10px] text-muted mt-0.5">
+                                {ep.isCurrentlyWatching && <span className="text-accent-teal font-semibold">Watching · </span>}
+                                Ep {ep.episode}{ep.media.episodes ? ` / ${ep.media.episodes}` : ''}
+                              </p>
                               <p className="text-[10px] text-muted tabular-nums">
                                 <Countdown airingAt={ep.airingAt} />
                               </p>
@@ -220,7 +223,10 @@ export default function AiringCalendar() {
                             <p className="text-[10px] font-semibold text-primary group-hover:text-accent-teal transition-colors line-clamp-2 leading-tight mt-1">
                               {title}
                             </p>
-                            <p className="text-[10px] text-muted">Ep {ep.episode}{ep.media.episodes ? ` / ${ep.media.episodes}` : ''}</p>
+                            <p className="text-[10px] text-muted">
+                              {ep.isCurrentlyWatching && <span className="text-accent-teal font-semibold">Watching · </span>}
+                              Ep {ep.episode}{ep.media.episodes ? ` / ${ep.media.episodes}` : ''}
+                            </p>
                           </Link>
                         );
                       })}

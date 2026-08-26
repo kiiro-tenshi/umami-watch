@@ -46,7 +46,7 @@ export default function HomePage() {
       <div className="px-4 md:px-8 space-y-8">
         {/* Airing Calendar */}
         <section>
-          <AiringCalendar />
+          <AiringCalendar currentlyWatching={continueWatching} />
         </section>
         {/* Continue Watching */}
         {continueWatching.length > 0 && (
