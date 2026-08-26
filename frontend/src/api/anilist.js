@@ -88,6 +88,22 @@ export const getAnimeById = async (id) => {
   return data.Media;
 };
 
+export const getAniListEpisodeSchedule = async (id) => {
+  const gql = `query($id:Int,$page:Int){
+    Page(page:$page,perPage:50){
+      pageInfo{hasNextPage}
+      airingSchedules(mediaId:$id,sort:EPISODE){ airingAt episode }
+    }
+  }`;
+  const schedule = [];
+  for (let page = 1; page <= 10; page += 1) {
+    const data = await gqlFetch(gql, { id: parseInt(id), page });
+    schedule.push(...(data.Page.airingSchedules || []));
+    if (!data.Page.pageInfo?.hasNextPage) break;
+  }
+  return schedule;
+};
+
 export const getStudioByTitle = async (title) => {
   const gql = `query($search:String){
     Media(search:$search,type:ANIME){

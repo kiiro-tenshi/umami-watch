@@ -11,8 +11,9 @@ import {
   probeAvailableHlsSources,
   planHlsRecovery,
 } from '../api/gogoanime';
-import { getAnimeById } from '../api/anilist';
+import { getAniListEpisodeSchedule, getAnimeById } from '../api/anilist';
 import { buildAnimeWatchUrl, findExactAnimeTitleMatch, getAnimeHistoryKey, normalizeAnimeSource } from '../utils/animeRouting';
+import { buildAniListEpisodes, formatEpisodeDate } from '../utils/episodeDates';
 import { canApplySyncPosition, reconcileRoomStream, shouldJoinRoomSocket } from '../utils/watchPartySync';
 import { getMovieDetail, getTVDetail, getTVSeason } from '../api/tmdb';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -352,29 +353,34 @@ export default function WatchPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, kitsuId, animeSource, epNum, tmdbId, season, episode, isHost, roomId, roomData !== null]);
 
-  // 4. Fetch all episodes for the sidebar (anime only)
-  // kitsuId may actually be an AniList ID when Kitsu doesn't have the anime yet —
-  // fall back to AniList episode count in that case.
+  // 4. Fetch provider-specific episodes and release dates for the anime sidebar.
   useEffect(() => {
     if (type !== 'anime' || !kitsuId) return;
-    const episodesRequest = animeSource === 'anilist'
-      ? Promise.reject(new Error('Use AniList episode count'))
-      : getKitsuEpisodes(kitsuId);
-    episodesRequest
-      .then(eps => {
-        if (eps.length > 0) { setAnimeEpisodes(eps); return; }
-        throw new Error('empty');
-      })
-      .catch(() => {
-        getAnimeById(kitsuId)
-          .then(a => {
-            const count = a?.episodes || 1;
-            setAnimeEpisodes(Array.from({ length: count }, (_, i) => ({
-              id: `${i + 1}`, number: i + 1, title: `Episode ${i + 1}`, isFiller: false,
-            })));
-          })
-          .catch(() => {});
-      });
+    let cancelled = false;
+    (async () => {
+      try {
+        if (animeSource === 'anilist') {
+          const [anime, airingSchedule] = await Promise.all([
+            getAnimeById(kitsuId),
+            getAniListEpisodeSchedule(kitsuId).catch(() => []),
+          ]);
+          if (!cancelled) setAnimeEpisodes(buildAniListEpisodes(anime, airingSchedule));
+          return;
+        }
+
+        const episodes = await getKitsuEpisodes(kitsuId);
+        if (cancelled) return;
+        if (episodes.length > 0) {
+          setAnimeEpisodes(episodes);
+          return;
+        }
+
+        // Keep Kitsu IDs in Kitsu when its episode relationship is incomplete.
+        const anime = await getAnimeKitsuInfo(kitsuId);
+        if (!cancelled) setAnimeEpisodes(buildAniListEpisodes(anime));
+      } catch { /* leave the sidebar empty when episode metadata is unavailable */ }
+    })();
+    return () => { cancelled = true; };
   }, [type, kitsuId, animeSource]);
 
   // 4b. Fetch TV season episodes + season count for the in-room sidebar
@@ -929,8 +935,9 @@ export default function WatchPage() {
                       </div>
                     </div>
                     <div ref={episodeListRef} className="overflow-y-auto scrollbar-themed flex-1">
-                      {animeEpisodes.map(ep => (
-                        <Link
+                      {animeEpisodes.map(ep => {
+                        const releaseDate = formatEpisodeDate(ep.airdate);
+                        return <Link
                           key={ep.id}
                           to={buildEpUrl(ep)}
                           data-ep={ep.number}
@@ -938,8 +945,9 @@ export default function WatchPage() {
                           className={`flex items-center gap-3 px-4 py-3 border-b border-border text-sm transition-colors hover:bg-surface-raised ${ep.number === epNum ? 'bg-accent-teal/10 border-l-4 border-l-accent-teal' : 'border-l-4 border-l-transparent'}`}
                         >
                           <span className={`font-bold w-7 text-right flex-shrink-0 text-xs ${ep.number === epNum ? 'text-accent-teal' : 'text-muted'}`}>{ep.number}</span>
-                          <span className={`truncate flex-1 ${ep.number === epNum ? 'text-primary font-semibold' : watchedEps.has(ep.number) ? 'text-muted' : 'text-secondary'}`}>
-                            {ep.title || `Episode ${ep.number}`}
+                          <span className={`min-w-0 flex-1 flex items-baseline gap-1.5 ${ep.number === epNum ? 'text-primary font-semibold' : watchedEps.has(ep.number) ? 'text-muted' : 'text-secondary'}`}>
+                            <span className="truncate min-w-0 flex-1">{ep.title || `Episode ${ep.number}`}</span>
+                            {releaseDate && <span className="text-[11px] text-muted flex-shrink-0">({releaseDate})</span>}
                           </span>
                           {watchedEps.has(ep.number) && (
                             <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -947,8 +955,8 @@ export default function WatchPage() {
                             </svg>
                           )}
                           {ep.isFiller && <span className="text-xs bg-orange-100 text-orange-600 px-1 py-0.5 rounded flex-shrink-0">F</span>}
-                        </Link>
-                      ))}
+                        </Link>;
+                      })}
                     </div>
                     {epMenu && (
                       <EpisodeContextMenu

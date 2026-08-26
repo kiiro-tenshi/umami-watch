@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
-import { getAnimeById, getStudioByTitle } from '../api/anilist';
+import { getAniListEpisodeSchedule, getAnimeById, getStudioByTitle } from '../api/anilist';
 import { buildAnimeWatchUrl, findExactAnimeTitleMatch, normalizeAnimeSource } from '../utils/animeRouting';
+import { buildAniListEpisodes } from '../utils/episodeDates';
 import { useAuth } from '../hooks/useAuth';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { auth } from '../firebase';
@@ -68,14 +69,14 @@ export default function AnimeDetailPage() {
       // Keep explicit AniList routes in AniList instead of fuzzy-matching a Kitsu title.
       if (animeSource === 'anilist') {
         try {
-          const anilistData = await getAnimeById(kitsuId);
+          const [anilistData, airingSchedule] = await Promise.all([
+            getAnimeById(kitsuId),
+            getAniListEpisodeSchedule(kitsuId).catch(() => []),
+          ]);
           if (anilistData) {
             setAnime(anilistData);
             setStudio(anilistData.studios?.nodes?.[0]?.name || null);
-            const count = anilistData.episodes || 1;
-            setEpisodes(Array.from({ length: count }, (_, i) => ({
-              id: `${i + 1}`, number: i + 1, title: `Episode ${i + 1}`, isFiller: false,
-            })));
+            setEpisodes(buildAniListEpisodes(anilistData, airingSchedule));
             setLoading(false);
             return;
           }
