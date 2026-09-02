@@ -60,6 +60,16 @@ export function getAdaptiveBufferConfig(navigatorLike = globalThis.navigator) {
   };
 }
 
+export function getHlsQualityLevels(levels = []) {
+  const sorted = levels
+    .map((level, index) => ({ index, height: Number(level.height), bitrate: Number(level.bitrate) || 0 }))
+    .filter(level => level.height > 0)
+    .sort((left, right) => right.height - left.height || right.bitrate - left.bitrate);
+  const unique = sorted.filter((level, index) => sorted.findIndex(item => item.height === level.height) === index);
+  const preferred = unique.find(level => level.height <= 1080) || unique.at(-1) || null;
+  return { levels: unique, preferred };
+}
+
 function parseCueText(text) {
   return (text || '')
     .replace(/<\d{2}:\d{2}:\d{2}\.\d{3}>/g, '')
@@ -142,7 +152,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
     if (!video) return;
 
     const defaultControls = ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'pip', 'airplay', 'fullscreen'];
-    const viewerControls  = ['mute', 'volume', 'fullscreen'];
+    const viewerControls  = ['mute', 'volume', 'settings', 'fullscreen'];
     const controls = isViewer ? viewerControls : defaultControls;
 
     if (playerRef.current) { playerRef.current.destroy(); playerRef.current = null; }
@@ -161,7 +171,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
       controls,
       autoplay: options.autoplay || false,
       captions: { active: false },
-      settings: isViewer ? [] : ['quality', 'speed', 'loop'],
+      settings: isViewer ? ['quality'] : ['quality', 'speed', 'loop'],
       clickToPlay: !isViewer,
       keyboard: { focused: false, global: false },
     };
@@ -290,10 +300,16 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (cleanedUp) return;
-        const levels = [...hls.levels.map(l => l.height).filter(Boolean)].reverse();
-        const qualityOptions = levels.length > 0 ? {
-          default: levels[0], options: levels, forced: true,
-          onChange: (q) => { hls.levels.forEach((l, i) => { if (l.height === q) hls.currentLevel = i; }); }
+        const qualityLevels = getHlsQualityLevels(hls.levels);
+        if (qualityLevels.preferred) hls.currentLevel = qualityLevels.preferred.index;
+        const qualityOptions = qualityLevels.levels.length > 0 ? {
+          default: qualityLevels.preferred.height,
+          options: qualityLevels.levels.map(level => level.height),
+          forced: true,
+          onChange: (height) => {
+            const selected = qualityLevels.levels.find(level => level.height === Number(height));
+            if (selected) hls.currentLevel = selected.index;
+          },
         } : undefined;
         const player = new Plyr(video, {
           ...plyrOpts,

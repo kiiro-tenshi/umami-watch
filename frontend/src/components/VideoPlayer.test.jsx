@@ -45,7 +45,7 @@ vi.mock('hls.js', () => ({
 
 vi.mock('plyr/dist/plyr.css', () => ({}));
 
-import VideoPlayer, { getAdaptiveBufferConfig } from './VideoPlayer.jsx';
+import VideoPlayer, { getAdaptiveBufferConfig, getHlsQualityLevels } from './VideoPlayer.jsx';
 import Plyr from 'plyr';
 import Hls from 'hls.js';
 
@@ -57,6 +57,8 @@ describe('VideoPlayer', () => {
     mockPlyrInstance.elements.container.replaceChildren();
     mockPlyrInstance.elements.controls.replaceChildren();
     mockHlsInstance.config = {};
+    mockHlsInstance.levels = [];
+    mockHlsInstance.currentLevel = -1;
     Hls.isSupported.mockReturnValue(false);
   });
 
@@ -75,6 +77,41 @@ describe('VideoPlayer', () => {
       deviceMemory: 8,
       connection: { type: 'wifi', effectiveType: '4g', downlink: 20 },
     })).toMatchObject({ maxBufferLength: 90, maxMaxBufferLength: 180 });
+  });
+
+  it('prefers 1080p, then the next lower available resolution', () => {
+    expect(getHlsQualityLevels([
+      { height: 360, bitrate: 800_000 },
+      { height: 1080, bitrate: 4_000_000 },
+      { height: 720, bitrate: 2_000_000 },
+    ]).preferred.height).toBe(1080);
+    expect(getHlsQualityLevels([{ height: 360 }, { height: 720 }]).preferred.height).toBe(720);
+    expect(getHlsQualityLevels([{ height: 360 }, { height: 480 }]).preferred.height).toBe(480);
+  });
+
+  it('starts HLS at 1080p and exposes resolution choices to viewers', () => {
+    Hls.isSupported.mockReturnValue(true);
+    mockHlsInstance.levels = [
+      { height: 360, bitrate: 800_000 },
+      { height: 1080, bitrate: 4_000_000 },
+      { height: 720, bitrate: 2_000_000 },
+    ];
+
+    render(
+      <VideoPlayer
+        options={{ isViewer: true, sources: [{ src: 'https://worker.example/stream.m3u8', type: 'application/x-mpegURL' }] }}
+      />
+    );
+    act(() => mockHlsHandlers.get('manifestParsed')());
+
+    expect(mockHlsInstance.currentLevel).toBe(1);
+    const plyrOptions = Plyr.mock.calls.at(-1)[1];
+    expect(plyrOptions.controls).toContain('settings');
+    expect(plyrOptions.settings).toEqual(['quality']);
+    expect(plyrOptions.quality).toMatchObject({ default: 1080, options: [1080, 720, 360] });
+
+    act(() => plyrOptions.quality.onChange(720));
+    expect(mockHlsInstance.currentLevel).toBe(2);
   });
 
   it('updates the active HLS buffer profile when the network changes', () => {

@@ -83,7 +83,7 @@ sequenceDiagram
 
 ### 1. Anime Streaming via GogoAnime
 
-Anime streams use **AniNeko** (`anineko.to`) as the primary resolver. Its server client uses short timeouts, one retry, a 60-second circuit breaker, and a small stale HTML cache so an upstream outage cannot repeatedly stall every page load. If primary search, episode resolution, or HLS verification fails, the browser automatically requests a **MegaVid** HLS source using the title's MyAnimeList ID. The browser asks the Cloudflare Worker to verify every candidate and starts playback as soon as one succeeds.
+Anime streams use **AniNeko** (`anineko.to`) as the primary resolver. Its server client uses short timeouts, one retry, a 60-second circuit breaker, and a small stale HTML cache so an upstream outage cannot repeatedly stall every page load. If primary search, episode resolution, or HLS verification fails, the browser automatically requests a **MegaVid** HLS source using the title's MyAnimeList ID. The HD route is preferred with the default route retained as backup. The player starts at 1080p when available (then 720p or the next lower resolution) and exposes local quality selection to hosts and viewers.
 
 Why GogoAnime:
 - No CAPTCHA, no token decryption, freely scrapable server-side.

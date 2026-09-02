@@ -36,7 +36,20 @@ describe('MegaVid backup provider', () => {
     await expect(client.getSources('61240', '1')).resolves.toMatchObject({ provider: 'megavid' });
     await expect(client.getSources('61240', '1')).resolves.toMatchObject({ provider: 'megavid' });
     expect(fetchFn).toHaveBeenCalledTimes(1);
-    expect(fetchFn.mock.calls[0][0]).toBe('https://megavid.buzz/mal/61240/1/sub/source');
+    expect(fetchFn.mock.calls[0][0]).toBe('https://megavid.buzz/mal/61240/1/sub/source?provider=1');
+  });
+
+  it('falls back to the default provider route when the HD route fails', async () => {
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+      .mockResolvedValueOnce(Response.json(payload));
+    const client = createMegaVidClient({ fetchFn });
+
+    await expect(client.getSources('61240', '1')).resolves.toMatchObject({ provider: 'megavid' });
+    expect(fetchFn.mock.calls.map(call => call[0])).toEqual([
+      'https://megavid.buzz/mal/61240/1/sub/source?provider=1',
+      'https://megavid.buzz/mal/61240/1/sub/source',
+    ]);
   });
 
   it('rejects non-HLS responses', () => {

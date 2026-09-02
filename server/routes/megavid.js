@@ -54,7 +54,7 @@ export function normalizeMegaVidPayload(data) {
   };
 }
 
-export function createMegaVidClient({ fetchFn = fetch, timeoutMs = 3_000, retries = 1, cacheMs = 60_000, now = Date.now } = {}) {
+export function createMegaVidClient({ fetchFn = fetch, timeoutMs = 3_000, cacheMs = 60_000, now = Date.now } = {}) {
   const cache = new Map();
 
   async function getSources(malId, episode, type = 'sub') {
@@ -62,9 +62,12 @@ export function createMegaVidClient({ fetchFn = fetch, timeoutMs = 3_000, retrie
     const cached = cache.get(key);
     if (cached && now() - cached.savedAt < cacheMs) return cached.value;
 
-    const endpoint = `${PROVIDER_ROOT}/mal/${malId}/${episode}/${type}/source`;
+    const baseEndpoint = `${PROVIDER_ROOT}/mal/${malId}/${episode}/${type}/source`;
+    // provider=1 currently exposes the multi-quality master playlist. Retain the
+    // default route as a fallback in case that provider is unavailable.
+    const endpoints = [`${baseEndpoint}?provider=1`, baseEndpoint];
     let lastError;
-    for (let index = 0; index <= retries; index += 1) {
+    for (const endpoint of endpoints) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -84,11 +87,11 @@ export function createMegaVidClient({ fetchFn = fetch, timeoutMs = 3_000, retrie
         return value;
       } catch (error) {
         lastError = error;
-        if (error.statusCode === 404 || /no stream|unsupported stream/i.test(error.message)) throw error;
       } finally {
         clearTimeout(timer);
       }
     }
+    if (lastError?.statusCode === 404) throw lastError;
     throw new ProviderUnavailableError('megavid', 'Backup anime provider is temporarily unavailable.', { cause: lastError });
   }
 
