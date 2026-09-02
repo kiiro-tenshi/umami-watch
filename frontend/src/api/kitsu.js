@@ -1,10 +1,14 @@
 const KITSU_BASE = 'https://kitsu.io/api/edge';
 
 // Normalize a raw Kitsu API item to the shape used by our components
-function normalizeAnime(item) {
+function normalizeAnime(item, included = []) {
   const attrs = item.attributes;
+  const mappings = Array.isArray(included) ? included : [];
+  const malMapping = mappings.find(entry => entry.type === 'mappings'
+    && entry.attributes?.externalSite === 'myanimelist/anime');
   return {
     id: item.id,
+    idMal: malMapping ? parseInt(malMapping.attributes.externalId, 10) || null : null,
     title: {
       english: attrs.titles?.en || attrs.canonicalTitle || null,
       romaji:  attrs.titles?.en_jp || attrs.titles?.ja_jp || null,
@@ -45,7 +49,7 @@ export const getTrendingKitsu = async () => {
 
 export const getAnimeKitsuInfo = async (kitsuId) => {
   const res = await fetch(
-    `${KITSU_BASE}/anime/${kitsuId}?fields[anime]=id,canonicalTitle,titles,synopsis,posterImage,coverImage,episodeCount,status,startDate,endDate,averageRating,ageRating,subtype`
+    `${KITSU_BASE}/anime/${kitsuId}?include=mappings&fields[mappings]=externalSite,externalId&fields[anime]=id,canonicalTitle,titles,synopsis,posterImage,coverImage,episodeCount,status,startDate,endDate,averageRating,ageRating,subtype`
   );
   if (res.status === 404) {
     const err = new Error(`Kitsu info failed: 404`);
@@ -54,7 +58,7 @@ export const getAnimeKitsuInfo = async (kitsuId) => {
   }
   if (!res.ok) throw new Error(`Kitsu info failed: ${res.status}`);
   const data = await res.json();
-  return normalizeAnime(data.data);
+  return normalizeAnime(data.data, data.included || []);
 };
 
 export const getKitsuEpisodes = async (kitsuId) => {

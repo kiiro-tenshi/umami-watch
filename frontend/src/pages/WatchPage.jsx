@@ -4,13 +4,9 @@ import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
 import {
-  searchGogoanime,
-  getGogoanimeSource,
-  pickBestShow,
-  buildProxiedHlsSources,
-  probeAvailableHlsSources,
   planHlsRecovery,
 } from '../api/gogoanime';
+import { resolveAnimeStream } from '../api/animeStreams';
 import { getAniListEpisodeSchedule, getAnimeById } from '../api/anilist';
 import { buildAnimeWatchUrl, findExactAnimeTitleMatch, getAnimeHistoryKey, normalizeAnimeSource } from '../utils/animeRouting';
 import { buildAniListEpisodes, formatEpisodeDate } from '../utils/episodeDates';
@@ -206,37 +202,17 @@ export default function WatchPage() {
           title = `${animeData.title?.english || animeData.title?.romaji || 'Anime'} — Episode ${epNum}`;
           poster = animeData.coverImage?.large || '';
 
-          // Search GogoAnime by title, pick best match.
-          // Try English title first, then romaji if no confident match is found.
-          // GogoAnime sometimes uses a different title format (e.g. "Marriage Toxin"
-          // for an AniList title of "MARRIAGETOXIN"), so we fall back to romaji when
-          // the English search returns results but none score above zero.
-          const englishTitle = animeData.title?.english || '';
-          const romajiTitle  = animeData.title?.romaji  || '';
-          let searchTitle = englishTitle || romajiTitle;
-          let matchedShow = null;
-
-          if (englishTitle) {
-            const { shows } = await searchGogoanime(englishTitle);
-            matchedShow = pickBestShow(shows, englishTitle);
-          }
-          if (!matchedShow && romajiTitle && romajiTitle !== englishTitle) {
-            const { shows } = await searchGogoanime(romajiTitle);
-            matchedShow = pickBestShow(shows, romajiTitle);
-            if (matchedShow) searchTitle = romajiTitle;
-          }
-          if (!matchedShow) throw new Error('Anime not found on the streaming service.');
-
-          // The Worker resolves embeds and fetches all manifests/segments itself.
-          // Signed URLs never pass through Cloud Run, so Google carries no video egress.
-          const sourceData = await getGogoanimeSource(matchedShow.slug, epNum);
-          const candidates = buildProxiedHlsSources(sourceData, import.meta.env.VITE_HLS_PROXY_URL);
-          const sourceProbe = probeAvailableHlsSources(candidates);
-          cancelSourceProbe = sourceProbe.cancel;
-          const firstSource = await sourceProbe.first;
-          if (!firstSource) throw new Error('No HLS sources found for this episode.');
-          const hlsSources = [firstSource];
-          progressiveSourcesPromise = sourceProbe.complete;
+          // Resolve the primary source first, then fail over by MyAnimeList ID.
+          // Both providers return metadata only; Cloudflare fetches the actual HLS.
+          const resolved = await resolveAnimeStream(
+            animeData,
+            epNum,
+            import.meta.env.VITE_HLS_PROXY_URL,
+          );
+          cancelSourceProbe = resolved.cancel;
+          const firstSource = resolved.source;
+          const hlsSources = resolved.sources;
+          progressiveSourcesPromise = resolved.complete;
 
           if (!cancelled) {
             failedSourceUrlsRef.current = new Set();

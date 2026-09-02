@@ -1,13 +1,20 @@
 import express from 'express';
+import { aniNekoClient } from '../services/aninekoClient.js';
 
 const router = express.Router();
 const GOGO = 'https://anineko.to';
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
-async function fetchHtml(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': UA } });
-  if (!res.ok) throw new Error(`GogoAnime fetch error: ${res.status} ${url}`);
-  return res.text();
+const fetchHtml = url => aniNekoClient.fetchHtml(url);
+
+function sendProviderError(res, error) {
+  const status = error.statusCode || (error.status === 404 ? 404 : 503);
+  if (error.retryAfter) res.setHeader('Retry-After', String(error.retryAfter));
+  return res.status(status).json({
+    error: error.message,
+    code: error.code || (status === 404 ? 'NOT_FOUND' : 'PROVIDER_UNAVAILABLE'),
+    provider: error.provider || 'anineko',
+    retryAfter: error.retryAfter,
+  });
 }
 
 function parseSearchResults(html) {
@@ -123,7 +130,7 @@ router.get('/search', async (req, res) => {
     const shows = parseSearchResults(html);
     res.json({ shows });
   } catch (err) {
-    res.status(502).json({ error: err.message });
+    sendProviderError(res, err);
   }
 });
 
@@ -136,7 +143,7 @@ router.get('/episodes', async (req, res) => {
     const episodes = parseEpisodeNumbers(html, slug);
     res.json({ episodes });
   } catch (err) {
-    res.status(502).json({ error: err.message });
+    sendProviderError(res, err);
   }
 });
 
@@ -151,7 +158,7 @@ router.get('/sources', async (req, res) => {
 
     res.json({ sources });
   } catch (err) {
-    res.status(502).json({ error: err.message });
+    sendProviderError(res, err);
   }
 });
 

@@ -78,7 +78,7 @@ export const getSeasonalTrendingAnime = async (page = 1, perPage = 20) => {
 export const getAnimeById = async (id) => {
   const gql = `query($id:Int){
     Media(id:$id,type:ANIME){
-      id title{romaji english} coverImage{large} bannerImage description genres averageScore episodes status
+      id idMal title{romaji english} coverImage{large} bannerImage description genres averageScore episodes status
       format startDate{year} nextAiringEpisode{episode timeUntilAiring}
       trailer{id site}
       studios(isMain:true){nodes{name}}

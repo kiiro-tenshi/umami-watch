@@ -9,8 +9,15 @@ async function backendGet(path, params = {}) {
   const res = await fetch(url.toString(), {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
-  if (!res.ok) throw new Error(`GogoAnime error: ${res.status}`);
-  return res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const error = new Error(data.error || `GogoAnime error: ${res.status}`);
+    error.status = res.status;
+    error.code = data.code;
+    error.provider = data.provider || 'anineko';
+    throw error;
+  }
+  return data;
 }
 
 export const searchGogoanime = (q) => backendGet('search', { q });
@@ -48,11 +55,27 @@ export function buildProxiedHlsSources(sourceData, workerBase) {
       workerUrl.searchParams.set('referer', source.referer || new URL(source.hlsUrl).origin + '/');
     }
 
+    const referer = source.referer || (source.hlsUrl ? new URL(source.hlsUrl).origin + '/' : 'https://anineko.to/');
+    const tracks = (source.tracks || []).map(track => {
+      if (!track?.src) return track;
+      try {
+        const trackUrl = new URL(track.src);
+        const workerOrigin = new URL(workerBase).origin;
+        if (trackUrl.origin === workerOrigin) return track;
+        const proxyUrl = new URL(workerBase);
+        proxyUrl.searchParams.set('url', trackUrl.href);
+        proxyUrl.searchParams.set('referer', referer);
+        return { ...track, src: proxyUrl.toString() };
+      } catch {
+        return track;
+      }
+    });
+
     return [{
       label: source.label || 'HLS ' + (index + 1),
       url: workerUrl.toString(),
       type: 'hls',
-      tracks: source.tracks || [],
+      tracks,
     }];
   });
 }

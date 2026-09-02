@@ -18,7 +18,7 @@ graph TD
 
     subgraph CR_Main_Sub [Main Express Service]
         Express[Express Middlewares]
-        HLS_Fallback[HLS Fallback Proxy]
+        AnimeResolver[Anime Metadata Resolvers]
         SocketIO[Socket.IO Server]
         AdminSDK[Firebase Admin SDK]
         Frontend[React SPA Bundle]
@@ -32,11 +32,9 @@ graph TD
     CR_Main_Sub --> Auth{Firebase Auth}
 
     User -->|HLS streams| CFWorker
-    CFWorker -->|Referer-injected fetch| ByteDanceCDN[ByteDance CDN: p16-ad-sg.ibyteimg.com]
-
-    HLS_Fallback -.->|Fallback if Worker blocked| ByteDanceCDN
-
-    User --> GogoAnime[GogoAnime / anineko.to]
+    CFWorker -->|Referer-injected HLS fetch| AnimeCDN[Anime HLS CDNs]
+    AnimeResolver --> GogoAnime[GogoAnime / anineko.to]
+    AnimeResolver --> MegaVid[MegaVid MAL-ID fallback]
     User --> TMDB[TMDB API: Movies/TV Meta]
     User --> Kitsu[Kitsu API: Anime Meta]
     User --> AniList[AniList GraphQL API]
@@ -71,7 +69,7 @@ sequenceDiagram
 
 ## Key Features
 
-- **Anime Portal** — Search and stream anime via GogoAnime (anineko.to) with HLS delivery through Cloudflare Worker.
+- **Anime Portal** — Stream anime through AniNeko with automatic MAL-ID fallback and Cloudflare-only HLS delivery.
 - **Movies & TV** — Metadata via TMDB, playback via VidLink iframe embed.
 - **Watch Party Rooms** — Create private rooms; host picks the episode and all viewers sync in real-time.
 - **Sync Playback** — Host-controlled play/pause/seek with automated drift correction for viewers (anime/HLS only).
@@ -85,11 +83,12 @@ sequenceDiagram
 
 ### 1. Anime Streaming via GogoAnime
 
-Anime streams are sourced from **GogoAnime** (`anineko.to`). The server returns up to four prioritized HLS candidates, preferring `otakuvid.online` and `otakuhg.site` for both hard and soft subs. The browser asks the Cloudflare Worker to verify each candidate, starts playback as soon as the first mirror succeeds, and adds at most one verified backup in the background. Probe results are cached at the Cloudflare edge for 60 seconds when available and 15 seconds when unavailable.
+Anime streams use **AniNeko** (`anineko.to`) as the primary resolver. Its server client uses short timeouts, one retry, a 60-second circuit breaker, and a small stale HTML cache so an upstream outage cannot repeatedly stall every page load. If primary search, episode resolution, or HLS verification fails, the browser automatically requests a **MegaVid** HLS source using the title's MyAnimeList ID. The browser asks the Cloudflare Worker to verify every candidate and starts playback as soon as one succeeds.
 
 Why GogoAnime:
 - No CAPTCHA, no token decryption, freely scrapable server-side.
 - The Worker resolves each provider's signed HLS manifest at the edge, rewrites every child manifest and segment URL through itself, and streams segment bytes without first buffering the complete segment. The player automatically falls back to the second HLS server on fatal errors, startup timeouts, or prolonged stalls.
+- Direct fallback manifests and subtitle tracks are also rewritten through the Worker; Cloud Run only handles small JSON/HTML metadata responses.
 - HLS buffering adapts to the browser's reported connection: 30–60 seconds on constrained/mobile networks, 60–120 seconds by default, and 90–180 seconds on fast connections. The profile updates when the network changes.
 
 ### 2. <img src="cloudflare-worker/CF%20Logo.webp" height="20" alt="Cloudflare" /> Worker Proxy (Zero Cloud Run Egress for Video)
@@ -130,7 +129,7 @@ Synchronization is handled via **Socket.IO** with a drift-correction algorithm:
 | **Auth** | Firebase Authentication |
 | **Compute** | Google Cloud Run (Serverless) |
 | **Video Proxy** | <img src="cloudflare-worker/CF%20Logo.webp" height="16" alt="Cloudflare" /> Worker (free egress) |
-| **Anime Source** | GogoAnime / anineko.to (server-side scrape) |
+| **Anime Source** | AniNeko primary + MegaVid MAL-ID fallback (metadata only on server) |
 | **Anime Metadata** | Kitsu API + AniList GraphQL |
 | **Movie/TV Metadata** | TMDB API |
 | **Movie/TV Playback** | VidLink iframe embed |

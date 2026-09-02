@@ -98,6 +98,24 @@ describe('getAnimeKitsuInfo', () => {
     expect(anime.status).toBe('Finished');
   });
 
+  it('includes and normalizes the MyAnimeList mapping used by the stream fallback', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: makeKitsuItem('99'),
+        included: [{
+          type: 'mappings',
+          attributes: { externalSite: 'myanimelist/anime', externalId: '61240' },
+        }],
+      }),
+    });
+
+    const anime = await getAnimeKitsuInfo('99');
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('include=mappings'));
+    expect(anime.idMal).toBe(61240);
+  });
+
   it('throws a 404 error with status property when anime not found', async () => {
     fetch.mockResolvedValueOnce({ ok: false, status: 404 });
 

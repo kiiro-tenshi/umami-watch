@@ -123,6 +123,23 @@ describe('Cloudflare HLS source helpers', () => {
     expect(new URL(sources[1].url).searchParams.get('embed')).toBe('https://otakuhg.site/e/def');
   });
 
+  it('routes a direct HLS backup and its subtitles through the Worker', () => {
+    const [source] = buildProxiedHlsSources({
+      sources: [{
+        label: 'Backup HLS',
+        hlsUrl: 'https://cp.megavid.buzz/hls/show/playlist.m3u8',
+        referer: 'https://megavid.buzz/',
+        tracks: [{ kind: 'subtitles', label: 'English', srclang: 'en', src: 'https://megavid.buzz/sub/en.vtt' }],
+      }],
+    }, 'https://worker.example/');
+
+    expect(new URL(source.url).searchParams.get('url')).toContain('playlist.m3u8');
+    expect(new URL(source.url).searchParams.get('referer')).toBe('https://megavid.buzz/');
+    expect(source.tracks[0]).toMatchObject({ kind: 'subtitles', srclang: 'en' });
+    expect(new URL(source.tracks[0].src).origin).toBe('https://worker.example');
+    expect(new URL(source.tracks[0].src).searchParams.get('url')).toBe('https://megavid.buzz/sub/en.vtt');
+  });
+
   it('refuses the old Cloud Run video fallback when the Worker is missing', () => {
     expect(() => buildProxiedHlsSources({ sources: [] }, '')).toThrow(/Cloudflare HLS proxy/);
   });
