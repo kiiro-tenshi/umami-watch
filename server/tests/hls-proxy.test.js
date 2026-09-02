@@ -192,3 +192,81 @@ describe('Cloudflare HLS embed resolver', () => {
     }
   });
 });
+
+describe('Cloudflare Telegram sticker gateway', () => {
+  const pack = 'kiiromiko_by_kiiro_sticker_bot';
+  const fileId = 'CAACAgUAAxkBAASticker123';
+  const stickerSet = {
+    ok: true,
+    result: {
+      name: pack,
+      title: 'Kiiro Miko Emotes',
+      stickers: [{
+        file_id: fileId,
+        file_unique_id: 'AgADStickerUnique123',
+        emoji: '😊',
+        is_animated: false,
+        is_video: false,
+      }],
+    },
+  };
+
+  it('returns an allowlisted pack without exposing the bot token', async () => {
+    const cache = stubEdgeCache();
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(stickerSet));
+    vi.stubGlobal('fetch', fetchMock);
+    const request = new Request(`https://worker.example/?stickerPack=${pack}`);
+
+    const response = await worker.fetch(request, { TELEGRAM_BOT_TOKEN: 'secret-token' }, { waitUntil: vi.fn() });
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data).toMatchObject({
+      name: pack,
+      title: 'Kiiro Miko Emotes',
+      stickers: [{ fileId, format: 'webp' }],
+    });
+    expect(JSON.stringify(data)).not.toContain('secret-token');
+    expect(fetchMock.mock.calls[0][0]).toContain('/botsecret-token/getStickerSet');
+    expect(cache.put).toHaveBeenCalledOnce();
+  });
+
+  it('validates membership then streams and caches a sticker file', async () => {
+    const cache = stubEdgeCache();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json(stickerSet))
+      .mockResolvedValueOnce(Response.json({
+        ok: true,
+        result: { file_path: 'stickers/file_123.webp' },
+      }))
+      .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3]), {
+        headers: { 'Content-Type': 'image/webp' },
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+    const request = new Request(
+      `https://worker.example/?telegramSticker=${fileId}&pack=${pack}`,
+    );
+
+    const response = await worker.fetch(request, { TELEGRAM_BOT_TOKEN: 'secret-token' }, { waitUntil: vi.fn() });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/webp');
+    expect(response.headers.get('cache-control')).toContain('immutable');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(cache.put).toHaveBeenCalledOnce();
+  });
+
+  it('rejects non-curated packs before contacting Telegram', async () => {
+    stubEdgeCache();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const response = await worker.fetch(
+      new Request('https://worker.example/?stickerPack=unknown_pack'),
+      { TELEGRAM_BOT_TOKEN: 'secret-token' },
+      { waitUntil: vi.fn() },
+    );
+
+    expect(response.status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

@@ -233,6 +233,37 @@ describe('setupSockets', () => {
       await socket._trigger('chat:message', 'x'.repeat(501));
       expect(mockFsAdd).not.toHaveBeenCalled();
     });
+
+    it('saves and broadcasts an allowlisted Telegram sticker', async () => {
+      await socket._trigger('chat:message', {
+        type: 'sticker',
+        pack: 'kiiromiko_by_kiiro_sticker_bot',
+        fileId: 'CAACAgUAAxkBAASticker123',
+        stickerId: 'AgADStickerUnique123',
+        format: 'webp',
+        emoji: '😊',
+      });
+
+      expect(mockFsAdd).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'sticker',
+        stickerPack: 'kiiromiko_by_kiiro_sticker_bot',
+        stickerFormat: 'webp',
+        stickerUrl: expect.stringContaining('umami-hls-proxy.identityonlyforgaming.workers.dev'),
+      }));
+      expect(io.to).toHaveBeenCalledWith('chat-room');
+    });
+
+    it('rejects stickers from packs outside the allowlist', async () => {
+      await socket._trigger('chat:message', {
+        type: 'sticker',
+        pack: 'unknown_pack',
+        fileId: 'CAACAgUAAxkBAASticker123',
+        stickerId: 'AgADStickerUnique123',
+        format: 'webp',
+      });
+
+      expect(mockFsAdd).not.toHaveBeenCalled();
+    });
   });
 
   describe('chat:typing', () => {

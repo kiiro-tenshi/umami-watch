@@ -202,7 +202,7 @@ export default function WatchPage() {
           title = `${animeData.title?.english || animeData.title?.romaji || 'Anime'} — Episode ${epNum}`;
           poster = animeData.coverImage?.large || '';
 
-          // Resolve the primary source first, then fail over by MyAnimeList ID.
+          // Prefer the multi-quality source by MyAnimeList ID, then use AniNeko.
           // Both providers return metadata only; Cloudflare fetches the actual HLS.
           const resolved = await resolveAnimeStream(
             animeData,

@@ -73,7 +73,7 @@ sequenceDiagram
 - **Movies & TV** — Metadata via TMDB, playback via VidLink iframe embed.
 - **Watch Party Rooms** — Create private rooms; host picks the episode and all viewers sync in real-time.
 - **Sync Playback** — Host-controlled play/pause/seek with automated drift correction for viewers (anime/HLS only).
-- **Live Chat** — Real-time room chat with GIF support, history persisted in Firestore.
+- **Live Chat** — Real-time room chat with GIFs and curated Telegram stickers, persisted in Firestore.
 - **Personal Hub** — Continue-watching history, personal watchlist, and custom avatar upload.
 - **Bot Protection** — Cloudflare Turnstile integrated at the auth layer.
 
@@ -83,7 +83,7 @@ sequenceDiagram
 
 ### 1. Anime Streaming via GogoAnime
 
-Anime streams use **AniNeko** (`anineko.to`) as the primary resolver. Its server client uses short timeouts, one retry, a 60-second circuit breaker, and a small stale HTML cache so an upstream outage cannot repeatedly stall every page load. If primary search, episode resolution, or HLS verification fails, the browser automatically requests a **MegaVid** HLS source using the title's MyAnimeList ID. The HD route is preferred with the default route retained as backup. The player starts at 1080p when available (then 720p or the next lower resolution) and exposes local quality selection to hosts and viewers.
+Anime streams prefer **MegaVid** using the title's MyAnimeList ID, selecting its multi-quality HD route first and retaining its default route as backup. If MegaVid is unavailable, the browser falls back to **AniNeko** (`anineko.to`). Its server client uses short timeouts, one retry, a 60-second circuit breaker, and a small stale HTML cache so an upstream outage cannot repeatedly stall every page load. The player starts at 1080p when available (then 720p or the next lower resolution) and exposes local quality selection to hosts and viewers.
 
 Why GogoAnime:
 - No CAPTCHA, no token decryption, freely scrapable server-side.
@@ -129,7 +129,7 @@ Synchronization is handled via **Socket.IO** with a drift-correction algorithm:
 | **Auth** | Firebase Authentication |
 | **Compute** | Google Cloud Run (Serverless) |
 | **Video Proxy** | <img src="cloudflare-worker/CF%20Logo.webp" height="16" alt="Cloudflare" /> Worker (free egress) |
-| **Anime Source** | AniNeko primary + MegaVid MAL-ID fallback (metadata only on server) |
+| **Anime Source** | MegaVid MAL-ID primary + AniNeko fallback (metadata only on server) |
 | **Anime Metadata** | Kitsu API + AniList GraphQL |
 | **Movie/TV Metadata** | TMDB API |
 | **Movie/TV Playback** | VidLink iframe embed |
@@ -161,6 +161,17 @@ FIREBASE_PROJECT_ID=your_id
 FIREBASE_STORAGE_BUCKET=your_bucket
 ALLOWED_ORIGINS=http://localhost:5173
 TURNSTILE_SECRET_KEY=your_cloudflare_secret
+STICKER_WORKER_URL=https://umami-hls-proxy.<subdomain>.workers.dev
+```
+
+### Cloudflare Worker secret
+
+Create a Telegram bot with `@BotFather`, then store its token as an encrypted
+Worker secret named `TELEGRAM_BOT_TOKEN`. Never place the token in `.env`, source
+code, or a frontend variable.
+
+```bash
+wrangler secret put TELEGRAM_BOT_TOKEN
 ```
 
 ---

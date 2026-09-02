@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+const mockGetTelegramStickerPack = vi.hoisted(() => vi.fn());
+
 // ── Mocks ──────────────────────────────────────────────────────────────────
 vi.mock('../firebase', () => ({
   auth: { currentUser: { getIdToken: vi.fn().mockResolvedValue('token-abc') } },
@@ -14,6 +16,13 @@ vi.mock('@emoji-mart/react', () => ({
   ),
 }));
 vi.mock('@emoji-mart/data', () => ({ default: {} }));
+vi.mock('../api/telegramStickers', () => ({
+  TELEGRAM_STICKER_PACKS: [
+    { name: 'kiiromiko_by_kiiro_sticker_bot', title: 'Kiiro Miko' },
+    { name: 'kiirouniform_by_kiiro_sticker_bot', title: 'Kiiro Uniform' },
+  ],
+  getTelegramStickerPack: mockGetTelegramStickerPack,
+}));
 
 // Stub fetch — message history endpoint returns empty array by default
 const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => [] });
@@ -41,6 +50,17 @@ describe('ChatPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetch.mockResolvedValue({ ok: true, json: async () => [] });
+    mockGetTelegramStickerPack.mockResolvedValue({
+      name: 'kiiromiko_by_kiiro_sticker_bot',
+      title: 'Kiiro Miko',
+      stickers: [{
+        id: 'AgADStickerUnique123',
+        fileId: 'CAACAgUAAxkBAASticker123',
+        emoji: '😊',
+        format: 'webp',
+        url: 'https://worker.example/?telegramSticker=CAACAgUAAxkBAASticker123',
+      }],
+    });
     socket = makeSocket();
   });
 
@@ -55,8 +75,9 @@ describe('ChatPanel', () => {
     await waitFor(() => expect(screen.getByText('No messages yet. Say hi!')).toBeInTheDocument());
   });
 
-  it('renders GIF and emoji toggle buttons in the input bar', () => {
+  it('renders sticker, GIF, and emoji toggle buttons in the input bar', () => {
     render(<ChatPanel roomId="r1" socket={socket} user={USER} />);
+    expect(screen.getByText('STK')).toBeInTheDocument();
     expect(screen.getByText('GIF')).toBeInTheDocument();
     expect(screen.getByText('😊')).toBeInTheDocument();
   });
@@ -129,6 +150,23 @@ describe('ChatPanel', () => {
     await waitFor(() => expect(screen.getByText('Carol left the room')).toBeInTheDocument());
   });
 
+  it('renders an incoming Telegram sticker', async () => {
+    render(<ChatPanel roomId="r1" socket={socket} user={USER} />);
+    act(() => socket._trigger('chat:message', {
+      id: 'sticker-1',
+      uid: 'u2',
+      displayName: 'Friend',
+      type: 'sticker',
+      stickerUrl: 'https://worker.example/sticker.webp',
+      stickerFormat: 'webp',
+      stickerEmoji: '😊',
+    }));
+
+    expect(await screen.findByAltText('Sticker 😊')).toHaveAttribute(
+      'src', 'https://worker.example/sticker.webp',
+    );
+  });
+
   // ── Typing indicator ────────────────────────────────────────────────────
   it('shows typing indicator when another user is typing', async () => {
     render(<ChatPanel roomId="r1" socket={socket} user={USER} />);
@@ -170,6 +208,25 @@ describe('ChatPanel', () => {
     await userEvent.click(screen.getByText('GIF'));
     await userEvent.click(screen.getByText('GIF'));
     expect(screen.queryByPlaceholderText('Search GIFs...')).not.toBeInTheDocument();
+  });
+
+  it('loads and sends a curated Telegram sticker', async () => {
+    render(<ChatPanel roomId="r1" socket={socket} user={USER} />);
+    await userEvent.click(screen.getByText('STK'));
+
+    const sticker = await screen.findByRole('button', { name: 'Send sticker 😊' });
+    expect(mockGetTelegramStickerPack).toHaveBeenCalledWith('kiiromiko_by_kiiro_sticker_bot');
+    await userEvent.click(sticker);
+
+    expect(socket.emit).toHaveBeenCalledWith('chat:message', {
+      type: 'sticker',
+      pack: 'kiiromiko_by_kiiro_sticker_bot',
+      fileId: 'CAACAgUAAxkBAASticker123',
+      stickerId: 'AgADStickerUnique123',
+      format: 'webp',
+      emoji: '😊',
+    });
+    expect(screen.queryByTestId('sticker-picker')).not.toBeInTheDocument();
   });
 
   // ── Chat:typing emission ─────────────────────────────────────────────────

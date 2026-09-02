@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
@@ -208,6 +208,27 @@ describe('VideoPlayer', () => {
     expect(trackEls).toHaveLength(2);
     expect(trackEls[0].getAttribute('label')).toBe('English');
     expect(trackEls[1].getAttribute('label')).toBe('Japanese');
+  });
+
+  it('closes subtitle settings after selecting a language', async () => {
+    Hls.isSupported.mockReturnValue(true);
+    mockHlsInstance.levels = [{ height: 1080, bitrate: 4_000_000 }];
+    const user = userEvent.setup();
+
+    render(
+      <VideoPlayer
+        options={{ sources: [{ src: 'https://worker.example/stream.m3u8', type: 'application/x-mpegURL' }] }}
+        tracks={[{ kind: 'subtitles', label: 'English', srclang: 'en', src: '/subs/en.vtt' }]}
+      />
+    );
+    act(() => mockHlsHandlers.get('manifestParsed')());
+
+    const controls = within(mockPlyrInstance.elements.controls);
+    await user.click(await controls.findByTitle('Subtitle settings'));
+    expect(controls.getByText('Language')).toBeTruthy();
+
+    await user.click(controls.getByRole('button', { name: 'English' }));
+    expect(controls.queryByText('Language')).toBeNull();
   });
 
   it('shows the custom loadingMessage in the loading overlay', async () => {

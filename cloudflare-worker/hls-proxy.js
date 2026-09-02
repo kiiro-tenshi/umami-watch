@@ -3,6 +3,119 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 const PROBE_TIMEOUT_MS = 3_500;
 const AVAILABLE_CACHE_SECONDS = 60;
 const UNAVAILABLE_CACHE_SECONDS = 15;
+const TELEGRAM_STICKER_PACKS = new Map([
+  ['kiiromiko_by_kiiro_sticker_bot', 'Kiiro Miko'],
+  ['kiirouniform_by_kiiro_sticker_bot', 'Kiiro Uniform'],
+]);
+
+function telegramStickerFile(sticker) {
+  if (sticker.is_video) {
+    return sticker.file_id ? { fileId: sticker.file_id, format: 'webm' } : null;
+  }
+  if (sticker.is_animated) {
+    // TGS needs a dedicated renderer. Use Telegram's static thumbnail until one
+    // is added so every curated pack remains usable in regular browsers.
+    return sticker.thumbnail?.file_id
+      ? { fileId: sticker.thumbnail.file_id, format: 'webp' }
+      : null;
+  }
+  return sticker.file_id ? { fileId: sticker.file_id, format: 'webp' } : null;
+}
+
+async function telegramApi(env, method, params) {
+  if (!env.TELEGRAM_BOT_TOKEN) throw new Error('Telegram stickers are not configured');
+  const query = new URLSearchParams(params);
+  const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}?${query}`);
+  const result = await response.json();
+  if (!response.ok || !result.ok) throw new Error(result.description || `Telegram ${method} failed`);
+  return result.result;
+}
+
+async function getTelegramStickerSet(env, packName) {
+  if (!TELEGRAM_STICKER_PACKS.has(packName)) throw new Error('Sticker pack is not allowed');
+  return telegramApi(env, 'getStickerSet', { name: packName });
+}
+
+async function serveTelegramPack(request, url, env, ctx, cors) {
+  const packName = url.searchParams.get('stickerPack');
+  if (!TELEGRAM_STICKER_PACKS.has(packName)) {
+    return Response.json({ error: 'Sticker pack is not allowed' }, { status: 404, headers: cors });
+  }
+
+  const cache = caches.default;
+  const cached = await cache.match(request);
+  if (cached) return cached;
+
+  try {
+    const set = await getTelegramStickerSet(env, packName);
+    const workerBase = url.origin + url.pathname;
+    const stickers = (set.stickers || []).flatMap(sticker => {
+      const file = telegramStickerFile(sticker);
+      if (!file) return [];
+      const stickerUrl = new URL(workerBase);
+      stickerUrl.searchParams.set('telegramSticker', file.fileId);
+      stickerUrl.searchParams.set('pack', packName);
+      return [{
+        id: sticker.file_unique_id,
+        fileId: file.fileId,
+        emoji: sticker.emoji || '',
+        format: file.format,
+        url: stickerUrl.toString(),
+      }];
+    });
+    const response = Response.json({
+      name: packName,
+      title: set.title || TELEGRAM_STICKER_PACKS.get(packName),
+      stickers,
+    }, { headers: { ...cors, 'Cache-Control': 'public, max-age=3600' } });
+    ctx.waitUntil(cache.put(request, response.clone()));
+    return response;
+  } catch (error) {
+    const status = /not configured/i.test(error.message) ? 503 : 502;
+    return Response.json({ error: error.message }, { status, headers: cors });
+  }
+}
+
+async function serveTelegramSticker(request, url, env, ctx, cors) {
+  const packName = url.searchParams.get('pack');
+  const fileId = url.searchParams.get('telegramSticker');
+  if (!TELEGRAM_STICKER_PACKS.has(packName) || !/^[A-Za-z0-9_-]{10,250}$/.test(fileId || '')) {
+    return new Response('Sticker is not allowed', { status: 404, headers: cors });
+  }
+
+  const cache = caches.default;
+  const cached = await cache.match(request);
+  if (cached) return cached;
+
+  try {
+    const set = await getTelegramStickerSet(env, packName);
+    const sticker = (set.stickers || []).find(item => telegramStickerFile(item)?.fileId === fileId);
+    if (!sticker) return new Response('Sticker is not in this pack', { status: 404, headers: cors });
+
+    const file = await telegramApi(env, 'getFile', { file_id: fileId });
+    if (!/^(?:stickers|photos)\/[A-Za-z0-9_./-]+$/.test(file.file_path || '')) {
+      return new Response('Invalid Telegram sticker path', { status: 502, headers: cors });
+    }
+    const upstream = await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`);
+    if (!upstream.ok) return new Response('Telegram sticker download failed', { status: 502, headers: cors });
+
+    const format = telegramStickerFile(sticker)?.format;
+    const contentType = upstream.headers.get('content-type')
+      || (format === 'webm' ? 'video/webm' : 'image/webp');
+    const response = new Response(upstream.body, {
+      headers: {
+        ...cors,
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      },
+    });
+    ctx.waitUntil(cache.put(request, response.clone()));
+    return response;
+  } catch (error) {
+    const status = /not configured/i.test(error.message) ? 503 : 502;
+    return new Response(error.message, { status, headers: cors });
+  }
+}
 
 function decodeJsString(value) {
   return value.replace(/\\(x[0-9a-f]{2}|u[0-9a-f]{4}|n|r|t|b|f|v|0|\\|'|")/gi, (_match, escape) => {
@@ -138,6 +251,13 @@ export default {
     const targetUrl = url.searchParams.get('url');
     const embedUrl = url.searchParams.get('embed');
     const wantsProbe = url.searchParams.get('probe') === '1';
+
+    if (url.searchParams.has('stickerPack')) {
+      return serveTelegramPack(request, url, env, ctx, CORS);
+    }
+    if (url.searchParams.has('telegramSticker')) {
+      return serveTelegramSticker(request, url, env, ctx, CORS);
+    }
 
     if (!targetUrl && !embedUrl) {
       return new Response('url or embed parameter required', { status: 400, headers: CORS });

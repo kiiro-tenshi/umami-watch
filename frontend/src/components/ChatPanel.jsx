@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { auth } from '../firebase';
 import data from '@emoji-mart/data';
 import Picker from '@emoji-mart/react';
+import { getTelegramStickerPack, TELEGRAM_STICKER_PACKS } from '../api/telegramStickers';
 
 const GIPHY_KEY = import.meta.env.VITE_GIPHY_API_KEY;
 
@@ -19,6 +20,11 @@ export default function ChatPanel({ roomId, socket, user }) {
   const [gifQuery, setGifQuery]       = useState('');
   const [gifResults, setGifResults]   = useState([]);
   const [loadingGifs, setLoadingGifs] = useState(false);
+  const [showStickers, setShowStickers] = useState(false);
+  const [activeStickerPack, setActiveStickerPack] = useState(TELEGRAM_STICKER_PACKS[0].name);
+  const [stickerPacks, setStickerPacks] = useState({});
+  const [loadingStickers, setLoadingStickers] = useState(false);
+  const [stickerError, setStickerError] = useState('');
 
   const messagesContainerRef = useRef(null);
   const typingTimersRef   = useRef({});
@@ -104,6 +110,27 @@ export default function ChatPanel({ roomId, socket, user }) {
     return () => clearTimeout(timer);
   }, [gifQuery, showGif]);
 
+  useEffect(() => {
+    if (!showStickers || stickerPacks[activeStickerPack]) return;
+    let cancelled = false;
+    setLoadingStickers(true);
+    setStickerError('');
+    getTelegramStickerPack(activeStickerPack)
+      .then(pack => {
+        if (!cancelled) setStickerPacks(prev => ({ ...prev, [activeStickerPack]: pack }));
+      })
+      .catch(error => {
+        if (!cancelled) setStickerError(error.message || 'Could not load stickers.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingStickers(false);
+      });
+    return () => { cancelled = true; };
+  // The loaded pack update must not cancel its own request before `finally`
+  // clears the loading state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showStickers, activeStickerPack]);
+
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleInputChange = (e) => {
     setInput(e.target.value);
@@ -132,6 +159,19 @@ export default function ChatPanel({ roomId, socket, user }) {
     setGifQuery('');
   };
 
+  const sendSticker = (sticker) => {
+    if (!socket) return;
+    socket.emit('chat:message', {
+      type: 'sticker',
+      pack: activeStickerPack,
+      fileId: sticker.fileId,
+      stickerId: sticker.id,
+      format: sticker.format,
+      emoji: sticker.emoji || '',
+    });
+    setShowStickers(false);
+  };
+
   const onEmojiSelect = (emoji) => {
     setInput(prev => prev + emoji.native);
     setShowEmoji(false);
@@ -141,12 +181,20 @@ export default function ChatPanel({ roomId, socket, user }) {
   const toggleGif = () => {
     setShowGif(v => !v);
     setShowEmoji(false);
+    setShowStickers(false);
     if (!showGif) setGifQuery('');
   };
 
   const toggleEmoji = () => {
     setShowEmoji(v => !v);
     setShowGif(false);
+    setShowStickers(false);
+  };
+
+  const toggleStickers = () => {
+    setShowStickers(value => !value);
+    setShowGif(false);
+    setShowEmoji(false);
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -168,6 +216,7 @@ export default function ChatPanel({ roomId, socket, user }) {
           );
           const isMe  = m.uid === user?.uid;
           const isGif = m.type === 'gif';
+          const isSticker = m.type === 'sticker';
           return (
             <div key={m.id || i} className={`flex gap-2 ${isMe ? 'flex-row-reverse' : ''}`}>
               {!isMe && (
@@ -188,6 +237,22 @@ export default function ChatPanel({ roomId, socket, user }) {
                     className="rounded-xl max-w-[140px] max-h-[100px] object-cover shadow-sm"
                     loading="lazy"
                   />
+                ) : isSticker ? (
+                  m.stickerFormat === 'webm' ? (
+                    <video
+                      src={m.stickerUrl}
+                      aria-label={m.stickerEmoji ? `Sticker ${m.stickerEmoji}` : 'Sticker'}
+                      className="max-w-[140px] max-h-[140px] object-contain"
+                      autoPlay loop muted playsInline
+                    />
+                  ) : (
+                    <img
+                      src={m.stickerUrl}
+                      alt={m.stickerEmoji ? `Sticker ${m.stickerEmoji}` : 'Sticker'}
+                      className="max-w-[140px] max-h-[140px] object-contain"
+                      loading="lazy"
+                    />
+                  )
                 ) : (
                   <div className={`px-3 py-2 rounded-2xl text-sm shadow-sm break-words ${
                     isMe
@@ -212,6 +277,53 @@ export default function ChatPanel({ roomId, socket, user }) {
       {typers.length > 0 && (
         <div className="px-4 py-1 text-xs text-muted italic flex-shrink-0">
           {typers.join(', ')} {typers.length === 1 ? 'is' : 'are'} typing...
+        </div>
+      )}
+
+      {/* Telegram sticker picker */}
+      {showStickers && (
+        <div className="flex-shrink-0 border-t border-border bg-surface" data-testid="sticker-picker">
+          <div className="flex gap-1 p-2 border-b border-border">
+            {TELEGRAM_STICKER_PACKS.map(pack => (
+              <button
+                key={pack.name}
+                type="button"
+                onClick={() => setActiveStickerPack(pack.name)}
+                className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  activeStickerPack === pack.name
+                    ? 'bg-accent-blue text-white'
+                    : 'bg-surface-raised text-muted hover:text-primary'
+                }`}
+              >{pack.title}</button>
+            ))}
+          </div>
+          <div className="h-48 overflow-y-auto scrollbar-themed p-2">
+            {loadingStickers ? (
+              <p className="text-center text-muted text-xs py-8">Loading stickers...</p>
+            ) : stickerError ? (
+              <p className="text-center text-red-400 text-xs py-8">{stickerError}</p>
+            ) : (stickerPacks[activeStickerPack]?.stickers || []).length ? (
+              <div className="grid grid-cols-4 gap-1">
+                {stickerPacks[activeStickerPack].stickers.map(sticker => (
+                  <button
+                    key={sticker.id}
+                    type="button"
+                    aria-label={sticker.emoji ? `Send sticker ${sticker.emoji}` : 'Send sticker'}
+                    onClick={() => sendSticker(sticker)}
+                    className="aspect-square rounded-lg p-1 hover:bg-surface-raised transition-colors"
+                  >
+                    {sticker.format === 'webm' ? (
+                      <video src={sticker.url} className="w-full h-full object-contain" autoPlay loop muted playsInline />
+                    ) : (
+                      <img src={sticker.url} alt="" className="w-full h-full object-contain" loading="lazy" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-center text-muted text-xs py-8">No supported stickers in this pack.</p>
+            )}
+          </div>
         </div>
       )}
 
@@ -277,6 +389,18 @@ export default function ChatPanel({ roomId, socket, user }) {
 
       {/* Input bar */}
       <form onSubmit={sendText} className="p-3 border-t border-border bg-surface-raised flex items-center gap-2 flex-shrink-0">
+        <button
+          type="button"
+          onClick={toggleStickers}
+          className={`text-xs font-bold px-2 py-1.5 rounded-lg border transition-colors flex-shrink-0 ${
+            showStickers
+              ? 'bg-accent-blue text-white border-accent-blue'
+              : 'bg-surface border-border text-muted hover:text-primary'
+          }`}
+        >
+          STK
+        </button>
+
         {/* GIF button */}
         <button
           type="button"

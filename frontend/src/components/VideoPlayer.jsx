@@ -105,6 +105,10 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
   const seekTimerRef   = useRef(null); // timeout to clear seek indicator
 
   const updateCC = (patch) => setCC(prev => ({ ...prev, ...patch }));
+  const selectCC = (patch) => {
+    updateCC(patch);
+    setCcOpen(false);
+  };
 
   // Extract primitive values from options so effects only re-run when the actual
   // URL or mode changes — not when WatchPage creates a new sources array reference
@@ -534,13 +538,13 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
                 <p className="text-[10px] text-white/40 uppercase tracking-widest mb-2 font-semibold">Language</p>
                 <div className="flex flex-wrap gap-1.5">
                   <button
-                    onClick={() => updateCC({ enabled: false })}
+                    onClick={() => selectCC({ enabled: false })}
                     className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors
                       ${!cc.enabled ? 'bg-[#f43f5e] text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'}`}
                   >Off</button>
                   {tracks.map(t => (
                     <button key={t.label}
-                      onClick={() => updateCC({ enabled: true, activeLang: t.label })}
+                      onClick={() => selectCC({ enabled: true, activeLang: t.label })}
                       className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors
                         ${cc.enabled && cc.activeLang === t.label ? 'bg-[#f43f5e] text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'}`}
                     >{t.label}</button>
@@ -573,7 +577,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
                 <div className="flex gap-2">
                   {TEXT_COLORS.map(c => (
                     <button key={c.value} title={c.label}
-                      onClick={() => updateCC({ color: c.value })}
+                      onClick={() => selectCC({ color: c.value })}
                       style={{ background: c.value }}
                       className={`w-7 h-7 rounded-full border-2 transition-transform hover:scale-110
                         ${cc.color === c.value ? 'border-[#f43f5e] scale-110' : 'border-transparent'}`}
@@ -585,7 +589,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
               <div className="flex items-center justify-between">
                 <p className="text-[10px] text-white/40 uppercase tracking-widest font-semibold">Bold</p>
                 <button
-                  onClick={() => updateCC({ bold: !cc.bold })}
+                  onClick={() => selectCC({ bold: !cc.bold })}
                   className={`w-10 h-5 rounded-full transition-colors relative ${cc.bold ? 'bg-[#f43f5e]' : 'bg-white/20'}`}
                 >
                   <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${cc.bold ? 'left-5' : 'left-0.5'}`} />

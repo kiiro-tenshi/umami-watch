@@ -18,7 +18,7 @@ async function resolvePrimary(animeData, epNum, workerBase, dependencies) {
 
   const data = await dependencies.primarySource(matchedShow.slug, epNum);
   const candidates = dependencies.build(data, workerBase);
-  return probeCandidates(candidates, dependencies.probe, 'primary');
+  return probeCandidates(candidates, dependencies.probe, 'anineko');
 }
 
 async function probeCandidates(candidates, probe, provider) {
@@ -48,23 +48,22 @@ export async function resolveAnimeStream(animeData, epNum, workerBase, overrides
     ...overrides,
   };
 
-  try {
-    return await resolvePrimary(animeData, epNum, workerBase, dependencies);
-  } catch (primaryError) {
-    if (!animeData.idMal) {
-      const error = new Error('Streaming providers are temporarily unavailable. Please retry in a moment.');
-      error.cause = primaryError;
-      throw error;
-    }
-
+  let megaVidError = null;
+  if (animeData.idMal) {
     try {
       const data = await dependencies.backupSource(animeData.idMal, epNum);
       const candidates = dependencies.build(data, workerBase);
-      return await probeCandidates(candidates, dependencies.probe, 'backup');
-    } catch (backupError) {
-      const error = new Error('No working stream is available for this episode right now. Please retry in a moment.');
-      error.cause = { primaryError, backupError };
-      throw error;
+      return await probeCandidates(candidates, dependencies.probe, 'megavid');
+    } catch (error) {
+      megaVidError = error;
     }
+  }
+
+  try {
+    return await resolvePrimary(animeData, epNum, workerBase, dependencies);
+  } catch (aniNekoError) {
+    const error = new Error('No working stream is available for this episode right now. Please retry in a moment.');
+    error.cause = { megaVidError, aniNekoError };
+    throw error;
   }
 }

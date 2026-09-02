@@ -1,6 +1,38 @@
 import admin from 'firebase-admin';
 
 const HEARTBEAT_PERSIST_INTERVAL_MS = 15_000;
+const TELEGRAM_STICKER_PACKS = new Set([
+  'kiiromiko_by_kiiro_sticker_bot',
+  'kiirouniform_by_kiiro_sticker_bot',
+]);
+const STICKER_WORKER_URL = process.env.STICKER_WORKER_URL
+  || 'https://umami-hls-proxy.identityonlyforgaming.workers.dev/';
+
+function buildStickerMessage(payload, identity) {
+  const pack = String(payload?.pack || '');
+  const fileId = String(payload?.fileId || '');
+  const stickerId = String(payload?.stickerId || '');
+  const format = String(payload?.format || '');
+  const emoji = typeof payload?.emoji === 'string' ? payload.emoji.slice(0, 16) : '';
+  if (!TELEGRAM_STICKER_PACKS.has(pack)
+    || !/^[A-Za-z0-9_-]{10,250}$/.test(fileId)
+    || !/^[A-Za-z0-9_-]{5,250}$/.test(stickerId)
+    || !['webp', 'webm'].includes(format)) return null;
+
+  const stickerUrl = new URL(STICKER_WORKER_URL);
+  stickerUrl.searchParams.set('telegramSticker', fileId);
+  stickerUrl.searchParams.set('pack', pack);
+  return {
+    ...identity,
+    type: 'sticker',
+    stickerId,
+    stickerUrl: stickerUrl.toString(),
+    stickerFormat: format,
+    stickerEmoji: emoji,
+    stickerPack: pack,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+}
 
 export default function setupSockets(io) {
   // auth middleware
@@ -165,15 +197,19 @@ export default function setupSockets(io) {
       if (!socket.roomId) return;
 
       let msg;
+      const identity = { uid, displayName: socket.displayName, photoURL: socket.photoURL || null };
       if (payload?.type === 'gif') {
         // Only allow Giphy CDN URLs (media0.giphy.com, media1.giphy.com, etc.)
         if (typeof payload.gifUrl !== 'string' || !/^https:\/\/media\d*\.giphy\.com\//.test(payload.gifUrl)) return;
-        msg = { uid, displayName: socket.displayName, photoURL: socket.photoURL || null, type: 'gif', gifUrl: payload.gifUrl, createdAt: admin.firestore.FieldValue.serverTimestamp() };
+        msg = { ...identity, type: 'gif', gifUrl: payload.gifUrl, createdAt: admin.firestore.FieldValue.serverTimestamp() };
+      } else if (payload?.type === 'sticker') {
+        msg = buildStickerMessage(payload, identity);
+        if (!msg) return;
       } else {
         // text (or legacy plain string)
         const text = typeof payload === 'string' ? payload : payload?.text;
         if (typeof text !== 'string' || !text.trim() || text.length > 500) return;
-        msg = { uid, displayName: socket.displayName, photoURL: socket.photoURL || null, type: 'text', text: text.trim(), createdAt: admin.firestore.FieldValue.serverTimestamp() };
+        msg = { ...identity, type: 'text', text: text.trim(), createdAt: admin.firestore.FieldValue.serverTimestamp() };
       }
 
       const docRef = await admin.firestore().collection('rooms').doc(socket.roomId).collection('messages').add(msg);
