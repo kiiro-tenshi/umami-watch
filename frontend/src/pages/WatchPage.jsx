@@ -202,8 +202,8 @@ export default function WatchPage() {
           title = `${animeData.title?.english || animeData.title?.romaji || 'Anime'} — Episode ${epNum}`;
           poster = animeData.coverImage?.large || '';
 
-          // Prefer the multi-quality source by MyAnimeList ID, then use AniNeko.
-          // Both providers return metadata only; Cloudflare fetches the actual HLS.
+          // Check MegaVid and AniNeko together. Playback starts on the first
+          // verified stream and the remaining verified mirrors arrive later.
           const resolved = await resolveAnimeStream(
             animeData,
             epNum,
@@ -285,8 +285,8 @@ export default function WatchPage() {
             }).catch(console.error);
           }
 
-          // Playback starts after the first successful probe. Add the second
-          // verified mirror later without replacing or restarting the player.
+          // Playback starts after the first successful probe. Add up to four more
+          // verified mirrors later without replacing or restarting the player.
           if (progressiveSourcesPromise) {
             const initialSourceCount = streamSourceList.length;
             void progressiveSourcesPromise.then(async verifiedSources => {
@@ -732,7 +732,7 @@ export default function WatchPage() {
               {s.label}
             </button>
           ))}
-          <span className="text-xs text-muted ml-auto hidden sm:block">Try the other source if one doesn't work</span>
+          <span className="text-xs text-muted ml-auto hidden sm:block">Verified when this episode loaded</span>
         </div>
       )}
 

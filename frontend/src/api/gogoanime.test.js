@@ -166,7 +166,7 @@ describe('Cloudflare HLS source helpers', () => {
     expect(planHlsRecovery(sources, 1, new Set(['one']), 1)).toEqual({ action: 'error' });
   });
 
-  it('keeps only verified sources and caps the displayed list at two', async () => {
+  it('keeps only verified sources in the displayed list', async () => {
     const sources = [
       { type: 'hls', label: 'Soft Sub 3', url: 'https://worker.example/?embed=three' },
       { type: 'hls', label: 'Soft Sub 2', url: 'https://worker.example/?embed=two' },
@@ -211,7 +211,7 @@ describe('Cloudflare HLS source helpers', () => {
       });
     };
 
-    const probe = probeAvailableHlsSources(sources, fetchFn);
+    const probe = probeAvailableHlsSources(sources, fetchFn, 2);
     await expect(probe.first).resolves.toBe(sources[1]);
 
     resolveBackup(Response.json({ available: true }));

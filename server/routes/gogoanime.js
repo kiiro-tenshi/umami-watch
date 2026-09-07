@@ -107,18 +107,25 @@ export function parseHlsEmbedSources(html) {
     return { ...source, label: source.kind + ' ' + count };
   });
 
-  // Return a small prioritized candidate pool. The browser asks the Cloudflare
-  // Worker to verify these and displays only the first two that really work.
+  // Return a prioritized candidate pool. The browser asks the Cloudflare Worker
+  // to verify these and displays no more than five that really work. Keeping a
+  // few extra internal candidates lets failed mirrors be replaced without ever
+  // exposing them in the source selector.
   // Provider priority applies to both hard and soft subs, which matters for shows
   // such as Grand Blue that do not expose any hard-sub mirrors.
   const kindRank = { 'Hard Sub': 0, 'Soft Sub': 1, Dub: 2, HLS: 3 };
   const hostRank = { 'otakuvid.online': 0, 'otakuhg.site': 1, 'vivibebe.site': 2 };
-  return labeled.sort((left, right) => {
+  const ranked = labeled.sort((left, right) => {
     const leftUrl = new URL(left.embedUrl);
     const rightUrl = new URL(right.embedUrl);
     return ((kindRank[left.kind] ?? 9) * 10 + (hostRank[leftUrl.hostname] ?? 9))
       - ((kindRank[right.kind] ?? 9) * 10 + (hostRank[rightUrl.hostname] ?? 9));
-  }).slice(0, 4);
+  });
+  const subbed = ranked.filter(source => source.kind === 'Hard Sub' || source.kind === 'Soft Sub');
+
+  // Never mix an explicit dub into the selector when at least one subbed mirror
+  // exists. Dub remains a last-resort fallback for episodes with no marked sub.
+  return (subbed.length ? subbed : ranked).slice(0, 8);
 }
 
 // GET /api/anime/gogoanime/search?q=

@@ -30,12 +30,18 @@ describe('parseHlsEmbedSources', () => {
         embedUrl: 'https://vivibebe.site/aaaaaaaaaaaaaaaa',
         tracks: [],
       },
-      {
-        kind: 'Dub',
-        label: 'Dub 1',
-        embedUrl: 'https://vivibebe.site/bbbbbbbbbbbbbbbb',
-        tracks: [],
-      },
+    ]);
+  });
+
+  it('uses dub mirrors only when the episode has no marked sub source', () => {
+    const html = [
+      '<button data-video="https://vivibebe.site/dub1"><span>DUB</span></button>',
+      '<button data-video="https://otakuhg.site/e/dub2"><span>English Dub</span></button>',
+    ].join('');
+
+    expect(parseHlsEmbedSources(html).map(source => source.label)).toEqual([
+      'Dub 2',
+      'Dub 1',
     ]);
   });
 

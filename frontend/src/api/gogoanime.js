@@ -110,8 +110,8 @@ async function checkHlsSource(source, fetchFn, controllers) {
 }
 
 // Starts every check together. `first` resolves as soon as one mirror works;
-// `complete` keeps going only until a second mirror is found (or all checks end).
-export function probeAvailableHlsSources(sources, fetchFn = fetch, maxSources = 2) {
+// `complete` keeps going until the requested verified-source limit is reached.
+export function probeAvailableHlsSources(sources, fetchFn = fetch, maxSources = 5) {
   const candidates = sources.filter(source => source.type === 'hls');
   const controllers = new Set();
   let available = [];

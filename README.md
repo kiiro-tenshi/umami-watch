@@ -34,7 +34,7 @@ graph TD
     User -->|HLS streams| CFWorker
     CFWorker -->|Referer-injected HLS fetch| AnimeCDN[Anime HLS CDNs]
     AnimeResolver --> GogoAnime[GogoAnime / anineko.to]
-    AnimeResolver --> MegaVid[MegaVid MAL-ID fallback]
+    AnimeResolver --> MegaVid[MegaVid MAL-ID primary]
     User --> TMDB[TMDB API: Movies/TV Meta]
     User --> Kitsu[Kitsu API: Anime Meta]
     User --> AniList[AniList GraphQL API]
@@ -69,7 +69,7 @@ sequenceDiagram
 
 ## Key Features
 
-- **Anime Portal** — Stream anime through AniNeko with automatic MAL-ID fallback and Cloudflare-only HLS delivery.
+- **Anime Portal** — Combine MegaVid and AniNeko into a verified, Cloudflare-only HLS source pool.
 - **Movies & TV** — Metadata via TMDB, playback via VidLink iframe embed.
 - **Watch Party Rooms** — Create private rooms; host picks the episode and all viewers sync in real-time.
 - **Sync Playback** — Host-controlled play/pause/seek with automated drift correction for viewers (anime/HLS only).
@@ -83,11 +83,11 @@ sequenceDiagram
 
 ### 1. Anime Streaming via GogoAnime
 
-Anime streams prefer **MegaVid** using the title's MyAnimeList ID, selecting its multi-quality HD route first and retaining its default route as backup. If MegaVid is unavailable, the browser falls back to **AniNeko** (`anineko.to`). Its server client uses short timeouts, one retry, a 60-second circuit breaker, and a small stale HTML cache so an upstream outage cannot repeatedly stall every page load. The player starts at 1080p when available (then 720p or the next lower resolution) and exposes local quality selection to hosts and viewers.
+Anime streams prefer **MegaVid** using the title's MyAnimeList ID while querying **AniNeko** (`anineko.to`) concurrently for fallback mirrors. Every candidate is checked through Cloudflare by loading its manifest and a media segment; only the first five verified streams are shown. Explicit sub sources take priority, and dub mirrors are retained only when AniNeko has no marked sub source. The AniNeko server client uses short timeouts, one retry, a 60-second circuit breaker, and a small stale HTML cache so an upstream outage cannot repeatedly stall every page load. The player starts at 1080p when available (then 720p or the next lower resolution) and exposes local quality selection to hosts and viewers.
 
 Why GogoAnime:
 - No CAPTCHA, no token decryption, freely scrapable server-side.
-- The Worker resolves each provider's signed HLS manifest at the edge, rewrites every child manifest and segment URL through itself, and streams segment bytes without first buffering the complete segment. The player automatically falls back to the second HLS server on fatal errors, startup timeouts, or prolonged stalls.
+- The Worker resolves each provider's signed HLS manifest at the edge, rewrites every child manifest and segment URL through itself, and streams segment bytes without first buffering the complete segment. The player automatically rotates through verified sources on fatal errors, startup timeouts, or prolonged stalls.
 - Direct fallback manifests and subtitle tracks are also rewritten through the Worker; Cloud Run only handles small JSON/HTML metadata responses.
 - HLS buffering adapts to the browser's reported connection: 30–60 seconds on constrained/mobile networks, 60–120 seconds by default, and 90–180 seconds on fast connections. The profile updates when the network changes.
 
@@ -129,7 +129,7 @@ Synchronization is handled via **Socket.IO** with a drift-correction algorithm:
 | **Auth** | Firebase Authentication |
 | **Compute** | Google Cloud Run (Serverless) |
 | **Video Proxy** | <img src="cloudflare-worker/CF%20Logo.webp" height="16" alt="Cloudflare" /> Worker (free egress) |
-| **Anime Source** | MegaVid MAL-ID primary + AniNeko fallback (metadata only on server) |
+| **Anime Source** | MegaVid preferred + concurrent AniNeko mirrors (metadata only on server) |
 | **Anime Metadata** | Kitsu API + AniList GraphQL |
 | **Movie/TV Metadata** | TMDB API |
 | **Movie/TV Playback** | VidLink iframe embed |
