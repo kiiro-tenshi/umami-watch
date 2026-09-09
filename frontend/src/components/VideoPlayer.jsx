@@ -487,7 +487,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
   );
 
   return (
-    <div className="w-full h-full relative bg-black" onTouchEnd={handleTouchEnd}>
+    <div className="video-player w-full h-full relative bg-black" onTouchEnd={handleTouchEnd}>
       <video ref={videoRef} playsInline crossOrigin="anonymous" className="w-full h-full">
         {tracks.map((t, i) => (
           <track key={i} kind={t.kind} label={t.label} srcLang={t.srclang} src={t.src} />
