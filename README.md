@@ -70,7 +70,7 @@ sequenceDiagram
 ## Key Features
 
 - **Anime Portal** — Combine MegaVid and AniNeko into a verified, Cloudflare-only HLS source pool.
-- **Movies & TV** — Metadata via TMDB, playback via VidLink iframe embed.
+- **Movies & TV** — Metadata via TMDB, VixSrc HLS playback through the Cloudflare Worker with synchronized watch parties.
 - **Watch Party Rooms** — Create private rooms; host picks the episode and all viewers sync in real-time.
 - **Sync Playback** — Host-controlled play/pause/seek with automated drift correction for viewers (anime/HLS only).
 - **Live Chat** — Real-time room chat with GIFs and curated Telegram stickers, persisted in Firestore.
@@ -100,9 +100,15 @@ All HLS bandwidth is routed through the **Cloudflare Worker** (`umami-hls-proxy`
 
 A ~400MB episode stream generates **zero Cloud Run egress charges**.
 
+The legacy backend HLS and MP4 proxies and unused torrent streaming implementation
+have been removed. `/api/proxy/*` and `/api/torrent/*` return `410 Gone` without
+fetching media. API, chat, and static frontend responses still use Cloud Run egress.
+
 ### 3. Movies & TV Streaming
 
-Movies and TV shows use **VidLink** (`vidlink.pro`) iframe embeds. No server-side stream extraction is performed — the client builds the embed URL directly from the TMDB ID. Because the player lives in a cross-origin iframe, automatic playback sync in watch parties is not supported; rooms show an informational notice and members start playback manually.
+Movies and TV shows use **VixSrc HLS** in the same player as anime. `/api/movies/sources` returns a stable movie or TV episode URL; the Cloudflare Worker resolves the provider's source API and signed playlist, then proxies manifests, video, audio, and subtitles. The frontend verifies availability before playback and never falls back to an iframe or Cloud Run video proxy. English audio is preferred when available.
+
+Watch parties reuse host-controlled play/pause/seek, heartbeat drift correction, and reconnect synchronization. Selecting a different TV episode resets the room timeline; changing sources preserves it. Deploy the updated Worker **before** deploying the app, because older Workers do not recognize the movie provider. Provider availability and Cloudflare reachability can vary; local source checks do not replace a deployed two-browser playback check.
 
 ### 4. Distributed Playback Sync
 
@@ -132,7 +138,7 @@ Synchronization is handled via **Socket.IO** with a drift-correction algorithm:
 | **Anime Source** | MegaVid preferred + concurrent AniNeko mirrors (metadata only on server) |
 | **Anime Metadata** | Kitsu API + AniList GraphQL |
 | **Movie/TV Metadata** | TMDB API |
-| **Movie/TV Playback** | VidLink iframe embed |
+| **Movie/TV Playback** | VixSrc HLS via Cloudflare Worker |
 | **CI/CD** | Cloud Build (auto-deploy on `git tag`) |
 
 ---
@@ -175,6 +181,18 @@ wrangler secret put TELEGRAM_BOT_TOKEN
 ```
 
 ---
+
+## Docker Compose development
+
+Run `docker compose -f docker-compose.dev.yml up --build -d` and open
+http://localhost:5173. This starts the frontend, backend, Firebase emulators,
+and the current HLS Worker source locally at http://localhost:8787 using Wrangler.
+Set `VITE_TMDB_API_KEY` in the root `.env` for movie/TV metadata.
+
+Test accounts: `test@dev.local` and `viewer@dev.local`, both with password
+`password123`. Use a private browser window for the second account to test sync.
+The emulator dashboard is at http://localhost:4000. Stop with
+`docker compose -f docker-compose.dev.yml down`; emulator data stays in its volume.
 
 ## Deployment
 

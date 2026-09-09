@@ -128,6 +128,15 @@ router.patch('/:roomId', async (req, res) => {
     if (req.body.streamSources !== undefined) updates.streamSources = req.body.streamSources;
     if (req.body.magnetFileIdx !== undefined) updates.magnetFileIdx = req.body.magnetFileIdx ?? null;
 
+    // A new title/episode starts at zero. Source retries and mirror changes keep
+    // the current timeline, including when the URL itself changes.
+    const previous = docSnap.data();
+    const contentChanged = ['contentId', 'contentType', 'contentSource', 'epNum', 'seasonNum', 'episodeNum']
+      .some(key => updates[key] !== undefined && String(updates[key] ?? '') !== String(previous[key] ?? ''));
+    if (updates.streamUrl && (!previous.streamUrl || contentChanged)) {
+      updates.playback = { playing: false, position: 0, updatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedBy: req.user.uid };
+    }
+
     await roomRef.update(updates);
     // Notify all clients in the socket room so non-hosts get the new stream URL immediately
     io.to(req.params.roomId).emit('room:content-updated', updates);

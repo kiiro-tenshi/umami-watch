@@ -73,6 +73,7 @@ export default function setupSockets(io) {
       if (roomData.streamUrl) {
         socket.emit('room:content-updated', {
           streamUrl:    roomData.streamUrl,
+          streamType:   roomData.streamType,
           contentType:  roomData.contentType,
           contentSource: roomData.contentSource || null,
           contentTitle: roomData.contentTitle,

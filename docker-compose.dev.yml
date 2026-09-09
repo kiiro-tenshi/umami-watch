@@ -1,4 +1,14 @@
 services:
+  # Run the current Worker source locally so HLS changes need no deployment.
+  worker:
+    build:
+      context: ./cloudflare-worker
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./cloudflare-worker/hls-proxy.js:/app/hls-proxy.js:ro
+    ports:
+      - "8787:8787"
+
   # ── Firebase Emulator (Auth + Firestore + UI) ─────────────────────────────
   firebase:
     build:
@@ -75,12 +85,13 @@ services:
       VITE_TURNSTILE_SITE_KEY: "1x00000000000000000000AA"
       # Tells firebase.js to connect to local emulators
       VITE_USE_EMULATOR: "true"
-      VITE_HLS_PROXY_URL: "https://umami-hls-proxy.identityonlyforgaming.workers.dev"
+      VITE_HLS_PROXY_URL: "http://localhost:8787"
       VITE_GIPHY_API_KEY: "${VITE_GIPHY_API_KEY}"
     ports:
       - "5173:5173"
     depends_on:
       - backend
+      - worker
 
   # ── Seed (runs once to create test account, then exits) ───────────────────
   seed:

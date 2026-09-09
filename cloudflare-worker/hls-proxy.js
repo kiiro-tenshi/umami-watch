@@ -1,4 +1,4 @@
-const SUPPORTED_EMBED_HOSTS = new Set(['vivibebe.site', 'otakuhg.site', 'otakuvid.online']);
+const SUPPORTED_EMBED_HOSTS = new Set(['vivibebe.site', 'otakuhg.site', 'otakuvid.online', 'vixsrc.to']);
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 const PROBE_TIMEOUT_MS = 3_500;
 const AVAILABLE_CACHE_SECONDS = 60;
@@ -164,11 +164,52 @@ export function extractHlsFromEmbedHtml(html, embedUrl) {
   return unpacked.match(/https?:\/\/[^"'\s<>]+\.m3u8[^"'\s<>]*/i)?.[0] || null;
 }
 
+export function extractMoviePlaylist(html) {
+  const config = html.match(/window\.masterPlaylist\s*=\s*\{([\s\S]*?\burl\s*:\s*['"][^'"]+['"])/)?.[1];
+  if (!config) throw new Error('Movie provider returned no playlist configuration');
+  const value = name => config.match(new RegExp("['\"]?" + name + "['\"]?\\s*:\\s*['\"]([^'\"]*)['\"]"))?.[1];
+  const playlist = new URL(value('url'));
+  if (playlist.origin !== 'https://vixsrc.to' || !/^\/playlist\/\d+$/.test(playlist.pathname)) {
+    throw new Error('Unsupported movie playlist');
+  }
+  for (const name of ['token', 'expires', 'asn']) {
+    const param = value(name);
+    if (param) playlist.searchParams.set(name, param);
+    else if (name !== 'asn') throw new Error('Movie playlist credentials are missing');
+  }
+  playlist.searchParams.set('h', '1');
+  playlist.searchParams.set('ub', '1');
+  return playlist.href;
+}
+
+async function resolveMovieEmbed(parsed, signal) {
+  if (!/^\/(?:movie\/[1-9]\d*|tv\/[1-9]\d*\/\d+\/[1-9]\d*)\/?$/.test(parsed.pathname)) {
+    throw new Error('Invalid movie or TV episode URL');
+  }
+  const referer = parsed.origin + '/';
+  const response = await fetch(parsed.origin + '/api' + parsed.pathname, {
+    signal, headers: upstreamHeaders(referer, { Accept: 'application/json' }),
+  });
+  if (!response.ok) throw new Error('Movie provider returned ' + response.status);
+  const data = await response.json();
+  if (typeof data.src !== 'string') throw new Error('No stream available for this title');
+  const embed = new URL(data.src, parsed.origin);
+  if (embed.origin !== parsed.origin || !/^\/embed\/\d+$/.test(embed.pathname)) {
+    throw new Error('Unsupported movie embed');
+  }
+  const page = await fetch(embed.href, { signal, headers: upstreamHeaders(referer) });
+  if (!page.ok) throw new Error('Movie embed returned ' + page.status);
+  return { hlsUrl: extractMoviePlaylist(await page.text()), referer };
+}
+
 async function resolveEmbed(embedUrl, pageReferer, signal) {
+  signal ||= AbortSignal.timeout(12_000);
   const parsed = new URL(embedUrl);
   if (parsed.protocol !== 'https:' || !SUPPORTED_EMBED_HOSTS.has(parsed.hostname)) {
     throw new Error('Unsupported embed host');
   }
+
+  if (parsed.hostname === 'vixsrc.to') return resolveMovieEmbed(parsed, signal);
 
   const response = await fetch(parsed.href, {
     signal,
@@ -192,6 +233,52 @@ function upstreamHeaders(referer, extra = {}) {
     'User-Agent': UA,
     ...extra,
   };
+}
+
+// Some CDNs serve encrypted HLS segments as .html with text/html MIME.
+// Inspect only a small prefix, then replay every byte without buffering media.
+async function normalizeMediaResponse(response) {
+  if (!(response.headers.get('content-type') || '').toLowerCase().includes('text/html')) return response;
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  let ended = false;
+  while (size < 512) {
+    const { value, done } = await reader.read();
+    if (done) { ended = true; break; }
+    chunks.push(value);
+    size += value.length;
+  }
+  const prefix = new Uint8Array(Math.min(size, 512));
+  let offset = 0;
+  for (const chunk of chunks) {
+    const part = chunk.subarray(0, prefix.length - offset);
+    prefix.set(part, offset);
+    offset += part.length;
+    if (offset === prefix.length) break;
+  }
+  const text = new TextDecoder().decode(prefix).trimStart();
+  const binary = prefix.some(byte => byte < 9 || (byte > 13 && byte < 32) || byte >= 128);
+  if (!binary || text.startsWith('<')) {
+    await reader.cancel().catch(() => {});
+    return null;
+  }
+  const body = new ReadableStream({
+    start(controller) {
+      chunks.forEach(chunk => controller.enqueue(chunk));
+      if (ended) controller.close();
+    },
+    async pull(controller) {
+      const { value, done } = await reader.read();
+      if (done) controller.close();
+      else controller.enqueue(value);
+    },
+    cancel(reason) { return reader.cancel(reason); },
+  });
+  const headers = new Headers(response.headers);
+  headers.set('Content-Type', 'application/octet-stream');
+  return new Response(body, { status: response.status, headers });
 }
 
 async function probeHls(hlsUrl, referer, signal) {
@@ -224,9 +311,9 @@ async function probeHls(hlsUrl, referer, signal) {
       signal,
       headers: upstreamHeaders(referer, { Range: 'bytes=0-1023' }),
     });
-    const segmentType = segment.headers.get('content-type') || '';
-    const available = segment.ok && !segmentType.includes('text/html');
-    await segment.body?.cancel().catch(() => {});
+    const media = await normalizeMediaResponse(segment);
+    const available = Boolean(media?.ok);
+    await media?.body?.cancel().catch(() => {});
     return available;
   }
 
@@ -271,7 +358,8 @@ export default {
       if (cached) return cached;
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+      const movieProbe = /^https:\/\/vixsrc\.to\//.test(embedUrl || '');
+      const timeout = setTimeout(() => controller.abort(), movieProbe ? 12_000 : PROBE_TIMEOUT_MS);
       let available = false;
       try {
         let hlsUrl = targetUrl;
@@ -324,7 +412,9 @@ export default {
     const decodedReferer = referer;
 
     const contentType = (decodedUrl.match(/\.(m3u8|ts|vtt|srt|ass)(\?|$)/i) || [])[1] || '';
-    const isM3u8 = /m3u8/i.test(contentType) || decodedUrl.includes('.m3u8');
+    const target = new URL(decodedUrl);
+    const isMoviePlaylist = target.hostname === 'vixsrc.to' && target.pathname.startsWith('/playlist/');
+    const isM3u8 = /m3u8/i.test(contentType) || decodedUrl.includes('.m3u8') || isMoviePlaylist;
     const isSegment = !isM3u8; // .ts, .vtt, etc.
 
     // Check CF edge cache for segments (not manifests — those change frequently)
@@ -351,11 +441,14 @@ export default {
       return new Response(await response.text(), { status: response.status, headers: CORS });
     }
 
-    const upstreamCT = response.headers.get('content-type') || '';
+    let upstreamCT = response.headers.get('content-type') || '';
 
     // CDN returned a Cloudflare block/challenge page — tell client to use fallback proxy
-    if (upstreamCT.includes('text/html')) {
-      return new Response('Upstream blocked this request', { status: 530, headers: CORS });
+    if (upstreamCT.toLowerCase().includes('text/html')) {
+      const media = isM3u8 ? null : await normalizeMediaResponse(response);
+      if (!media) return new Response('Upstream blocked this request', { status: 530, headers: CORS });
+      response = media;
+      upstreamCT = media.headers.get('content-type');
     }
 
     const isManifest = upstreamCT.includes('mpegurl') || isM3u8;
@@ -363,19 +456,22 @@ export default {
     if (isManifest) {
       const text   = await response.text();
       const urlObj = new URL(decodedUrl);
-      const basePath = urlObj.origin + urlObj.pathname.substring(0, urlObj.pathname.lastIndexOf('/') + 1);
       const workerBase = url.origin + url.pathname;
 
       const makeProxied = (rawUrl) => {
-        const abs = rawUrl.startsWith('http')
-          ? rawUrl
-          : rawUrl.startsWith('/')
-            ? urlObj.origin + rawUrl
-            : basePath + rawUrl;
+        const abs = new URL(rawUrl, urlObj).href;
         return `${workerBase}?url=${encodeURIComponent(abs)}&referer=${encodeURIComponent(decodedReferer)}`;
       };
 
+      const hasEnglishAudio = isMoviePlaylist && /#EXT-X-MEDIA:TYPE=AUDIO[^\n]*LANGUAGE="(?:en|eng)"/.test(text);
       const rewritten = text.split('\n').map(line => {
+        // This provider defaults to Italian; choose English when present, while
+        // retaining all audio tracks and embedded subtitles in the playlist.
+        if (hasEnglishAudio && line.startsWith('#EXT-X-MEDIA:TYPE=AUDIO')) {
+          const english = /LANGUAGE="(?:en|eng)"/.test(line);
+          line = line.replace(/DEFAULT=(?:YES|NO)/, 'DEFAULT=' + (english ? 'YES' : 'NO'))
+            .replace(/AUTOSELECT=(?:YES|NO)/, 'AUTOSELECT=YES');
+        }
         const trimmed = line.trim();
         if (trimmed === '') return line;
         if (trimmed.startsWith('#') && trimmed.includes('URI="')) {

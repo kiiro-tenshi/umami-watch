@@ -7,6 +7,7 @@ import {
   planHlsRecovery,
 } from '../api/gogoanime';
 import { resolveAnimeStream } from '../api/animeStreams';
+import { resolveMovieStream } from '../api/movieStreams';
 import { getAniListEpisodeSchedule, getAnimeById } from '../api/anilist';
 import { buildAnimeWatchUrl, findExactAnimeTitleMatch, getAnimeHistoryKey, normalizeAnimeSource } from '../utils/animeRouting';
 import { buildAniListEpisodes, formatEpisodeDate } from '../utils/episodeDates';
@@ -22,16 +23,6 @@ import { useWatchedEps } from '../hooks/useWatchedEps';
 import LoadingSpinner from '../components/LoadingSpinner';
 import InviteModal from '../components/InviteModal';
 import RoomContentModal from '../components/RoomContentModal';
-
-function buildEmbedSources(type, { tmdbId, season, episode }) {
-  if (type === 'movie') return [
-    { label: 'VidLink', url: `https://vidlink.pro/movie/${tmdbId}`, type: 'iframe' },
-  ];
-  if (type === 'tv') return [
-    { label: 'VidLink', url: `https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`, type: 'iframe' },
-  ];
-  return [];
-}
 
 export default function WatchPage() {
   const [searchParams] = useSearchParams();
@@ -167,6 +158,9 @@ export default function WatchPage() {
     let cancelSourceProbe = () => {};
 
     async function fetchStream() {
+      // Loading unmounts the old player. Do not broadcast its position while
+      // resolving the next movie or episode.
+      playerRef.current = null;
       setLoading(true);
       setError(null);
       try {
@@ -227,29 +221,30 @@ export default function WatchPage() {
           subtitleTracks = firstSource.tracks;
           streamSourceList = hlsSources;
 
-        } else if (type === 'movie') {
-          const data = await getMovieDetail(tmdbId);
-          title = data.title;
+        } else if (type === 'movie' || type === 'tv') {
+          const data = await (type === 'movie' ? getMovieDetail(tmdbId) : getTVDetail(tmdbId));
+          title = type === 'movie' ? data.title
+            : `${data.name} S${String(season || 1).padStart(2, '0')}E${String(episode || 1).padStart(2, '0')}`;
           poster = `https://image.tmdb.org/t/p/w500${data.poster_path}`;
-          const embedSources = buildEmbedSources('movie', { tmdbId });
+          const resolved = await resolveMovieStream(
+            { type, tmdbId, season: season || '1', episode: episode || '1' },
+            import.meta.env.VITE_HLS_PROXY_URL,
+          );
+          cancelSourceProbe = resolved.cancel;
+          if (cancelled) { resolved.cancel(); return; }
+          const firstSource = resolved.source;
           if (!cancelled) {
-            setSources(embedSources);
+            failedSourceUrlsRef.current = new Set();
+            sourceRetryCountsRef.current = new Map();
+            setStreamRetryNonce(0);
+            setSources(resolved.sources);
             setActiveSourceIdx(0);
+            setActiveTracks(firstSource.tracks);
           }
-          url = embedSources[0].url;
-          streamType = 'iframe';
-
-        } else if (type === 'tv') {
-          const data = await getTVDetail(tmdbId);
-          title = `${data.name} S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
-          poster = `https://image.tmdb.org/t/p/w500${data.poster_path}`;
-          const embedSources = buildEmbedSources('tv', { tmdbId, season: season || 1, episode: episode || 1 });
-          if (!cancelled) {
-            setSources(embedSources);
-            setActiveSourceIdx(0);
-          }
-          url = embedSources[0].url;
-          streamType = 'iframe';
+          url = firstSource.url;
+          streamType = 'hls';
+          subtitleTracks = firstSource.tracks;
+          streamSourceList = resolved.sources;
         }
 
         if (cancelled) return;
@@ -447,6 +442,7 @@ export default function WatchPage() {
         // active player or its recovery state while it is already playing.
         if (nextStream.streamChanged) {
           playerRef.current = null;
+          pendingSyncRef.current = data.playback || null;
           streamUrlRef.current = nextStream.streamUrl;
           setStreamUrl(nextStream.streamUrl);
           failedSourceUrlsRef.current = new Set();

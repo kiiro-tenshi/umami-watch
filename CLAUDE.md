@@ -43,8 +43,6 @@ UmamiStream is a private, invite-only streaming portal for anime, movies, and TV
 | `firebase-admin` | 12.0.0 | Auth token verification + Firestore admin |
 | `compression` | 1.7.4 | HTTP gzip (disabled for HLS proxy route) |
 | `cors` | 2.8.5 | CORS middleware |
-| `torrent-stream` | (undeclared version) | BitTorrent streaming (legacy feature) |
-| `fluent-ffmpeg` | (undeclared version) | MKV → fMP4 remux for torrent files |
 | `vitest` | 1.6.0 | Test runner |
 | `supertest` | 7.0.0 | HTTP assertion for route tests |
 
@@ -98,7 +96,6 @@ UmamiStream is a private, invite-only streaming portal for anime, movies, and TV
 
 ### Background Jobs
 - **Room cleanup** — in-process `setInterval` in `server/routes/rooms.js`, runs every 10 minutes, deletes Firestore room documents where `expiresAt < now()`
-- **Torrent engine cache** — in-process `setTimeout` per magnet link, destroys `torrent-stream` engine after 2 hours
 
 ### External Services / Integrations
 | Service | Direction | Purpose |
@@ -184,7 +181,6 @@ umami-watch/
 │   │   ├── rooms.js             # Full CRUD for watch party rooms + room expiry cleanup job
 │   │   ├── gogoanime.js         # GogoAnime proxy: /search (scrapes anineko.to), /episodes, /sources (picks vibeplayer ID → HLS URL + VTT subtitles)
 │   │   ├── movies.js            # Movies/TV stub (501 Not Implemented — client uses iframe embeds via VidLink)
-│   │   └── torrent.js           # Torrent streaming: /stream (FFmpeg remux), /seed (raw bytes), /status
 │   ├── socket/
 │   │   └── roomSocket.js        # Socket.IO server: auth middleware, room join/leave, playback sync, chat
 │   └── package.json             # Server dependencies + scripts
@@ -497,13 +493,13 @@ Three endpoints: `/search` scrapes `anineko.to/browse?keyword={q}`, `/episodes` 
 Word-count scoring: for each result, count how many search title words appear in the result title, then subtract a penalty of 0.5× extra words (words in result title beyond the search title length). Sorts descending by score. Determines which GogoAnime slug maps to a given Kitsu/AniList anime title.
 
 ### Movies & TV Streaming
-Movies and TV use client-side iframe embeds via **VidLink** (`vidlink.pro`). The server's `movies.js` route returns 501 — all source selection happens in `WatchPage.jsx` via `buildEmbedSources()`. Because the player is a cross-origin iframe, playback sync in watch parties is not supported; the room shows an informational notice.
+Movies and TV use **VixSrc HLS** through the Cloudflare Worker and the same `VideoPlayer`/Socket.IO synchronization as anime. `/api/movies/sources` validates TMDB ID and episode coordinates and returns a stable provider embed URL. `frontend/src/api/movieStreams.js` builds and probes the Worker URL; the Worker resolves `/api/movie/{id}` or `/api/tv/{id}/{season}/{episode}`, parses the returned embed's playlist configuration without executing scripts, and proxies all HLS traffic. Extensionless `/playlist/` URLs must be treated as manifests, with English audio preferred when present. TV episode changes reset the room playback timeline; source changes retain it. Deploy the Worker before the app. There is no iframe or Cloud Run video fallback for newly resolved movie/TV sources.
 
 ### Watch Position & Episode Completion (`frontend/src/pages/WatchPage.jsx`)
 Saves to Firestore every 15 seconds while playing. Auto-marks episode as watched at 85% of duration (`position >= duration * 0.85`). Three-state `manuallyWatched` flag overrides auto-detection.
 
-### HLS Manifest Rewriting (`server/index.js` ~lines 105–204)
-Intercepts `.m3u8` responses, rewrites all segment/variant URLs to point through the backend (or Cloudflare Worker). 50MB in-memory LRU cache for `.ts` segments with coalescing to prevent upstream hammering in watch parties.
+### HLS Manifest Rewriting (Cloudflare Worker)
+The Worker alone rewrites playlists and relays media. Backend HLS/MP4 proxies and unused torrent streaming code were removed; /api/proxy and /api/torrent return 410 without fetching upstream.
 
 ### Room Expiry Cleanup (`server/routes/rooms.js` lines ~8–19)
 `setInterval` runs every 10 minutes; queries Firestore for rooms where `expiresAt < now()` and batch-deletes them. Rooms live for 6 hours from creation.
@@ -515,7 +511,7 @@ Firestore batch operations are split into chunks of 499 (`BATCH_LIMIT`) because 
 Host emits heartbeat every 5 seconds; viewers emit `request-sync` every 20 seconds. Viewers apply drift correction if position differs by more than 6 seconds. Playback state written to Firestore asynchronously (non-blocking) on every host event using dot-notation update (`playback.position`, `playback.playing`) to avoid clobbering sibling fields.
 
 ### High-Risk Files to Change
-- `server/index.js` — HLS proxy cache, video range proxy, all route mounts; changes here affect all streaming
+- `server/index.js` — API route mounts, retired media endpoint rejection, static frontend serving; changes here affect all streaming
 - `frontend/src/components/VideoPlayer.jsx` — 465 lines; Plyr + HLS.js integration, subtitle system, double-tap seek, viewer mode controls
 - `frontend/src/pages/WatchPage.jsx` — 740 lines; the entire watch experience, room sync, history saving
 - `server/socket/roomSocket.js` — all real-time room logic; wrong dot-notation can corrupt `playback` field
@@ -581,11 +577,8 @@ This variable appears in `cloudbuild.yaml` as `$_VITE_CONSUMET_API_URL` from whe
 ### Kitsu ID Expiry
 Kitsu periodically renumbers or removes entries. `AnimeDetailPage.jsx` handles 404 responses by searching Kitsu by title and redirecting to the new ID. `WatchPage.jsx` does the same for watch party room content. If you see redirect loops, Kitsu may have deprecated that ID entirely.
 
-### HLS Compression Is Disabled
-`compression()` middleware explicitly skips the `/api/proxy/hls` path because gzip-compressing a streaming response breaks the pipe. If you add new streaming routes, exclude them from compression the same way.
-
-### Torrent Feature Is Unfinished
-`server/routes/torrent.js` implements torrent streaming with FFmpeg remux. It is **not mounted in `server/index.js`** and not accessible in production. The `rdApiKey` field in user docs is a placeholder for future RealDebrid integration.
+### Backend Media Proxying Is Removed
+Do not add a Cloud Run video fallback. Use the configured Worker for media; missing or unavailable Worker sources must fail closed. Normal API, chat, and static frontend responses still generate network egress.
 
 ### Double-Tap Seek Uses Ref-Based State
 `VideoPlayer.jsx` uses `useRef` for double-tap detection (`lastTapRef`, `doubleTapRef`) to avoid React re-renders on each tap. If you refactor this to `useState`, the 300ms timing window will break because state updates are asynchronous.

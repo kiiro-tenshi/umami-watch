@@ -49,7 +49,7 @@ export function buildProxiedHlsSources(sourceData, workerBase) {
     const workerUrl = new URL(workerBase);
     if (source.embedUrl) {
       workerUrl.searchParams.set('embed', source.embedUrl);
-      workerUrl.searchParams.set('referer', 'https://anineko.to/');
+      workerUrl.searchParams.set('referer', source.referer || 'https://anineko.to/');
     } else {
       workerUrl.searchParams.set('url', source.hlsUrl);
       workerUrl.searchParams.set('referer', source.referer || new URL(source.hlsUrl).origin + '/');
@@ -82,13 +82,13 @@ export function buildProxiedHlsSources(sourceData, workerBase) {
 
 const SOURCE_PROBE_TIMEOUT_MS = 4_000;
 
-async function checkHlsSource(source, fetchFn, controllers) {
+async function checkHlsSource(source, fetchFn, controllers, timeoutMs) {
   if (source.type !== 'hls') return null;
   const probeUrl = new URL(source.url);
   probeUrl.searchParams.set('probe', '1');
   const controller = new AbortController();
   controllers.add(controller);
-  const timeout = setTimeout(() => controller.abort(), SOURCE_PROBE_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetchFn(probeUrl.toString(), { signal: controller.signal });
@@ -111,7 +111,7 @@ async function checkHlsSource(source, fetchFn, controllers) {
 
 // Starts every check together. `first` resolves as soon as one mirror works;
 // `complete` keeps going until the requested verified-source limit is reached.
-export function probeAvailableHlsSources(sources, fetchFn = fetch, maxSources = 5) {
+export function probeAvailableHlsSources(sources, fetchFn = fetch, maxSources = 5, timeoutMs = SOURCE_PROBE_TIMEOUT_MS) {
   const candidates = sources.filter(source => source.type === 'hls');
   const controllers = new Set();
   let available = [];
@@ -136,7 +136,7 @@ export function probeAvailableHlsSources(sources, fetchFn = fetch, maxSources = 
     finish();
   } else {
     candidates.forEach(source => {
-      checkHlsSource(source, fetchFn, controllers).then(result => {
+      checkHlsSource(source, fetchFn, controllers, timeoutMs).then(result => {
         settled += 1;
         if (finished) return;
         if (result) {

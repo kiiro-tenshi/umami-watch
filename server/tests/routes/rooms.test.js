@@ -269,6 +269,20 @@ describe('PATCH /api/rooms/:roomId', () => {
     );
   });
 
+  it.each([[3, true], [2, false]])('resets playback only when the TV episode changes to %s', async (episodeNum, resets) => {
+    mockFsGet.mockResolvedValueOnce({ exists: true, data: () => ({
+      ownerId: USER_ID, contentType: 'tv', contentId: '1399', seasonNum: 1, episodeNum: 2,
+      streamUrl: 'https://worker.example/old', playback: { position: 600, playing: true },
+    }) });
+    const response = await request(app).patch('/room-123').set(AUTH).send({
+      contentType: 'tv', contentId: '1399', seasonNum: 1, episodeNum, streamUrl: 'https://worker.example/new',
+    });
+    expect(response.status).toBe(200);
+    const updates = mockFsUpdate.mock.calls[0][0];
+    if (resets) expect(updates.playback).toMatchObject({ position: 0, playing: false });
+    else expect(updates).not.toHaveProperty('playback');
+  });
+
   it('returns 403 when user is not the owner', async () => {
     mockFsGet.mockResolvedValueOnce({
       exists: true,

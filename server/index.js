@@ -9,7 +9,6 @@ import admin from 'firebase-admin';
 
 // Firebase Admin init — prefers explicit service account file over ADC
 import { existsSync, readFileSync } from 'fs';
-import { Readable } from 'stream';
 
 const saPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 const projectId = process.env.FIREBASE_PROJECT_ID;
@@ -32,6 +31,7 @@ import createRoomRouter from './routes/rooms.js';
 import gogoanimeRoutes from './routes/gogoanime.js';
 import megavidRoutes from './routes/megavid.js';
 import moviesRouter from './routes/movies.js';
+import retiredMediaRoutes from './routes/retiredMedia.js';
 import setupSockets from './socket/roomSocket.js';
 import requireAuth from './middleware/requireAuth.js';
 
@@ -47,9 +47,7 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 
 const io = new Server(httpServer, { cors: { origin: allowedOrigins, methods: ['GET', 'POST'] } });
 
-app.use(compression({
-  filter: (req, res) => req.path.startsWith('/api/proxy/hls') ? false : compression.filter(req, res),
-}));
+app.use(compression());
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
@@ -89,152 +87,8 @@ app.use('/api/anime/gogoanime', requireAuth, gogoanimeRoutes);
 app.use('/api/anime/megavid', requireAuth, megavidRoutes);
 app.use('/api/movies', moviesRouter);
 
-// ─── HLS Proxy (fallback when Cloudflare Worker is blocked by CDN) ──────────
-// In-memory LRU cache for .ts segments — avoids duplicate upstream fetches when
-// multiple watch-party viewers request the same segment within seconds.
-const _hlsSegmentCache = new Map();      // url → { buffer, contentType, size, ts }
-const _hlsPending      = new Map();      // url → Promise — coalesce concurrent requests
-const HLS_CACHE_MAX    = 50 * 1024 * 1024; // 50 MB
-let _hlsCacheSize      = 0;
-
-function _hlsCacheEvict() {
-  while (_hlsCacheSize > HLS_CACHE_MAX && _hlsSegmentCache.size > 0) {
-    const oldest = _hlsSegmentCache.keys().next().value;
-    const entry  = _hlsSegmentCache.get(oldest);
-    _hlsCacheSize -= entry.size;
-    _hlsSegmentCache.delete(oldest);
-  }
-}
-
-app.get('/api/proxy/hls', async (req, res) => {
-  const { url, referer } = req.query;
-  if (!url) return res.status(400).json({ error: 'url required' });
-
-  const decodedUrl     = decodeURIComponent(url);
-  const decodedReferer = decodeURIComponent(referer || 'https://hianime.dk/');
-
-  try {
-    const isM3u8 = decodedUrl.includes('.m3u8');
-
-    // ── Manifest (.m3u8) — rewrite URLs, short cache ──
-    if (isM3u8) {
-      const upstream = await fetch(decodedUrl, {
-        headers: {
-          'Referer':    decodedReferer,
-          'Origin':     new URL(decodedReferer).origin,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
-      });
-      if (!upstream.ok) return res.status(upstream.status).send(await upstream.text());
-
-      const text   = await upstream.text();
-      const urlObj = new URL(decodedUrl);
-      const base   = urlObj.origin + urlObj.pathname.substring(0, urlObj.pathname.lastIndexOf('/') + 1);
-      const proto = req.headers['x-forwarded-proto'] || req.protocol;
-      const proxyBase = `${proto}://${req.get('host')}/api/proxy/hls`;
-
-      const proxify = (raw) => {
-        const abs = raw.startsWith('http') ? raw
-          : raw.startsWith('/') ? urlObj.origin + raw
-          : base + raw;
-        return `${proxyBase}?url=${encodeURIComponent(abs)}&referer=${encodeURIComponent(decodedReferer)}`;
-      };
-
-      const rewritten = text.split('\n').map(line => {
-        const t = line.trim();
-        if (!t) return line;
-        if (t.startsWith('#') && t.includes('URI="'))
-          return line.replace(/URI="([^"]+)"/g, (_, u) => `URI="${proxify(u)}"`);
-        if (t.startsWith('#')) return line;
-        return proxify(t);
-      }).join('\n');
-
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-      res.setHeader('Cache-Control', 'public, max-age=5');
-      return res.send(rewritten);
-    }
-
-    // ── Segment (.ts / .vtt / etc.) — serve from cache or fetch once ──
-    const cached = _hlsSegmentCache.get(decodedUrl);
-    if (cached) {
-      // Move to end (most-recently-used)
-      _hlsSegmentCache.delete(decodedUrl);
-      _hlsSegmentCache.set(decodedUrl, cached);
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Content-Type', cached.contentType);
-      res.setHeader('Cache-Control', 'public, max-age=3600, immutable');
-      res.setHeader('Content-Length', cached.size);
-      res.setHeader('X-Cache', 'HIT');
-      return res.send(cached.buffer);
-    }
-
-    // Coalesce concurrent requests for the same segment
-    let fetchPromise = _hlsPending.get(decodedUrl);
-    if (!fetchPromise) {
-      fetchPromise = (async () => {
-        const upstream = await fetch(decodedUrl, {
-          headers: {
-            'Referer':    decodedReferer,
-            'Origin':     new URL(decodedReferer).origin,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          },
-        });
-        if (!upstream.ok) throw new Error(`Upstream ${upstream.status}`);
-        const buf = Buffer.from(await upstream.arrayBuffer());
-        const ct  = upstream.headers.get('content-type') || 'application/octet-stream';
-        return { buffer: buf, contentType: ct, size: buf.length };
-      })();
-      _hlsPending.set(decodedUrl, fetchPromise);
-    }
-
-    const result = await fetchPromise;
-    _hlsPending.delete(decodedUrl);
-
-    // Store in cache
-    _hlsSegmentCache.set(decodedUrl, { ...result, ts: Date.now() });
-    _hlsCacheSize += result.size;
-    _hlsCacheEvict();
-
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Content-Type', result.contentType);
-    res.setHeader('Cache-Control', 'public, max-age=3600, immutable');
-    res.setHeader('Content-Length', result.size);
-    res.setHeader('X-Cache', 'MISS');
-    return res.send(result.buffer);
-  } catch (err) {
-    res.status(502).json({ error: err.message });
-  }
-});
-
-// ─── AllAnime Video Range-Proxy (CDN has no CORS; pass-through with Range support) ─
-// Unlike the old torrent streaming, this is a short-lived request per seek/chunk.
-// Browser sends Range headers; we forward them upstream and pipe the partial response back.
-app.get('/api/proxy/video', async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).json({ error: 'url required' });
-  const decoded = decodeURIComponent(url);
-  // Only allow fast4speed CDN URLs (AllAnime video source)
-  if (!decoded.startsWith('https://tools.fast4speed.')) {
-    return res.status(400).json({ error: 'URL not allowed' });
-  }
-  const headers = {
-    'Referer': 'https://allanime.to/',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-  };
-  if (req.headers.range) headers['Range'] = req.headers.range;
-  try {
-    const upstream = await fetch(decoded, { headers });
-    res.status(upstream.status);
-    const passHeaders = ['content-length', 'content-range', 'accept-ranges', 'cache-control'];
-    passHeaders.forEach(h => { const v = upstream.headers.get(h); if (v) res.setHeader(h, v); });
-    res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    Readable.fromWeb(upstream.body).pipe(res);
-  } catch (err) {
-    res.status(502).json({ error: err.message });
-  }
-});
+// Retired media routes never fetch upstream or fall through to the SPA.
+app.use(['/api/proxy', '/api/torrent'], retiredMediaRoutes);
 
 // ─── Socket.IO ─────────────────────────────────────────────────────────────
 setupSockets(io);

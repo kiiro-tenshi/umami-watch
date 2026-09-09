@@ -1,0 +1,7 @@
+FROM node:22-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
+RUN npm install --global wrangler@4
+WORKDIR /app
+ENV WRANGLER_SEND_METRICS=false
+EXPOSE 8787
+CMD ["wrangler", "dev", "hls-proxy.js", "--local", "--ip", "0.0.0.0", "--port", "8787", "--compatibility-date", "2026-09-09"]
