@@ -1,3 +1,18 @@
+export function srtToVtt(input) {
+  const text = input.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  const cues = text.split(/\n\s*\n/).flatMap(block => {
+    const lines = block.split('\n');
+    const index = lines.findIndex(line => /^\d{2,}:\d{2}:\d{2}[,.]\d{3} --> \d{2,}:\d{2}:\d{2}[,.]\d{3}/.test(line));
+    if (index < 0) return [];
+    // Subtitles are untrusted text. Strip markup before the player's HTML overlay.
+    const body = lines.slice(index + 1).join('\n').replace(/<[^>]*>/g, '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return [lines[index].replace(/,(\d{3})/g, '.$1') + '\n' + body];
+  });
+  if (!cues.length) throw new Error('No supported subtitle cues');
+  return 'WEBVTT\n\n' + cues.join('\n\n') + '\n';
+}
+
 const SUPPORTED_EMBED_HOSTS = new Set(['vivibebe.site', 'otakuhg.site', 'otakuvid.online', 'player.vidzee.wtf']);
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 const PROBE_TIMEOUT_MS = 3_500;
@@ -329,6 +344,20 @@ export default {
 
     const targetUrl = url.searchParams.get('url');
     const embedUrl = url.searchParams.get('embed');
+    if (url.searchParams.get('subtitle') === '1') {
+      if (!/^https:\/\/subs\d*\.strem\.io\//.test(targetUrl || '')) {
+        return new Response('Unsupported subtitle host', { status: 400, headers: CORS });
+      }
+      try {
+        const upstream = await fetch(targetUrl, { signal: AbortSignal.timeout(8000) });
+        if (!upstream.ok) throw new Error('Subtitle unavailable');
+        return new Response(srtToVtt(await upstream.text()), {
+          headers: { ...CORS, 'Content-Type': 'text/vtt; charset=utf-8', 'Cache-Control': 'public, max-age=3600' },
+        });
+      } catch {
+        return new Response('Subtitle unavailable', { status: 502, headers: CORS });
+      }
+    }
     const wantsProbe = url.searchParams.get('probe') === '1';
 
     if (url.searchParams.has('stickerPack')) {

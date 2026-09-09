@@ -1,3 +1,4 @@
+vi.mock('./movieSubtitles.js', () => ({ findMovieSubtitles: async () => [] }));
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('../firebase.js', () => ({ auth: { currentUser: { getIdToken: async () => 'test-token' } } }));
 import { resolveMovieStream } from './movieStreams.js';

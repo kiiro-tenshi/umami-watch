@@ -1,3 +1,4 @@
+import { findMovieSubtitles } from './movieSubtitles.js';
 import { auth } from '../firebase.js';
 import { buildProxiedHlsSources, probeAvailableHlsSources } from './gogoanime.js';
 
@@ -11,6 +12,7 @@ export async function resolveMovieStream(content, workerBase, overrides = {}) {
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Could not load movie sources.');
+  const subtitles = (overrides.subtitles || findMovieSubtitles)(content, workerBase).catch(() => []);
   const sources = buildProxiedHlsSources(data, workerBase);
   const probe = (overrides.probe || probeAvailableHlsSources)(sources, fetchFn, 1, 15_000);
   const source = await probe.first;
@@ -18,5 +20,6 @@ export async function resolveMovieStream(content, workerBase, overrides = {}) {
     probe.cancel();
     throw new Error('No working HLS stream is available for this title right now. Please retry later.');
   }
+  source.tracks = [...(source.tracks || []), ...await subtitles];
   return { source, sources: [source], complete: probe.complete, cancel: probe.cancel };
 }
