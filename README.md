@@ -70,7 +70,7 @@ sequenceDiagram
 ## Key Features
 
 - **Anime Portal** — Combine MegaVid and AniNeko into a verified, Cloudflare-only HLS source pool.
-- **Movies & TV** — Metadata via TMDB, VixSrc HLS playback through the Cloudflare Worker with synchronized watch parties.
+- **Movies & TV** — Metadata via TMDB, VidZee dcloud HLS playback through the Cloudflare Worker with synchronized watch parties.
 - **Watch Party Rooms** — Create private rooms; host picks the episode and all viewers sync in real-time.
 - **Sync Playback** — Host-controlled play/pause/seek with automated drift correction for viewers (anime/HLS only).
 - **Live Chat** — Real-time room chat with GIFs and curated Telegram stickers, persisted in Firestore.
@@ -106,9 +106,9 @@ fetching media. API, chat, and static frontend responses still use Cloud Run egr
 
 ### 3. Movies & TV Streaming
 
-Movies and TV shows use **VixSrc HLS** in the same player as anime. `/api/movies/sources` returns a stable movie or TV episode URL; the Cloudflare Worker resolves the provider's source API and signed playlist, then proxies manifests, video, audio, and subtitles. The frontend verifies availability before playback and never falls back to an iframe or Cloud Run video proxy. English audio is preferred when available.
+Movies and TV shows use **VidZee dcloud HLS** in the same player as anime. `/api/movies/sources` returns a stable movie or TV episode URL; the Cloudflare Worker resolves the provider's source API and signed playlist, then proxies manifests, video, audio, and subtitles. The frontend verifies availability before playback and never falls back to an iframe or Cloud Run video proxy. The selected source contains muxed video/audio; language, quality variants, and subtitle availability depend on the title.
 
-Watch parties reuse host-controlled play/pause/seek, heartbeat drift correction, and reconnect synchronization. Selecting a different TV episode resets the room timeline; changing sources preserves it. Deploy the updated Worker **before** deploying the app, because older Workers do not recognize the movie provider. Provider availability and Cloudflare reachability can vary; local source checks do not replace a deployed two-browser playback check.
+Watch parties reuse host-controlled play/pause/seek, heartbeat drift correction, and reconnect synchronization. Selecting a different TV episode resets the room timeline; changing sources preserves it. Deploy the updated Worker **before** deploying the app, because older Workers do not recognize the VidZee movie provider. Provider availability and Cloudflare reachability can vary; local source checks do not replace a deployed two-browser playback check.
 
 ### 4. Distributed Playback Sync
 
@@ -138,7 +138,7 @@ Synchronization is handled via **Socket.IO** with a drift-correction algorithm:
 | **Anime Source** | MegaVid preferred + concurrent AniNeko mirrors (metadata only on server) |
 | **Anime Metadata** | Kitsu API + AniList GraphQL |
 | **Movie/TV Metadata** | TMDB API |
-| **Movie/TV Playback** | VixSrc HLS via Cloudflare Worker |
+| **Movie/TV Playback** | VidZee dcloud HLS via Cloudflare Worker |
 | **CI/CD** | Cloud Build (auto-deploy on `git tag`) |
 
 ---

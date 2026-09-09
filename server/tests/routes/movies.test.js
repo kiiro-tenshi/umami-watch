@@ -14,7 +14,7 @@ describe('movie/TV HLS sources', () => {
   ])('returns a stable Worker-resolvable URL for %s', async (query, path) => {
     const response = await request(app).get('/sources/sources?' + query);
     expect(response.status).toBe(200);
-    expect(response.body.sources[0].embedUrl).toBe('https://vixsrc.to' + path);
+    expect(response.body.sources[0].embedUrl).toBe('https://player.vidzee.wtf' + path);
   });
   it.each(['type=anime&tmdbId=550', 'type=movie&tmdbId=../x', 'type=tv&tmdbId=1&episode=0', 'type=tv&tmdbId=1&season=-1'])('rejects invalid content: %s', async query => {
     expect((await request(app).get('/sources/sources?' + query)).status).toBe(400);

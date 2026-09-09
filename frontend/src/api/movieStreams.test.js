@@ -10,7 +10,7 @@ describe('movie HLS resolution', () => {
   });
   it('returns only a verified HLS source with the provider referer', async () => {
     const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ sources: [
-      { label: 'VixSrc HLS', embedUrl: 'https://vixsrc.to/tv/1399/2/3', referer: 'https://vixsrc.to/' },
+      { label: 'VidZee dcloud HLS', embedUrl: 'https://player.vidzee.wtf/tv/1399/2/3', referer: 'https://player.vidzee.wtf/' },
     ] }) });
     const probe = vi.fn(sources => ({ first: Promise.resolve(sources[0]), complete: Promise.resolve(sources), cancel: vi.fn() }));
     const result = await resolveMovieStream({ type: 'tv', tmdbId: '1399', season: '2', episode: '3' }, 'https://worker.example/', { fetch, probe });
@@ -18,8 +18,8 @@ describe('movie HLS resolution', () => {
     expect(result.source.type).toBe('hls');
     const url = new URL(result.source.url);
     expect(url.origin).toBe('https://worker.example');
-    expect(url.searchParams.get('referer')).toBe('https://vixsrc.to/');
-    expect(url.searchParams.get('embed')).toBe('https://vixsrc.to/tv/1399/2/3');
+    expect(url.searchParams.get('referer')).toBe('https://player.vidzee.wtf/');
+    expect(url.searchParams.get('embed')).toBe('https://player.vidzee.wtf/tv/1399/2/3');
   });
   it('reports an unavailable source without returning an iframe', async () => {
     const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ sources: [] }) });

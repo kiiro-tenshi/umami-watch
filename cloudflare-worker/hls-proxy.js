@@ -1,4 +1,4 @@
-const SUPPORTED_EMBED_HOSTS = new Set(['vivibebe.site', 'otakuhg.site', 'otakuvid.online', 'vixsrc.to']);
+const SUPPORTED_EMBED_HOSTS = new Set(['vivibebe.site', 'otakuhg.site', 'otakuvid.online', 'player.vidzee.wtf']);
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 const PROBE_TIMEOUT_MS = 3_500;
 const AVAILABLE_CACHE_SECONDS = 60;
@@ -164,42 +164,34 @@ export function extractHlsFromEmbedHtml(html, embedUrl) {
   return unpacked.match(/https?:\/\/[^"'\s<>]+\.m3u8[^"'\s<>]*/i)?.[0] || null;
 }
 
-export function extractMoviePlaylist(html) {
-  const config = html.match(/window\.masterPlaylist\s*=\s*\{([\s\S]*?\burl\s*:\s*['"][^'"]+['"])/)?.[1];
-  if (!config) throw new Error('Movie provider returned no playlist configuration');
-  const value = name => config.match(new RegExp("['\"]?" + name + "['\"]?\\s*:\\s*['\"]([^'\"]*)['\"]"))?.[1];
-  const playlist = new URL(value('url'));
-  if (playlist.origin !== 'https://vixsrc.to' || !/^\/playlist\/\d+$/.test(playlist.pathname)) {
-    throw new Error('Unsupported movie playlist');
-  }
-  for (const name of ['token', 'expires', 'asn']) {
-    const param = value(name);
-    if (param) playlist.searchParams.set(name, param);
-    else if (name !== 'asn') throw new Error('Movie playlist credentials are missing');
-  }
-  playlist.searchParams.set('h', '1');
-  playlist.searchParams.set('ub', '1');
-  return playlist.href;
-}
-
 async function resolveMovieEmbed(parsed, signal) {
   if (!/^\/(?:movie\/[1-9]\d*|tv\/[1-9]\d*\/\d+\/[1-9]\d*)\/?$/.test(parsed.pathname)) {
     throw new Error('Invalid movie or TV episode URL');
   }
   const referer = parsed.origin + '/';
-  const response = await fetch(parsed.origin + '/api' + parsed.pathname, {
+  // dcloud was verified through the deployed Worker, including muxed H.264/AAC
+  // and midpoint segments. Other VidZee servers failed those checks.
+  const endpoint = new URL('https://core.vidzee.wtf/streams' + parsed.pathname.replace(/\/$/, ''));
+  endpoint.searchParams.set('s', 'dcloud');
+  endpoint.searchParams.set('e', '0');
+  const response = await fetch(endpoint.href, {
     signal, headers: upstreamHeaders(referer, { Accept: 'application/json' }),
   });
-  if (!response.ok) throw new Error('Movie provider returned ' + response.status);
+  if (!response.ok) throw new Error('VidZee returned ' + response.status);
   const data = await response.json();
-  if (typeof data.src !== 'string') throw new Error('No stream available for this title');
-  const embed = new URL(data.src, parsed.origin);
-  if (embed.origin !== parsed.origin || !/^\/embed\/\d+$/.test(embed.pathname)) {
-    throw new Error('Unsupported movie embed');
+  if (typeof data.url !== 'string') throw new Error('No HLS stream available for this title');
+  const playlist = new URL(data.url);
+  if (playlist.protocol !== 'https:' || playlist.username || playlist.password
+    || !/\.m3u8$/i.test(playlist.pathname)) {
+    throw new Error('Unsupported movie playlist');
   }
-  const page = await fetch(embed.href, { signal, headers: upstreamHeaders(referer) });
-  if (!page.ok) throw new Error('Movie embed returned ' + page.status);
-  return { hlsUrl: extractMoviePlaylist(await page.text()), referer };
+  // Fail explicitly if this provider starts requiring headers our media proxy
+  // cannot reproduce; never advertise a stream that will fail on its segments.
+  for (const [name, value] of Object.entries(data.headers || {})) {
+    const expected = { referer, origin: parsed.origin, 'user-agent': UA }[name.toLowerCase()];
+    if (value && value !== expected) throw new Error('Unsupported movie stream headers');
+  }
+  return { hlsUrl: playlist.href, referer };
 }
 
 async function resolveEmbed(embedUrl, pageReferer, signal) {
@@ -209,7 +201,7 @@ async function resolveEmbed(embedUrl, pageReferer, signal) {
     throw new Error('Unsupported embed host');
   }
 
-  if (parsed.hostname === 'vixsrc.to') return resolveMovieEmbed(parsed, signal);
+  if (parsed.hostname === 'player.vidzee.wtf') return resolveMovieEmbed(parsed, signal);
 
   const response = await fetch(parsed.href, {
     signal,
@@ -358,7 +350,7 @@ export default {
       if (cached) return cached;
 
       const controller = new AbortController();
-      const movieProbe = /^https:\/\/vixsrc\.to\//.test(embedUrl || '');
+      const movieProbe = /^https:\/\/player\.vidzee\.wtf\//.test(embedUrl || '');
       const timeout = setTimeout(() => controller.abort(), movieProbe ? 12_000 : PROBE_TIMEOUT_MS);
       let available = false;
       try {
@@ -412,9 +404,7 @@ export default {
     const decodedReferer = referer;
 
     const contentType = (decodedUrl.match(/\.(m3u8|ts|vtt|srt|ass)(\?|$)/i) || [])[1] || '';
-    const target = new URL(decodedUrl);
-    const isMoviePlaylist = target.hostname === 'vixsrc.to' && target.pathname.startsWith('/playlist/');
-    const isM3u8 = /m3u8/i.test(contentType) || decodedUrl.includes('.m3u8') || isMoviePlaylist;
+    const isM3u8 = /m3u8/i.test(contentType) || decodedUrl.includes('.m3u8');
     const isSegment = !isM3u8; // .ts, .vtt, etc.
 
     // Check CF edge cache for segments (not manifests — those change frequently)
@@ -463,15 +453,7 @@ export default {
         return `${workerBase}?url=${encodeURIComponent(abs)}&referer=${encodeURIComponent(decodedReferer)}`;
       };
 
-      const hasEnglishAudio = isMoviePlaylist && /#EXT-X-MEDIA:TYPE=AUDIO[^\n]*LANGUAGE="(?:en|eng)"/.test(text);
       const rewritten = text.split('\n').map(line => {
-        // This provider defaults to Italian; choose English when present, while
-        // retaining all audio tracks and embedded subtitles in the playlist.
-        if (hasEnglishAudio && line.startsWith('#EXT-X-MEDIA:TYPE=AUDIO')) {
-          const english = /LANGUAGE="(?:en|eng)"/.test(line);
-          line = line.replace(/DEFAULT=(?:YES|NO)/, 'DEFAULT=' + (english ? 'YES' : 'NO'))
-            .replace(/AUTOSELECT=(?:YES|NO)/, 'AUTOSELECT=YES');
-        }
         const trimmed = line.trim();
         if (trimmed === '') return line;
         if (trimmed.startsWith('#') && trimmed.includes('URI="')) {

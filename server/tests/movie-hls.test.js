@@ -1,10 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import worker, { extractMoviePlaylist } from '../../cloudflare-worker/hls-proxy.js';
+import worker from '../../cloudflare-worker/hls-proxy.js';
 
-const html = `window.masterPlaylist = {
-  params: { 'token': 'test-token', 'expires': '123456', 'asn': '' },
-  url: 'https://vixsrc.to/playlist/42',
-};`;
 afterEach(() => vi.unstubAllGlobals());
 
 describe('movie HLS at the Worker', () => {
@@ -28,35 +24,40 @@ describe('movie HLS at the Worker', () => {
     expect(response.status).toBe(530);
     expect(cache.put).not.toHaveBeenCalled();
   });
-  it('parses the provider configuration without executing scripts', () => {
-    expect(extractMoviePlaylist(html)).toBe('https://vixsrc.to/playlist/42?token=test-token&expires=123456&h=1&ub=1');
-    expect(() => extractMoviePlaylist(html.replace('https://vixsrc.to', 'https://untrusted.example'))).toThrow('Unsupported');
-  });
-
-  it.each(['/movie/550', '/tv/1399/2/3'])('resolves %s and proxies extensionless playlists, audio and subtitles', async path => {
-    const cache = { match: vi.fn(), put: vi.fn() };
-    vi.stubGlobal('caches', { default: cache });
+  it.each(['/movie/550', '/tv/108978/1/1'])('resolves %s with VidZee and rewrites every media URI', async path => {
+    vi.stubGlobal('caches', { default: { match: vi.fn(), put: vi.fn() } });
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(Response.json({ src: '/embed/42?token=abc' }))
-      .mockResolvedValueOnce(new Response(html))
-      .mockResolvedValueOnce(new Response('#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,LANGUAGE="ita",DEFAULT=YES,AUTOSELECT=YES,URI="?type=audio&lang=ita"\n#EXT-X-MEDIA:TYPE=AUDIO,LANGUAGE="eng",DEFAULT=NO,AUTOSELECT=NO,URI="?type=audio&lang=eng"\n#EXT-X-MEDIA:TYPE=SUBTITLES,URI="?type=subtitle"\n#EXT-X-STREAM-INF:BANDWIDTH=1000\n?type=video\n'));
+      .mockResolvedValueOnce(Response.json({ url: 'https://cdn.example/movie/index.m3u8', headers: {} }))
+      .mockResolvedValueOnce(new Response('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXTINF:10,\nsegment.ts\n'));
     vi.stubGlobal('fetch', fetchMock);
-    const response = await worker.fetch(new Request('https://worker.example/?embed=' + encodeURIComponent('https://vixsrc.to' + path)), {}, { waitUntil: vi.fn() });
+    const response = await worker.fetch(new Request('https://worker.example/?embed=' + encodeURIComponent('https://player.vidzee.wtf' + path)), {}, { waitUntil: vi.fn() });
     expect(response.status).toBe(200);
-    expect(fetchMock.mock.calls[0][0]).toBe('https://vixsrc.to/api' + path);
+    expect(fetchMock.mock.calls[0][0]).toBe('https://core.vidzee.wtf/streams' + path + '?s=dcloud&e=0');
+    expect(fetchMock.mock.calls[1][1].headers.Referer).toBe('https://player.vidzee.wtf/');
     const text = await response.text();
-    expect(text).toContain('LANGUAGE="eng",DEFAULT=YES,AUTOSELECT=YES');
-    expect(text).toContain('LANGUAGE="ita",DEFAULT=NO');
-    expect(text).toContain('https://worker.example/?url=' + encodeURIComponent('https://vixsrc.to/playlist/42?type=video'));
-    expect(text).toContain(encodeURIComponent('https://vixsrc.to/playlist/42?type=subtitle'));
-    expect(cache.put).not.toHaveBeenCalled();
+    expect(text).toContain('https://worker.example/?url=' + encodeURIComponent('https://cdn.example/movie/segment.ts'));
+    expect(text).toContain(encodeURIComponent('https://cdn.example/movie/key.bin'));
   });
 
-  it('rejects an unexpected embed origin before fetching it', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(Response.json({ src: 'https://untrusted.example/embed/42' }));
+  it.each([
+    {}, { c: 'encrypted-result' }, { url: 'http://cdn.example/master.m3u8' },
+    { url: 'https://cdn.example/player.html' },
+    { url: 'https://cdn.example/master.m3u8', headers: { Authorization: 'unsupported' } },
+  ])('rejects unusable provider responses without fetching media', async data => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(data));
     vi.stubGlobal('fetch', fetchMock);
-    const response = await worker.fetch(new Request('https://worker.example/?embed=https://vixsrc.to/movie/550'), {}, {});
+    const response = await worker.fetch(new Request('https://worker.example/?embed=https://player.vidzee.wtf/movie/550'), {}, {});
     expect(response.status).toBe(502);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('probes the resolver, manifest, and media segment from the Worker', async () => {
+    vi.stubGlobal('caches', { default: { match: vi.fn(), put: vi.fn() } });
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(Response.json({ url: 'https://cdn.example/index.m3u8' }))
+      .mockResolvedValueOnce(new Response('#EXTM3U\n#EXTINF:10,\nsegment.ts\n'))
+      .mockResolvedValueOnce(new Response(new Uint8Array([0x47, 0, 0, 0]), { headers: { 'content-type': 'video/mp2t' } })));
+    const response = await worker.fetch(new Request('https://worker.example/?embed=https://player.vidzee.wtf/tv/108978/1/1&probe=1'), {}, { waitUntil: vi.fn() });
+    expect(await response.json()).toEqual({ available: true });
   });
 });

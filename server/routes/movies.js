@@ -11,7 +11,7 @@ router.get('/sources', (req, res) => {
     return res.status(400).json({ error: 'Valid type, tmdbId, season and episode are required.' });
   }
   const path = type === 'movie' ? `/movie/${tmdbId}` : `/tv/${tmdbId}/${season}/${episode}`;
-  res.json({ sources: [{ label: 'VixSrc HLS', embedUrl: `https://vixsrc.to${path}`, referer: 'https://vixsrc.to/', tracks: [] }] });
+  res.json({ sources: [{ label: 'VidZee dcloud HLS', embedUrl: `https://player.vidzee.wtf${path}`, referer: 'https://player.vidzee.wtf/', tracks: [] }] });
 });
 
 export default router;
