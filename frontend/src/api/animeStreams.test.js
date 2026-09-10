@@ -64,6 +64,17 @@ describe('resolveAnimeStream', () => {
     );
   });
 
+  it('keeps same-episode captions when primary video mirrors fail', async () => {
+    const tracks = [{ kind: 'captions', label: 'English', src: 'https://worker.example/?url=subtitle.vtt' }];
+    const dependencies = aniNekoDependencies([
+      { ...source('anineko', 1, false), tracks },
+    ], { backupSource: vi.fn().mockResolvedValue({ sources: [source('megavid', 1)] }) });
+    const result = await resolveAnimeStream(anime, 9, 'https://worker.example/', dependencies);
+    expect(result.source.tracks).toEqual(tracks);
+    expect(await result.complete).toHaveLength(1);
+    expect(dependencies.primarySource).toHaveBeenCalledWith('show', 9);
+  });
+
   it('prefers MegaVid but also adds verified AniNeko mirrors', async () => {
     const megaVid = source('megavid', 1);
     const aniSources = [source('anineko', 1), source('anineko', 2)];

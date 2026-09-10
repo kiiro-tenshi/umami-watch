@@ -102,6 +102,11 @@ export async function resolveAnimeStream(animeData, epNum, workerBase, overrides
   let cancelled = false;
   const activeProbes = new Set();
   const providers = [];
+  // Caption files remain usable even when the same episode's video mirrors fail.
+  const primaryCandidates = getAniNekoCandidates(animeData, epNum, workerBase, dependencies);
+  const primaryCaptions = primaryCandidates.then(candidates =>
+    candidates.find(source => source.tracks?.length)?.tracks || []
+  ).catch(() => []);
 
   // MegaVid remains preferred, but AniNeko starts at the same time so it can
   // supply additional verified mirrors or take over immediately on failure.
@@ -116,7 +121,7 @@ export async function resolveAnimeStream(animeData, epNum, workerBase, overrides
   }
   providers.push({
     name: 'anineko',
-    load: () => getAniNekoCandidates(animeData, epNum, workerBase, dependencies),
+    load: () => primaryCandidates,
   });
 
   const providerRuns = providers.map(provider => startProvider(
@@ -137,6 +142,17 @@ export async function resolveAnimeStream(animeData, epNum, workerBase, overrides
       : await firstSuccessful(providerRuns);
   } catch (errors) {
     throw friendlyUnavailableError(errors);
+  }
+
+  if (winner.provider === 'megavid' && !winner.source.tracks?.length) {
+    let timer;
+    try {
+      // Bound the caption wait so a primary-provider outage cannot stall video.
+      winner.source.tracks = await Promise.race([
+        primaryCaptions,
+        new Promise(resolve => { timer = setTimeout(() => resolve([]), 3000); }),
+      ]);
+    } finally { clearTimeout(timer); }
   }
 
   const complete = Promise.allSettled(providerRuns.map(async runPromise => {
