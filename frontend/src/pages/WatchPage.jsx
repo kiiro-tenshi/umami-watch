@@ -354,9 +354,11 @@ export default function WatchPage() {
     return () => { cancelled = true; };
   }, [type, kitsuId, animeSource]);
 
-  // 4b. Fetch TV season episodes + season count for the in-room sidebar
+  // 4b. Fetch TV season episodes for both solo viewing and watch parties.
   useEffect(() => {
-    if (type !== 'tv' || !tmdbId || !roomId) return;
+    setTvEpisodes([]);
+    setTvSeasonCount(0);
+    if (type !== 'tv' || !tmdbId) return;
     let cancelled = false;
     (async () => {
       try {
@@ -370,14 +372,15 @@ export default function WatchPage() {
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
-  }, [type, tmdbId, roomId, season]);
+  }, [type, tmdbId, season]);
 
   // 5. Auto-scroll episode list to current episode
   useEffect(() => {
-    if (!episodeListRef.current || !epNum || animeEpisodes.length === 0) return;
-    const el = episodeListRef.current.querySelector(`[data-ep="${epNum}"]`);
+    const currentEpisode = type === 'tv' ? parseInt(episode || '1', 10) : epNum;
+    if (!episodeListRef.current || !currentEpisode) return;
+    const el = episodeListRef.current.querySelector(`[data-ep="${currentEpisode}"]`);
     el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [animeEpisodes, epNum]);
+  }, [type, animeEpisodes, tvEpisodes, epNum, episode]);
 
   // 6. Socket: join room + playback sync
   useEffect(() => {
@@ -707,7 +710,7 @@ export default function WatchPage() {
 
   const hasEpisodeSidebar =
     (type === 'anime' && animeEpisodes.length > 0) ||
-    (type === 'tv' && !!roomId && tvEpisodes.length > 0);
+    (type === 'tv' && tvEpisodes.length > 0);
   const hasChatSidebar = !!roomId;
   const hasSidebar = hasEpisodeSidebar || hasChatSidebar;
 
@@ -884,7 +887,7 @@ export default function WatchPage() {
               </div>
             )}
 
-            {/* Episode list (anime + TV in-room) */}
+            {/* Episode list (anime + TV) */}
             {hasEpisodeSidebar && (
               <div
                 className={`bg-surface border border-border lg:rounded-xl overflow-hidden flex flex-col ${hasEpisodeSidebar && hasChatSidebar ? (mobileTab === 'episodes' ? 'flex lg:flex' : 'hidden lg:flex') : 'flex'}`}
@@ -959,12 +962,14 @@ export default function WatchPage() {
                         <span className="text-xs text-muted">Season {parseInt(season || '1', 10)}</span>
                       )}
                     </div>
-                    <div className="overflow-y-auto scrollbar-themed flex-1">
+                    <div ref={episodeListRef} className="overflow-y-auto scrollbar-themed flex-1">
                       {tvEpisodes.map(ep => {
                         const isActive = ep.episode_number === parseInt(episode || '1', 10);
                         return (
                           <button
                             key={ep.id}
+                            data-ep={ep.episode_number}
+                            aria-current={isActive ? 'true' : undefined}
                             onClick={() => navigate(buildTvEpUrl(parseInt(season || '1', 10), ep.episode_number))}
                             className={`w-full flex items-center gap-3 px-4 py-3 border-b border-border text-sm transition-colors hover:bg-surface-raised text-left ${isActive ? 'bg-accent-teal/10 border-l-4 border-l-accent-teal' : 'border-l-4 border-l-transparent'}`}
                           >

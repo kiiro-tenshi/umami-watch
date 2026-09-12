@@ -33,7 +33,7 @@ export async function findMovieSubtitles(content, workerBase, fetchFn = fetch) {
       trackUrl.searchParams.set('subtitle', '1');
       return {
         kind: 'subtitles', srclang: 'en',
-        label: `English ${index + 1} — ${sub.movieReleaseName || sub.subtitleFileName}`,
+        label: `English ${index + 1}`,
         src: trackUrl.href,
       };
     }));

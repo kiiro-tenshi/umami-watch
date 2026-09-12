@@ -11,7 +11,7 @@ const TEXT_COLORS = [
   { label: 'Green',  value: '#4ade80' },
 ];
 
-const DEFAULT_CC = { enabled: false, activeLang: '', size: 100, bgOpacity: 75, color: '#ffffff', bold: false };
+const DEFAULT_CC = { enabled: false, activeLang: '', size: 100, bgOpacity: 25, color: '#ffffff', bold: false };
 
 const MB = 1024 * 1024;
 
