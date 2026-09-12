@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Plyr from 'plyr';
 import Hls from 'hls.js';
+import { readPreference, writePreference } from '../utils/playerPreferences';
 import 'plyr/dist/plyr.css';
 
 const TEXT_COLORS = [
@@ -12,6 +13,25 @@ const TEXT_COLORS = [
 ];
 
 const DEFAULT_CC = { enabled: false, activeLang: '', size: 100, bgOpacity: 25, color: '#ffffff', bold: false };
+
+function loadCC(fullscreen = false) {
+  const saved = readPreference('captions', {});
+  const size = fullscreen ? saved.fullscreenSize : saved.normalSize;
+  return {
+    ...DEFAULT_CC,
+    enabled: saved.enabled === true,
+    activeLang: typeof saved.activeLang === 'string' ? saved.activeLang : '',
+    size: Number.isFinite(size) && size >= 50 && size <= 200 ? size : (fullscreen ? 150 : 100),
+    bgOpacity: Number.isFinite(saved.bgOpacity) && saved.bgOpacity >= 0 && saved.bgOpacity <= 100 ? saved.bgOpacity : 25,
+    color: TEXT_COLORS.some(color => color.value === saved.color) ? saved.color : DEFAULT_CC.color,
+    bold: saved.bold === true,
+  };
+}
+
+export function getTimedCueText(cues, time, delay) {
+  return Array.from(cues || []).filter(cue => cue.startTime <= time - delay && cue.endTime > time - delay)
+    .map(cue => parseCueText(cue.text)).join('\n');
+}
 
 const MB = 1024 * 1024;
 
@@ -83,7 +103,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
   const videoRef    = useRef(null);
   const playerRef   = useRef(null);
   const hlsRef      = useRef(null);
-  const cueTrackRef = useRef(null);
+  const fullscreenRef = useRef(false);
   const onReadyRef  = useRef(onReady);
   const onErrorRef  = useRef(onError);
   const onRetryRef  = useRef(onRetry);
@@ -94,7 +114,8 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
   const [isLoading,     setIsLoading]     = useState(true);
   const [playerError,   setPlayerError]   = useState(null);
   const [ccOpen,        setCcOpen]        = useState(false);
-  const [cc,            setCC]            = useState(DEFAULT_CC);
+  const [cc,            setCC]            = useState(loadCC);
+  const [subtitleDelay, setSubtitleDelay] = useState(0);
   const [cueText,       setCueText]       = useState('');
   const [plyrContainer, setPlyrContainer] = useState(null); // .plyr element — portal target for subtitle overlay
   const [ccMountEl,     setCcMountEl]     = useState(null); // mount point inside Plyr controls bar
@@ -104,7 +125,12 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
   const lastTapRef     = useRef(null); // { x, time } of previous tap
   const seekTimerRef   = useRef(null); // timeout to clear seek indicator
 
-  const updateCC = (patch) => setCC(prev => ({ ...prev, ...patch }));
+  const updateCC = (patch) => {
+    const saved = { ...readPreference('captions', {}), ...patch };
+    if (patch.size != null) saved[fullscreenRef.current ? 'fullscreenSize' : 'normalSize'] = patch.size;
+    writePreference('captions', saved);
+    setCC(prev => ({ ...prev, ...patch }));
+  };
   const selectCC = (patch) => {
     updateCC(patch);
     setCcOpen(false);
@@ -116,39 +142,28 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
   const isM3u8   = options.sources?.[0]?.type === 'application/x-mpegURL';
   const isViewer = options.isViewer === true;
 
-  // CC track: hide all native rendering, listen to cuechange for custom overlay
+  // Re-evaluate against the media clock so offsets also work while seeking.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-
-    if (cueTrackRef.current) {
-      cueTrackRef.current.track.removeEventListener('cuechange', cueTrackRef.current.handler);
-      cueTrackRef.current = null;
-    }
-    setCueText('');
-    Array.from(video.textTracks).forEach(t => { t.mode = 'hidden'; });
-
-    if (!cc.enabled || !cc.activeLang) return;
-
-    const setup = () => {
-      const track = Array.from(video.textTracks).find(t => t.label === cc.activeLang);
-      if (!track) return;
-      track.mode = 'hidden';
-      const handler = () => {
-        const cue = track.activeCues?.[0];
-        setCueText(cue ? parseCueText(cue.text) : '');
-      };
-      track.addEventListener('cuechange', handler);
-      cueTrackRef.current = { track, handler };
+    const refresh = () => {
+      const nativeTracks = Array.from(video.textTracks);
+      nativeTracks.forEach(track => { track.mode = 'hidden'; });
+      const track = nativeTracks.find(track => track.label === cc.activeLang);
+      setCueText(cc.enabled ? getTimedCueText(track?.cues, video.currentTime, subtitleDelay) : '');
     };
+    refresh();
+    const timer = setInterval(refresh, 100);
+    video.addEventListener('seeked', refresh);
+    video.addEventListener('loadeddata', refresh);
+    return () => {
+      clearInterval(timer);
+      video.removeEventListener('seeked', refresh);
+      video.removeEventListener('loadeddata', refresh);
+    };
+  }, [cc.enabled, cc.activeLang, src, subtitleDelay]);
 
-    if (video.textTracks.length > 0) {
-      setup();
-    } else {
-      video.addEventListener('loadeddata', setup, { once: true });
-      return () => video.removeEventListener('loadeddata', setup);
-    }
-  }, [cc.enabled, cc.activeLang, src]);
+  useEffect(() => { setSubtitleDelay(0); }, [src, cc.activeLang]);
 
   // Main player setup
   useEffect(() => {
@@ -164,7 +179,8 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
 
     setIsLoading(true);
     setPlayerError(null);
-    setCC(DEFAULT_CC);
+    fullscreenRef.current = false;
+    setCC(loadCC());
     setCueText('');
     setPlyrContainer(null);
     setCcMountEl(null);
@@ -175,6 +191,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
       controls,
       autoplay: options.autoplay || false,
       captions: { active: false },
+      storage: { enabled: true, key: isViewer ? 'umami-plyr-viewer' : 'umami-plyr' },
       settings: isViewer ? ['quality'] : ['quality', 'speed', 'loop'],
       clickToPlay: !isViewer,
       keyboard: { focused: false, global: false },
@@ -184,8 +201,8 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
     const initPlayer = (player) => {
       playerRef.current = player;
       // Plyr emits these for both native and fallback fullscreen modes.
-      player.on('enterfullscreen', () => setCC(prev => ({ ...prev, size: 150 })));
-      player.on('exitfullscreen', () => setCC(prev => ({ ...prev, size: 100 })));
+      player.on('enterfullscreen', () => { fullscreenRef.current = true; setCC(prev => ({ ...prev, size: loadCC(true).size })); });
+      player.on('exitfullscreen', () => { fullscreenRef.current = false; setCC(prev => ({ ...prev, size: loadCC().size })); });
       setPlyrContainer(player.elements.container);
 
       // Insert a mount div just before the fullscreen button in Plyr's controls
@@ -384,8 +401,9 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
   // Auto-enable English CC when tracks are available
   useEffect(() => {
     if (!tracks.length) return;
-    const preferred = tracks.find(t => /english/i.test(t.label)) || tracks[0];
-    setCC(prev => ({ ...prev, enabled: true, activeLang: preferred.label }));
+    const saved = readPreference('captions', {});
+    const preferred = tracks.find(t => t.label === saved.activeLang) || tracks.find(t => /english/i.test(t.label)) || tracks[0];
+    setCC(prev => ({ ...prev, enabled: saved.enabled !== false, activeLang: preferred.label }));
   }, [tracks, src]);
 
   // Global keyboard shortcuts — skip when user is typing in any input/textarea
@@ -535,7 +553,7 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
           {ccOpen && (
             <div
               className="absolute bottom-full right-0 mb-2 w-64 rounded-xl p-4 flex flex-col gap-4 shadow-2xl"
-              style={{ background: 'rgba(0,0,0,0.92)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(8px)', zIndex: 200 }}
+              style={{ background: 'rgba(0,0,0,0.92)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(8px)', zIndex: 200, maxHeight: '65vh', overflowY: 'auto', maxWidth: '85vw' }}
             >
               <div>
                 <p className="text-[10px] text-white/40 uppercase tracking-widest mb-2 font-semibold">Language</p>
@@ -552,6 +570,17 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
                         ${cc.enabled && cc.activeLang === t.label ? 'bg-[#f43f5e] text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'}`}
                     >{t.label}</button>
                   ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-white/60" htmlFor="subtitle-delay">Subtitle delay: {subtitleDelay > 0 ? '+' : ''}{subtitleDelay.toFixed(1)}s</label>
+                <input id="subtitle-delay" aria-label="Subtitle delay" type="range" min="-30" max="30" step="0.5" value={subtitleDelay}
+                  onChange={e => setSubtitleDelay(Number(e.target.value))} className="w-full accent-[#f43f5e]" />
+                <div className="flex justify-between text-xs text-white/70">
+                  <button onClick={() => setSubtitleDelay(v => Math.max(-30, v - 0.5))}>Earlier -0.5s</button>
+                  <button onClick={() => setSubtitleDelay(0)}>Reset</button>
+                  <button onClick={() => setSubtitleDelay(v => Math.min(30, v + 0.5))}>Later +0.5s</button>
                 </div>
               </div>
 

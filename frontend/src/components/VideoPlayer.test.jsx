@@ -45,7 +45,7 @@ vi.mock('hls.js', () => ({
 
 vi.mock('plyr/dist/plyr.css', () => ({}));
 
-import VideoPlayer, { getAdaptiveBufferConfig, getHlsQualityLevels } from './VideoPlayer.jsx';
+import VideoPlayer, { getAdaptiveBufferConfig, getHlsQualityLevels, getTimedCueText } from './VideoPlayer.jsx';
 import Plyr from 'plyr';
 import Hls from 'hls.js';
 
@@ -53,6 +53,7 @@ import Hls from 'hls.js';
 describe('VideoPlayer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     mockHlsHandlers.clear();
     mockPlyrInstance.elements.container.replaceChildren();
     mockPlyrInstance.elements.controls.replaceChildren();
@@ -60,6 +61,35 @@ describe('VideoPlayer', () => {
     mockHlsInstance.levels = [];
     mockHlsInstance.currentLevel = -1;
     Hls.isSupported.mockReturnValue(false);
+  });
+
+  it('shifts subtitles earlier and later, including overlapping cues', () => {
+    const cues = [{ startTime: 10, endTime: 12, text: 'Hello' }, { startTime: 11, endTime: 13, text: 'World' }];
+    expect(getTimedCueText(cues, 12, 2)).toBe('Hello');
+    expect(getTimedCueText(cues, 9, -2)).toBe('Hello\nWorld');
+    expect(getTimedCueText(cues, 9, 0)).toBe('');
+    expect(getTimedCueText(cues, 15, 2)).toBe('');
+  });
+
+  it('keeps subtitles off and remembers separate normal/fullscreen sizes', async () => {
+    localStorage.setItem('umami-captions', JSON.stringify({ enabled: false, normalSize: 110, fullscreenSize: 170 }));
+    Hls.isSupported.mockReturnValue(true);
+    const user = userEvent.setup();
+    render(<VideoPlayer options={{ sources: [{ src: 'https://worker.example/video.m3u8', type: 'application/x-mpegURL' }] }}
+      tracks={[{ kind: 'subtitles', label: 'English', srclang: 'en', src: '/en.vtt' }]} />);
+    act(() => mockHlsHandlers.get('manifestParsed')());
+    const controls = within(mockPlyrInstance.elements.controls);
+    await user.click(controls.getByTitle('Subtitle settings'));
+    expect(controls.getByRole('button', { name: 'Off' }).className).toContain('bg-[#f43f5e]');
+    expect(controls.getByText('110%')).toBeTruthy();
+    act(() => mockPlyrOn.mock.calls.find(([name]) => name === 'enterfullscreen')[1]());
+    expect(controls.getByText('170%')).toBeTruthy();
+    act(() => mockPlyrOn.mock.calls.find(([name]) => name === 'exitfullscreen')[1]());
+    expect(controls.getByText('110%')).toBeTruthy();
+    await user.click(controls.getByRole('button', { name: 'Later +0.5s' }));
+    expect(controls.getByLabelText('Subtitle delay').value).toBe('0.5');
+    await user.click(controls.getByRole('button', { name: 'Reset' }));
+    expect(controls.getByLabelText('Subtitle delay').value).toBe('0');
   });
 
   it('uses conservative, balanced, and fast adaptive buffer profiles', () => {

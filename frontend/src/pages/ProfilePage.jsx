@@ -5,6 +5,7 @@ import { useWatchlist } from '../hooks/useWatchlist';
 import { useHistory } from '../hooks/useHistory';
 import ContentCard from '../components/ContentCard';
 import { auth } from '../firebase';
+import { clearLocalProgress } from '../utils/playerPreferences';
 
 function resizeImage(file, maxSize) {
   return new Promise((resolve, reject) => {
@@ -129,6 +130,7 @@ export default function ProfilePage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Server error');
+      clearLocalProgress(user.uid);
       setHistory([]);
     } catch (e) {
       alert('Failed to clear history.');

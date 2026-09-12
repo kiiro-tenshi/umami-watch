@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../hooks/useSocket';
 import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
@@ -23,10 +23,13 @@ import { useWatchedEps } from '../hooks/useWatchedEps';
 import LoadingSpinner from '../components/LoadingSpinner';
 import InviteModal from '../components/InviteModal';
 import RoomContentModal from '../components/RoomContentModal';
+import { readPreference, writePreference } from '../utils/playerPreferences';
+import { resumePosition as getResumePosition, nextAiredEpisode } from '../utils/playbackProgress';
 
 export default function WatchPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
 
   const roomId = searchParams.get('roomId');
@@ -56,6 +59,10 @@ export default function WatchPage() {
   const [mobileTab, setMobileTab] = useState('chat'); // 'chat' | 'episodes'
   const [epMenu, setEpMenu] = useState(null); // { x, y, epNum }
 
+  const [autoNext, setAutoNext] = useState(() => readPreference('auto-next', true));
+  const [nextTvEpisode, setNextTvEpisode] = useState(null);
+  const endedRef = useRef(null);
+  const saveHistoryRef = useRef(null);
   const playerRef = useRef(null);
   const joinedConnectionRef = useRef(null);
   const episodeListRef = useRef(null);
@@ -93,6 +100,27 @@ export default function WatchPage() {
     params.set('episode', String(newEpisode));
     return `/watch?${params.toString()}`;
   }
+
+  useEffect(() => {
+    setNextTvEpisode(null);
+    if (type !== 'tv' || !tmdbId || !tvEpisodes.length) return;
+    let cancelled = false;
+    const currentSeason = Number(season || 1);
+    const next = nextAiredEpisode(tvEpisodes, Number(episode || 1), currentSeason);
+    if (next) setNextTvEpisode(next);
+    else if (currentSeason < tvSeasonCount && Number(episode || 1) >= Math.max(...tvEpisodes.map(ep => ep.episode_number))) {
+      getTVSeason(tmdbId, currentSeason + 1).then(data => {
+        if (!cancelled) setNextTvEpisode(nextAiredEpisode(data.episodes, 0, currentSeason + 1));
+      }).catch(() => {});
+    }
+    return () => { cancelled = true; };
+  }, [type, tmdbId, season, episode, tvEpisodes, tvSeasonCount]);
+
+  endedRef.current = () => {
+    if (autoNext && type === 'tv' && nextTvEpisode && (!roomId || isHost)) {
+      navigate(buildTvEpUrl(nextTvEpisode.season, nextTvEpisode.episode), { state: { autoPlay: true } });
+    }
+  };
 
   // 1. Get fresh Firebase auth token
   useEffect(() => {
@@ -538,15 +566,15 @@ export default function WatchPage() {
     const hEpisode   = isRoomViewer ? roomData?.episodeNum   : episode;
     if (!hType || !user || !hContentId) return;
     if (hType === 'anime' && hEpNum == null) return; // need episode number for the key
-    const histKey = hType === 'anime' ? getAnimeHistoryKey(hContentId, hEpNum, hContentSource) : (hContentId || 'unknown');
-    const interval = setInterval(async () => {
-      const p = playerRef.current;
-      if (!p || p.paused) return;
+    const histKey = hType === 'anime' ? getAnimeHistoryKey(hContentId, hEpNum, hContentSource) : `${hType}_${hContentId}`;
+    let lastRecord = null;
+    let lastLocalSave = 0;
+    const sample = (p = playerRef.current) => {
+      if (!p) return null;
       const pos = p.currentTime;
       const dur = p.duration;
-      if (pos < 5 || !dur) return;
-      const histRef = doc(db, 'users', user.uid, 'history', histKey);
-      await setDoc(histRef, {
+      if (!Number.isFinite(pos) || !Number.isFinite(dur) || pos < 5 || dur <= 0) return;
+      const record = {
         contentId: hContentId,
         contentType: hType,
         ...(hType === 'anime' && { contentSource: normalizeAnimeSource(hContentSource) }),
@@ -554,19 +582,49 @@ export default function WatchPage() {
         posterUrl: contentDetails?.posterUrl || roomData?.posterUrl || '',
         position: pos, duration: dur,
         updatedAt: serverTimestamp(),
+        updatedAtMs: Date.now(),
+        ...(hType === 'tv' && { nextSeasonNum: nextTvEpisode?.season || null, nextEpisodeNum: nextTvEpisode?.episode || null }),
         ...(hType === 'anime' && hEpNum != null && { epNum: hEpNum }),
-        ...(hSeason && { seasonNum: hSeason }),
-        ...(hEpisode && { episodeNum: hEpisode })
-      }, { merge: true }).catch(console.error);
+        ...(hType === 'tv' && { seasonNum: hSeason || 1, episodeNum: hEpisode || 1 })
+      };
+      lastRecord = record;
+      if (Date.now() - lastLocalSave >= 1000) {
+        writePreference(`progress-${user.uid}-${histKey}`, record);
+        lastLocalSave = Date.now();
+      }
+      return record;
+    };
+    const persist = async record => {
+      if (!record) return;
+      writePreference(`progress-${user.uid}-${histKey}`, record);
+      await setDoc(doc(db, 'users', user.uid, 'history', histKey), record, { merge: true }).catch(console.error);
+      const { position: pos, duration: dur } = record;
       if (!isRoomViewer && hType === 'anime' && hEpNum && pos >= dur * 0.85) {
         updateWatched(hEpNum, true);
       }
-    }, 15000);
-    return () => clearInterval(interval);
-  }, [type, kitsuId, animeSource, epNum, tmdbId, season, episode, user, contentDetails, roomId, isHost, roomData]);
+    };
+    const save = (p) => persist(sample(p));
+    save.sample = sample;
+    saveHistoryRef.current = save;
+    const interval = setInterval(() => { if (playerRef.current && !playerRef.current.paused) save(); }, 15000);
+    const onHide = () => { if (document.visibilityState === 'hidden') save(); };
+    const onPageHide = () => save();
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onPageHide);
+      persist(lastRecord);
+      if (saveHistoryRef.current === save) saveHistoryRef.current = null;
+    };
+  }, [type, kitsuId, animeSource, epNum, tmdbId, season, episode, user, contentDetails, roomId, isHost, roomData, nextTvEpisode]);
 
   const handlePlayerReady = (player) => {
     playerRef.current = player;
+    player.on('timeupdate', () => { if (playerRef.current === player) saveHistoryRef.current?.sample(player); });
+    player.on('pause', () => { if (playerRef.current === player) saveHistoryRef.current?.(player); });
+    player.on('ended', () => { if (playerRef.current === player) { saveHistoryRef.current?.(player); endedRef.current?.(); } });
     const applyPendingSync = () => {
       const pending = pendingSyncRef.current;
       if (!pending) return;
@@ -585,11 +643,23 @@ export default function WatchPage() {
       resumePositionRef.current = null;
       if (resumePlayingRef.current) player.play().catch(() => {});
       resumePlayingRef.current = false;
-    } else if (!roomId && user && type === 'anime' && kitsuId) {
-      const histKey = getAnimeHistoryKey(kitsuId, epNum, animeSource);
-      getDoc(doc(db, 'users', user.uid, 'history', histKey)).then(snap => {
-        if (snap.exists() && snap.data().position) player.currentTime = snap.data().position;
-      });
+    } else if (!roomId && user && (kitsuId || tmdbId)) {
+      const histKey = type === 'anime' ? getAnimeHistoryKey(kitsuId, epNum, animeSource) : `${type}_${tmdbId}`;
+      const applyResume = item => {
+        const position = getResumePosition(item, type, season, episode);
+        if (!position || playerRef.current !== player) return;
+        const seek = () => { if (playerRef.current === player && player.currentTime < 5) player.currentTime = position; };
+        if (player.duration > 0) seek();
+        else player.once('loadedmetadata', seek);
+      };
+      const local = readPreference(`progress-${user.uid}-${histKey}`, {});
+      getDoc(doc(db, 'users', user.uid, 'history', histKey)).then(async snap => {
+        // Preserve progress written before movie/TV history keys were namespaced.
+        if (!snap.exists() && type !== 'anime') snap = await getDoc(doc(db, 'users', user.uid, 'history', tmdbId));
+        const remote = snap.exists() ? snap.data() : {};
+        const remoteTime = Math.max(remote.updatedAtMs || 0, remote.updatedAt?.toMillis?.() || 0);
+        applyResume(remoteTime > (local.updatedAtMs || 0) || local.position == null ? remote : local);
+      }).catch(() => applyResume(local));
     }
     if (roomId && isHost) {
       player.on('play', () => socketRef.current?.emit('playback:play', player.currentTime));
@@ -699,7 +769,7 @@ export default function WatchPage() {
   const isDirect = sources[activeSourceIdx]?.type === 'direct';
 
   const videoOptions = {
-    autoplay: false,
+    autoplay: location.state?.autoPlay === true,
     sources: isHls
       ? [{ src: streamUrl, type: 'application/x-mpegURL' }]
       : isDirect && streamUrl
@@ -795,6 +865,17 @@ export default function WatchPage() {
           </div>
 
           {/* Next episode bar */}
+          {type === 'tv' && (!roomId || isHost) && (
+            <div className="mx-4 mt-3 p-3 rounded-lg bg-surface flex flex-wrap items-center justify-between gap-3">
+              <label className="text-sm flex items-center gap-2">
+                <input type="checkbox" checked={autoNext} onChange={e => { setAutoNext(e.target.checked); writePreference('auto-next', e.target.checked); }} />
+                Auto-play next episode
+              </label>
+              {nextTvEpisode && <Link className="text-sm font-semibold text-primary" to={buildTvEpUrl(nextTvEpisode.season, nextTvEpisode.episode)}>
+                Next: S{nextTvEpisode.season} E{nextTvEpisode.episode}{nextTvEpisode.name ? ' - ' + nextTvEpisode.name : ''} &rarr;
+              </Link>}
+            </div>
+          )}
           {nextEp && (
             <div className="flex items-center justify-between px-4 py-2 bg-surface-raised border-b border-border">
               <span className="text-xs text-muted">Up next: Episode {nextEp.number}{nextEp.title ? ` — ${nextEp.title}` : ''}</span>

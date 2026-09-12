@@ -73,7 +73,7 @@ describe('getContinueWatchingItems', () => {
         id: 'movie-complete',
         contentId: '10',
         contentType: 'movie',
-        position: 900,
+        position: 950,
         duration: 1000,
       },
       {

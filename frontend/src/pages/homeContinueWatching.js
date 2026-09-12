@@ -11,7 +11,7 @@ export function isHistoryItemComplete(item) {
   return Number.isFinite(position)
     && Number.isFinite(duration)
     && duration > 0
-    && position >= duration * WATCHED_THRESHOLD;
+    && position >= duration * (['movie', 'tv'].includes(item.contentType) ? 0.95 : WATCHED_THRESHOLD);
 }
 
 function getProgress(item) {
@@ -35,7 +35,10 @@ function getContinueUrl(item, complete) {
   }
 
   if (item.contentType === 'tv') {
-    return `/watch?type=tv&tmdbId=${item.contentId}&season=${item.seasonNum || 1}&episode=${item.episodeNum || 1}`;
+    const season = complete ? item.nextSeasonNum : item.seasonNum;
+    const episode = complete ? item.nextEpisodeNum : item.episodeNum;
+    if (complete && (!season || !episode)) return null;
+    return `/watch?type=tv&tmdbId=${item.contentId}&season=${season || 1}&episode=${episode || 1}`;
   }
 
   return null;
@@ -43,6 +46,7 @@ function getContinueUrl(item, complete) {
 
 export function getContinueWatchingItems(history) {
   const seenAnime = new Set();
+  const seenMedia = new Set();
 
   return history.flatMap(item => {
     const complete = isHistoryItemComplete(item);
@@ -51,8 +55,11 @@ export function getContinueWatchingItems(history) {
       const animeId = `${normalizeAnimeSource(item.contentSource)}:${item.contentId}`;
       if (seenAnime.has(animeId)) return [];
       seenAnime.add(animeId);
-    } else if (complete) {
-      return [];
+    } else {
+      const key = `${item.contentType}:${item.contentId}`;
+      if (seenMedia.has(key)) return [];
+      seenMedia.add(key);
+      if (complete && item.contentType !== 'tv') return [];
     }
 
     const continueUrl = getContinueUrl(item, complete);
