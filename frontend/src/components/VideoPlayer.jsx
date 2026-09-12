@@ -183,6 +183,9 @@ export default function VideoPlayer({ options, tracks = [], onReady, onError, on
     // After Plyr is created: store container + insert CC mount point in controls bar
     const initPlayer = (player) => {
       playerRef.current = player;
+      // Plyr emits these for both native and fallback fullscreen modes.
+      player.on('enterfullscreen', () => setCC(prev => ({ ...prev, size: 150 })));
+      player.on('exitfullscreen', () => setCC(prev => ({ ...prev, size: 100 })));
       setPlyrContainer(player.elements.container);
 
       // Insert a mount div just before the fullscreen button in Plyr's controls
