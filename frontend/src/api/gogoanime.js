@@ -82,10 +82,11 @@ export function buildProxiedHlsSources(sourceData, workerBase) {
 
 const SOURCE_PROBE_TIMEOUT_MS = 4_000;
 
-async function checkHlsSource(source, fetchFn, controllers, timeoutMs) {
+async function checkHlsSource(source, fetchFn, controllers, timeoutMs, retry = false) {
   if (source.type !== 'hls') return null;
   const probeUrl = new URL(source.url);
   probeUrl.searchParams.set('probe', '1');
+  if (retry) probeUrl.searchParams.set('probeRetry', '1');
   const controller = new AbortController();
   controllers.add(controller);
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -111,7 +112,7 @@ async function checkHlsSource(source, fetchFn, controllers, timeoutMs) {
 
 // Starts every check together. `first` resolves as soon as one mirror works;
 // `complete` keeps going until the requested verified-source limit is reached.
-export function probeAvailableHlsSources(sources, fetchFn = fetch, maxSources = 5, timeoutMs = SOURCE_PROBE_TIMEOUT_MS) {
+export function probeAvailableHlsSources(sources, fetchFn = fetch, maxSources = 5, timeoutMs = SOURCE_PROBE_TIMEOUT_MS, { retry = false } = {}) {
   const candidates = sources.filter(source => source.type === 'hls');
   const controllers = new Set();
   let available = [];
@@ -137,6 +138,9 @@ export function probeAvailableHlsSources(sources, fetchFn = fetch, maxSources = 
   } else {
     candidates.forEach(source => {
       checkHlsSource(source, fetchFn, controllers, timeoutMs).then(result => {
+        if (result || finished || !retry) return result;
+        return checkHlsSource(source, fetchFn, controllers, timeoutMs, true);
+      }).then(result => {
         settled += 1;
         if (finished) return;
         if (result) {

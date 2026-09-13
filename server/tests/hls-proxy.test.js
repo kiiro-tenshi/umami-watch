@@ -143,8 +143,8 @@ describe('Cloudflare HLS embed resolver', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ available: false });
-    expect(response.headers.get('cache-control')).toBe('public, max-age=15');
-    expect(cache.put).toHaveBeenCalledOnce();
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(cache.put).not.toHaveBeenCalled();
   });
 
   it('returns a cached probe without contacting the embed provider again', async () => {
@@ -181,12 +181,12 @@ describe('Cloudflare HLS embed resolver', () => {
       );
       const responsePromise = worker.fetch(request, {}, { waitUntil: vi.fn() });
       await vi.advanceTimersByTimeAsync(0);
-      await vi.advanceTimersByTimeAsync(3_500);
+      await vi.advanceTimersByTimeAsync(8_000);
       const response = await responsePromise;
 
       expect(await response.json()).toEqual({ available: false });
-      expect(response.headers.get('cache-control')).toBe('public, max-age=15');
-      expect(cache.put).toHaveBeenCalledOnce();
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(cache.put).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

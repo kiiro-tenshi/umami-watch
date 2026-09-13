@@ -15,9 +15,8 @@ export function srtToVtt(input) {
 
 const SUPPORTED_EMBED_HOSTS = new Set(['vivibebe.site', 'otakuhg.site', 'otakuvid.online', 'player.vidzee.wtf']);
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
-const PROBE_TIMEOUT_MS = 3_500;
+const PROBE_TIMEOUT_MS = 8_000;
 const AVAILABLE_CACHE_SECONDS = 60;
-const UNAVAILABLE_CACHE_SECONDS = 15;
 const TELEGRAM_STICKER_PACKS = new Map([
   ['kiiromiko_by_kiiro_sticker_bot', 'Kiiro Miko'],
   ['kiirouniform_by_kiiro_sticker_bot', 'Kiiro Uniform'],
@@ -371,8 +370,7 @@ export default {
       return new Response('url or embed parameter required', { status: 400, headers: CORS });
     }
 
-    // Probe responses are short-lived at the edge: working streams usually return
-    // instantly on repeat visits, while a temporary failure is retried after 15 s.
+    // Cache working streams, but let temporary failures be retried immediately.
     if (wantsProbe) {
       const cache = caches.default;
       const cached = await cache.match(request);
@@ -401,11 +399,11 @@ export default {
       } catch { /* unavailable or timed out */ }
       finally { clearTimeout(timeout); }
 
-      const maxAge = available ? AVAILABLE_CACHE_SECONDS : UNAVAILABLE_CACHE_SECONDS;
+      const cacheControl = available ? `public, max-age=${AVAILABLE_CACHE_SECONDS}` : 'no-store';
       const response = Response.json({ available }, {
-        headers: { ...CORS, 'Cache-Control': `public, max-age=${maxAge}` },
+        headers: { ...CORS, 'Cache-Control': cacheControl },
       });
-      ctx.waitUntil(cache.put(request, response.clone()));
+      if (available) ctx.waitUntil(cache.put(request, response.clone()));
       return response;
     }
 

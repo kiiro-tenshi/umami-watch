@@ -33,7 +33,8 @@ function labelProviderSources(sources, provider) {
 
 function mergeVerifiedSources(firstSource, groups) {
   const seen = new Set();
-  return [firstSource, ...groups.flat()].filter(source => {
+  const priority = source => source.provider === 'anineko' ? (source.tracks?.length ? 0 : 1) : 2;
+  return [firstSource, ...groups.flat().sort((a, b) => priority(a) - priority(b))].filter(source => {
     if (!source?.url || seen.has(source.url)) return false;
     seen.add(source.url);
     return true;
@@ -51,23 +52,24 @@ function startProvider(provider, loadCandidates, dependencies, activeProbes, isC
     const candidates = labelProviderSources(await loadCandidates(), provider);
     if (isCancelled()) throw new Error('Source check cancelled.');
 
-    // Every displayed source must pass the Worker probe, which verifies both the
-    // HLS manifest and an actual media segment.
-    const sourceProbe = dependencies.probe(
-      candidates,
-      undefined,
-      MAX_VERIFIED_ANIME_SOURCES,
-    );
-    activeProbes.add(sourceProbe);
-    const source = await sourceProbe.first;
-    if (!source) {
-      sourceProbe.cancel();
-      throw new Error(`No working HLS source was found on the ${provider} provider.`);
-    }
-
+    // Probe both groups concurrently but select a soft-sub source first.
+    const soft = candidates.filter(source => source.tracks?.length);
+    const other = candidates.filter(source => !source.tracks?.length);
+    const groups = provider === 'anineko' && soft.length && other.length ? [soft, other] : [candidates];
+    const probes = groups.map(group => {
+      const probe = dependencies.probe(group, undefined, MAX_VERIFIED_ANIME_SOURCES, 10_000, { retry: true });
+      activeProbes.add(probe);
+      return probe;
+    });
+    const firsts = probes.map(probe => probe.first.then(source => {
+      if (!source) throw new Error(`No working HLS source was found on the ${provider} provider.`);
+      return source;
+    }));
+    firsts.forEach(promise => { promise.catch(() => {}); });
+    const source = await firsts[0].catch(() => firstSuccessful(firsts.slice(1)));
     return {
       source,
-      complete: sourceProbe.complete,
+      complete: Promise.all(probes.map(probe => probe.complete)).then(groups => groups.flat()),
       provider,
     };
   })();
@@ -108,8 +110,7 @@ export async function resolveAnimeStream(animeData, epNum, workerBase, overrides
     candidates.find(source => source.tracks?.length)?.tracks || []
   ).catch(() => []);
 
-  // MegaVid remains preferred, but AniNeko starts at the same time so it can
-  // supply additional verified mirrors or take over immediately on failure.
+  // Resolve MegaVid concurrently as a fallback while preferring AniNeko.
   if (animeData.idMal) {
     providers.push({
       name: 'megavid',
@@ -132,14 +133,14 @@ export async function resolveAnimeStream(animeData, epNum, workerBase, overrides
     () => cancelled,
   ));
 
+  providerRuns.forEach(run => { run.catch(() => {}); });
+
   let winner;
   try {
-    // Preserve the user's MegaVid preference without delaying AniNeko setup:
-    // AniNeko resolves and probes concurrently, so it is ready immediately if
-    // MegaVid fails.
-    winner = providers[0]?.name === 'megavid'
-      ? await providerRuns[0].catch(() => firstSuccessful(providerRuns.slice(1)))
-      : await firstSuccessful(providerRuns);
+    const primaryIndex = providers.findIndex(provider => provider.name === 'anineko');
+    winner = await providerRuns[primaryIndex].catch(() => firstSuccessful(
+      providerRuns.filter((_, index) => index !== primaryIndex),
+    ));
   } catch (errors) {
     throw friendlyUnavailableError(errors);
   }

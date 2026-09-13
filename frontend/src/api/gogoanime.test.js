@@ -236,3 +236,26 @@ describe('Cloudflare HLS source helpers', () => {
     }
   });
 });
+
+
+describe('retrying transient anime probes', () => {
+  it('retries an unavailable result with a separate cache key', async () => {
+    const source = { type: 'hls', url: 'https://worker.example/?embed=one' };
+    const fetchFn = vi.fn().mockResolvedValueOnce(Response.json({ available: false }))
+      .mockResolvedValueOnce(Response.json({ available: true }));
+    const probe = probeAvailableHlsSources([source], fetchFn, 5, 10000, { retry: true });
+    expect(await probe.first).toBe(source);
+    expect(await probe.complete).toEqual([source]);
+    expect(new URL(fetchFn.mock.calls[1][0]).searchParams.get('probeRetry')).toBe('1');
+  });
+  it('does not retry after cancellation', async () => {
+    const fetchFn = vi.fn((_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('aborted')));
+    }));
+    const probe = probeAvailableHlsSources([{type:'hls',url:'https://worker.example/'}], fetchFn, 5, 10000, { retry:true });
+    probe.cancel();
+    expect(await probe.first).toBeNull();
+    await Promise.resolve();
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+});

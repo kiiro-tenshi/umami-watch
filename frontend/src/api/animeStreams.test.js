@@ -61,6 +61,8 @@ describe('resolveAnimeStream', () => {
       expect.any(Array),
       undefined,
       MAX_VERIFIED_ANIME_SOURCES,
+      10_000,
+      { retry: true },
     );
   });
 
@@ -75,7 +77,7 @@ describe('resolveAnimeStream', () => {
     expect(dependencies.primarySource).toHaveBeenCalledWith('show', 9);
   });
 
-  it('prefers MegaVid but also adds verified AniNeko mirrors', async () => {
+  it('prefers AniNeko and keeps MegaVid as a verified fallback', async () => {
     const megaVid = source('megavid', 1);
     const aniSources = [source('anineko', 1), source('anineko', 2)];
     const backupSource = vi.fn().mockResolvedValue({ sources: [megaVid] });
@@ -86,16 +88,16 @@ describe('resolveAnimeStream', () => {
 
     expect(backupSource).toHaveBeenCalledWith(61240, 1, 'sub');
     expect(dependencies.search).toHaveBeenCalledWith(anime.title.english);
-    expect(result.source).toMatchObject({ url: megaVid.url, provider: 'megavid' });
+    expect(result.source).toMatchObject({ url: aniSources[0].url, provider: 'anineko' });
     expect(complete.map(item => item.url)).toEqual([
-      megaVid.url,
       aniSources[0].url,
       aniSources[1].url,
+      megaVid.url,
     ]);
     expect(complete.map(item => item.label)).toEqual([
-      'MegaVid - megavid 1',
       'AniNeko - anineko 1',
       'AniNeko - anineko 2',
+      'MegaVid - megavid 1',
     ]);
   });
 
@@ -131,6 +133,25 @@ describe('resolveAnimeStream', () => {
     expect(complete).toHaveLength(MAX_VERIFIED_ANIME_SOURCES);
     expect(complete.every(item => item.working)).toBe(true);
     expect(complete.some(item => item.url === aniSources[0].url)).toBe(false);
+  });
+
+  it('prioritizes AniNeko soft subtitles over another working mirror', async () => {
+    const hard = source('anineko', 'hard');
+    const soft = { ...source('anineko', 'soft'), tracks: [{ label: 'English', src: '/subs.vtt' }] };
+    const result = await resolveAnimeStream(anime, 3, 'https://worker.example/', aniNekoDependencies([hard, soft], {
+      backupSource: vi.fn().mockResolvedValue({ sources: [source('megavid', 1)] }),
+    }));
+    expect(result.source.url).toBe(soft.url);
+    expect((await result.complete).some(item => item.url === hard.url)).toBe(true);
+  });
+
+  it('falls back to other AniNeko mirrors when its soft-sub mirror fails', async () => {
+    const hard = source('anineko', 'hard');
+    const soft = { ...source('anineko', 'soft', false), tracks: [{ label: 'English' }] };
+    const result = await resolveAnimeStream(anime, 3, 'https://worker.example/', aniNekoDependencies([hard, soft], {
+      backupSource: vi.fn().mockResolvedValue({ sources: [source('megavid', 1)] }),
+    }));
+    expect(result.source.url).toBe(hard.url);
   });
 
   it('shows a stable friendly error when both providers fail', async () => {
