@@ -17,10 +17,7 @@ const SUPPORTED_EMBED_HOSTS = new Set(['vivibebe.site', 'otakuhg.site', 'otakuvi
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 const PROBE_TIMEOUT_MS = 8_000;
 const AVAILABLE_CACHE_SECONDS = 60;
-const TELEGRAM_STICKER_PACKS = new Map([
-  ['kiiromiko_by_kiiro_sticker_bot', 'Kiiro Miko'],
-  ['kiirouniform_by_kiiro_sticker_bot', 'Kiiro Uniform'],
-]);
+const STICKER_PACK_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
 function telegramStickerFile(sticker) {
   if (sticker.is_video) {
@@ -28,7 +25,7 @@ function telegramStickerFile(sticker) {
   }
   if (sticker.is_animated) {
     // TGS needs a dedicated renderer. Use Telegram's static thumbnail until one
-    // is added so every curated pack remains usable in regular browsers.
+    // is added so every pack remains usable in regular browsers.
     return sticker.thumbnail?.file_id
       ? { fileId: sticker.thumbnail.file_id, format: 'webp' }
       : null;
@@ -46,14 +43,14 @@ async function telegramApi(env, method, params) {
 }
 
 async function getTelegramStickerSet(env, packName) {
-  if (!TELEGRAM_STICKER_PACKS.has(packName)) throw new Error('Sticker pack is not allowed');
+  if (!STICKER_PACK_NAME.test(packName || '')) throw new Error('Invalid sticker pack name');
   return telegramApi(env, 'getStickerSet', { name: packName });
 }
 
 async function serveTelegramPack(request, url, env, ctx, cors) {
   const packName = url.searchParams.get('stickerPack');
-  if (!TELEGRAM_STICKER_PACKS.has(packName)) {
-    return Response.json({ error: 'Sticker pack is not allowed' }, { status: 404, headers: cors });
+  if (!STICKER_PACK_NAME.test(packName || '')) {
+    return Response.json({ error: 'Invalid sticker pack name' }, { status: 404, headers: cors });
   }
 
   const cache = caches.default;
@@ -79,7 +76,7 @@ async function serveTelegramPack(request, url, env, ctx, cors) {
     });
     const response = Response.json({
       name: packName,
-      title: set.title || TELEGRAM_STICKER_PACKS.get(packName),
+      title: set.title || packName,
       stickers,
     }, { headers: { ...cors, 'Cache-Control': 'public, max-age=3600' } });
     ctx.waitUntil(cache.put(request, response.clone()));
@@ -93,7 +90,7 @@ async function serveTelegramPack(request, url, env, ctx, cors) {
 async function serveTelegramSticker(request, url, env, ctx, cors) {
   const packName = url.searchParams.get('pack');
   const fileId = url.searchParams.get('telegramSticker');
-  if (!TELEGRAM_STICKER_PACKS.has(packName) || !/^[A-Za-z0-9_-]{10,250}$/.test(fileId || '')) {
+  if (!STICKER_PACK_NAME.test(packName || '') || !/^[A-Za-z0-9_-]{10,250}$/.test(fileId || '')) {
     return new Response('Sticker is not allowed', { status: 404, headers: cors });
   }
 

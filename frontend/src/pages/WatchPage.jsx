@@ -5,7 +5,7 @@ import { useSocket } from '../hooks/useSocket';
 import { getAnimeKitsuInfo, getKitsuEpisodes, searchAnimeKitsu } from '../api/kitsu';
 import {
   planHlsRecovery,
-} from '../api/gogoanime';
+} from '../api/anineko';
 import { resolveAnimeStream } from '../api/animeStreams';
 import { resolveMovieStream } from '../api/movieStreams';
 import { getAniListEpisodeSchedule, getAnimeById } from '../api/anilist';

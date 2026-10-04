@@ -1,4 +1,4 @@
-import { searchGogoanime, getGogoanimeSource, pickBestShow, buildProxiedHlsSources, probeAvailableHlsSources } from './gogoanime.js';
+import { searchAniNeko, getAniNekoSource, pickBestShow, buildProxiedHlsSources, probeAvailableHlsSources } from './anineko.js';
 import { getMegaVidSource } from './megavid.js';
 
 export const MAX_VERIFIED_ANIME_SOURCES = 5;
@@ -92,9 +92,9 @@ async function firstSuccessful(promises) {
 
 export async function resolveAnimeStream(animeData, epNum, workerBase, overrides = {}) {
   const dependencies = {
-    search: searchGogoanime,
+    search: searchAniNeko,
     pick: pickBestShow,
-    primarySource: getGogoanimeSource,
+    primarySource: getAniNekoSource,
     backupSource: getMegaVidSource,
     build: buildProxiedHlsSources,
     probe: probeAvailableHlsSources,

@@ -9,12 +9,18 @@ const {
   mockFsUpdate,
   mockBatchDelete,
   mockBatchCommit,
+  mockTransactionGet,
+  mockTransactionSet,
+  mockRunTransaction,
 } = vi.hoisted(() => ({
   mockVerifyIdToken: vi.fn(),
   mockFsGet: vi.fn(),
   mockFsUpdate: vi.fn().mockResolvedValue(undefined),
   mockBatchDelete: vi.fn(),
   mockBatchCommit: vi.fn().mockResolvedValue(undefined),
+  mockTransactionGet: vi.fn().mockResolvedValue({ data: () => ({}) }),
+  mockTransactionSet: vi.fn(),
+  mockRunTransaction: vi.fn(),
 }));
 
 vi.mock('firebase-admin', () => ({
@@ -22,7 +28,9 @@ vi.mock('firebase-admin', () => ({
     auth: () => ({ verifyIdToken: mockVerifyIdToken }),
     firestore: Object.assign(
       () => ({
+        runTransaction: mockRunTransaction,
         collection: () => ({
+          get: mockFsGet,
           doc: () => ({
             get: mockFsGet,
             update: mockFsUpdate,
@@ -172,5 +180,51 @@ describe('DELETE /api/me/history', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true, deleted: 0 });
     expect(mockBatchDelete).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('sticker library API', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockVerifyIdToken.mockResolvedValue({ uid: 'uid-1' });
+    mockTransactionGet.mockResolvedValue({ data: () => ({}) });
+    mockRunTransaction.mockImplementation(callback => callback({
+      get: mockTransactionGet, set: mockTransactionSet, delete: vi.fn(), update: (_ref, updates) => mockFsUpdate(updates),
+    }));
+  });
+
+  it('persists the personal library and sharing contribution together', async () => {
+    const pack = { name: 'CatPack', title: 'Cats', enabled: true, shared: true };
+    const res = await request(app).patch('/').set('Authorization', 'Bearer valid-token')
+      .send({ telegramStickerPacks: [pack], admin: true });
+    expect(res.status).toBe(200);
+    expect(mockRunTransaction).toHaveBeenCalledOnce();
+    expect(mockFsUpdate).toHaveBeenCalledWith({ telegramStickerPacks: [pack] });
+    expect(mockTransactionSet).toHaveBeenCalledWith(expect.anything(), { name: 'CatPack', title: 'Cats', sharedBy: ['uid-1'] });
+  });
+
+  it('rejects malformed library preferences before persisting anything', async () => {
+    const res = await request(app).patch('/').set('Authorization', 'Bearer valid-token')
+      .send({ telegramStickerPacks: [{ name: '../Cats', title: 'Cats', enabled: true, shared: true }] });
+    expect(res.status).toBe(400);
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+    expect(mockFsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('returns only shared pack metadata without contributor identities', async () => {
+    mockFsGet.mockResolvedValueOnce({ docs: [
+      { data: () => ({ name: 'CatPack', title: 'Cats', sharedBy: ['uid-1', 'uid-2'] }) },
+      { data: () => ({ name: 'PrivatePack', title: 'Private', sharedBy: [] }) },
+    ] });
+    const res = await request(app).get('/sticker-pool').set('Authorization', 'Bearer valid-token');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ packs: [{ name: 'CatPack', title: 'Cats' }] });
+  });
+
+  it('requires authentication to browse the shared pool', async () => {
+    const res = await request(app).get('/sticker-pool');
+    expect(res.status).toBe(401);
+    expect(mockFsGet).not.toHaveBeenCalled();
   });
 });

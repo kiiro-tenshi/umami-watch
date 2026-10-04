@@ -4,6 +4,8 @@ services:
     build:
       context: ./cloudflare-worker
       dockerfile: Dockerfile.dev
+    environment:
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
     volumes:
       - ./cloudflare-worker/hls-proxy.js:/app/hls-proxy.js:ro
     ports:
@@ -45,6 +47,7 @@ services:
       - /app/node_modules      # keep image's node_modules, don't overwrite
     environment:
       PORT: 8080
+      STICKER_WORKER_URL: "http://localhost:8787/"
       FIREBASE_PROJECT_ID: umami-watch
       # Admin SDK auto-detects these to switch to emulator mode
       FIRESTORE_EMULATOR_HOST: firebase:8088

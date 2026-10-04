@@ -135,3 +135,36 @@ describe('AuthProvider', () => {
     expect(mockSignOut).toHaveBeenCalledOnce();
   });
 });
+
+
+describe('sticker profile persistence', () => {
+  it.each([true, false])('updates local settings only if the profile save succeeds (success=%s)', async success => {
+    vi.clearAllMocks();
+    const originalPacks = [{ name: 'Cats', title: 'Cats', enabled: true, shared: false }];
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => ({ telegramStickerPacks: originalPacks }) });
+    mockSetDoc.mockResolvedValueOnce(undefined);
+    mockOnAuthStateChanged.mockImplementation((_auth, cb) => {
+      cb({ uid: 'u1', email: 'test@test.com', displayName: 'Tester', photoURL: null });
+      return vi.fn();
+    });
+    const mockFetch = vi.fn().mockResolvedValue({ ok: success, json: async () => ({ error: 'Save failed' }) });
+    vi.stubGlobal('fetch', mockFetch);
+    try {
+      let context;
+      render(<AuthProvider><AuthConsumer onValue={value => { context = value; }} /></AuthProvider>);
+      await waitFor(() => expect(context.user?.telegramStickerPacks).toEqual(originalPacks));
+      await act(async () => {
+        const save = context.updateUserProfile({ telegramStickerPacks: [] });
+        if (success) await save;
+        else await expect(save).rejects.toThrow('Save failed');
+      });
+      expect(context.user.telegramStickerPacks).toEqual(success ? [] : originalPacks);
+      expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/api/me'), expect.objectContaining({
+        method: 'PATCH', body: JSON.stringify({ telegramStickerPacks: [] }),
+        headers: expect.objectContaining({ Authorization: 'Bearer test-token' }),
+      }));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

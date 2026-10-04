@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { auth } from '../firebase';
 import data from '@emoji-mart/data';
 import Picker from '@emoji-mart/react';
-import { getTelegramStickerPack, TELEGRAM_STICKER_PACKS } from '../api/telegramStickers';
+import { getTelegramStickerPack } from '../api/telegramStickers';
+import { getUserStickerPacks } from '../utils/stickerLibrary';
 
 const GIPHY_KEY = import.meta.env.VITE_GIPHY_API_KEY;
 
@@ -21,7 +22,10 @@ export default function ChatPanel({ roomId, socket, user }) {
   const [gifResults, setGifResults]   = useState([]);
   const [loadingGifs, setLoadingGifs] = useState(false);
   const [showStickers, setShowStickers] = useState(false);
-  const [activeStickerPack, setActiveStickerPack] = useState(TELEGRAM_STICKER_PACKS[0].name);
+  const enabledStickerPacks = getUserStickerPacks(user).filter(pack => pack.enabled !== false);
+  const [selectedStickerPack, setActiveStickerPack] = useState('');
+  const activeStickerPack = enabledStickerPacks.some(pack => pack.name === selectedStickerPack)
+    ? selectedStickerPack : enabledStickerPacks[0]?.name || '';
   const [stickerPacks, setStickerPacks] = useState({});
   const [loadingStickers, setLoadingStickers] = useState(false);
   const [stickerError, setStickerError] = useState('');
@@ -111,7 +115,9 @@ export default function ChatPanel({ roomId, socket, user }) {
   }, [gifQuery, showGif]);
 
   useEffect(() => {
-    if (!showStickers || stickerPacks[activeStickerPack]) return;
+    setStickerError('');
+    setLoadingStickers(false);
+    if (!showStickers || !activeStickerPack || stickerPacks[activeStickerPack]) return;
     let cancelled = false;
     setLoadingStickers(true);
     setStickerError('');
@@ -160,7 +166,7 @@ export default function ChatPanel({ roomId, socket, user }) {
   };
 
   const sendSticker = (sticker) => {
-    if (!socket) return;
+    if (!socket || !activeStickerPack) return;
     socket.emit('chat:message', {
       type: 'sticker',
       pack: activeStickerPack,
@@ -283,13 +289,13 @@ export default function ChatPanel({ roomId, socket, user }) {
       {/* Telegram sticker picker */}
       {showStickers && (
         <div className="flex-shrink-0 border-t border-border bg-surface" data-testid="sticker-picker">
-          <div className="flex gap-1 p-2 border-b border-border">
-            {TELEGRAM_STICKER_PACKS.map(pack => (
+          <div className="flex gap-1 p-2 border-b border-border overflow-x-auto">
+            {enabledStickerPacks.map(pack => (
               <button
                 key={pack.name}
                 type="button"
                 onClick={() => setActiveStickerPack(pack.name)}
-                className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                className={`flex-shrink-0 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                   activeStickerPack === pack.name
                     ? 'bg-accent-blue text-white'
                     : 'bg-surface-raised text-muted hover:text-primary'
@@ -298,7 +304,9 @@ export default function ChatPanel({ roomId, socket, user }) {
             ))}
           </div>
           <div className="h-48 overflow-y-auto scrollbar-themed p-2">
-            {loadingStickers ? (
+            {!activeStickerPack ? (
+              <p className="text-center text-muted text-xs py-8">No sticker packs selected. Add or enable packs in <a href="/profile" className="text-accent-blue underline">Profile Settings</a>.</p>
+            ) : loadingStickers ? (
               <p className="text-center text-muted text-xs py-8">Loading stickers...</p>
             ) : stickerError ? (
               <p className="text-center text-red-400 text-xs py-8">{stickerError}</p>

@@ -231,6 +231,25 @@ describe('Cloudflare Telegram sticker gateway', () => {
     expect(cache.put).toHaveBeenCalledOnce();
   });
 
+  it('loads a custom Telegram pack beyond the original defaults', async () => {
+    stubEdgeCache();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(stickerSet)));
+    const response = await worker.fetch(new Request('https://worker.example/?stickerPack=CustomCats'),
+      { TELEGRAM_BOT_TOKEN: 'secret-token' }, { waitUntil: vi.fn() });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ name: 'CustomCats', stickers: [{ fileId }] });
+  });
+
+  it('rejects a sticker file that does not belong to a custom pack', async () => {
+    stubEdgeCache();
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(stickerSet));
+    vi.stubGlobal('fetch', fetchMock);
+    const response = await worker.fetch(new Request('https://worker.example/?pack=CustomCats&telegramSticker=unknown_file_123'),
+      { TELEGRAM_BOT_TOKEN: 'secret-token' }, { waitUntil: vi.fn() });
+    expect(response.status).toBe(404);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('validates membership then streams and caches a sticker file', async () => {
     const cache = stubEdgeCache();
     const fetchMock = vi.fn()
@@ -256,12 +275,12 @@ describe('Cloudflare Telegram sticker gateway', () => {
     expect(cache.put).toHaveBeenCalledOnce();
   });
 
-  it('rejects non-curated packs before contacting Telegram', async () => {
+  it('rejects malformed packs before contacting Telegram', async () => {
     stubEdgeCache();
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const response = await worker.fetch(
-      new Request('https://worker.example/?stickerPack=unknown_pack'),
+      new Request('https://worker.example/?stickerPack=invalid%2Fpack'),
       { TELEGRAM_BOT_TOKEN: 'secret-token' },
       { waitUntil: vi.fn() },
     );

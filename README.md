@@ -216,3 +216,28 @@ Deployments are fully automated via **Cloud Build tag triggers**.
 ---
 
 *UmamiWatch — Sharing moments, frame by frame.*
+
+
+## Personal sticker libraries
+
+Profile Settings contains a sticker library. Add a Telegram pack using an HTTPS
+`https://t.me/addstickers/PackName` URL, remove packs, and choose **Show in chat**
+for each pack. The watch-party sticker picker shows only enabled packs. Users start with an empty library and add their own packs; explicitly clearing
+the library keeps it empty. Libraries are limited to 30 packs per account.
+
+**Share with everyone** is a separate, opt-in setting per pack. Shared packs are
+listed in the shared sticker pool in Profile Settings so other signed-in users
+can add them to their own libraries. Adding a pack does not automatically reshare
+it. Removing or unsharing a pack removes the user's contribution; it remains in
+the pool while another user shares it. Existing personal copies stay available.
+
+Preferences are stored in `users/{uid}.telegramStickerPacks` with `name`, `title`,
+`enabled`, and `shared` fields. The server atomically maintains
+`shared_sticker_packs/{lowercasePackName}` contributions. The authenticated
+`GET /api/me/sticker-pool` endpoint exposes only pack names and titles.
+
+Deploy the updated Cloudflare Worker along with the app to enable custom packs;
+the previous Worker accepts only the original two packs. It continues to use the
+existing `TELEGRAM_BOT_TOKEN` secret and verifies that requested sticker files
+belong to the selected Telegram pack. Static stickers and WebM videos are
+supported; TGS animations use Telegram's static thumbnail.

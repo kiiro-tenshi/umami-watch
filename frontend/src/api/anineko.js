@@ -1,6 +1,6 @@
 import { auth } from '../firebase.js';
 
-const BACKEND = `${import.meta.env.VITE_API_BASE_URL || ''}/api/anime/gogoanime`;
+const BACKEND = `${import.meta.env.VITE_API_BASE_URL || ''}/api/anime/anineko`;
 
 async function backendGet(path, params = {}) {
   const url = new URL(`${BACKEND}/${path}`, window.location.origin);
@@ -11,7 +11,7 @@ async function backendGet(path, params = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const error = new Error(data.error || `GogoAnime error: ${res.status}`);
+    const error = new Error(data.error || `AniNeko error: ${res.status}`);
     error.status = res.status;
     error.code = data.code;
     error.provider = data.provider || 'anineko';
@@ -20,9 +20,9 @@ async function backendGet(path, params = {}) {
   return data;
 }
 
-export const searchGogoanime = (q) => backendGet('search', { q });
-export const getGogoanimeEpisodes = (slug) => backendGet('episodes', { slug });
-export const getGogoanimeSource = (slug, ep) => backendGet('sources', { slug, ep: String(ep) });
+export const searchAniNeko = (q) => backendGet('search', { q });
+export const getAniNekoEpisodes = (slug) => backendGet('episodes', { slug });
+export const getAniNekoSource = (slug, ep) => backendGet('sources', { slug, ep: String(ep) });
 
 export function buildProxiedHlsSources(sourceData, workerBase) {
   if (!workerBase) {

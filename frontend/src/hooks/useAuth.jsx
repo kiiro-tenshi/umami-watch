@@ -68,12 +68,16 @@ export const AuthProvider = ({ children }) => {
     }
 
     const token = await auth.currentUser.getIdToken();
-    await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/me`, {
+    const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/me`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(updates),
     });
 
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || 'Failed to save profile settings.');
+    }
     setUser(prev => ({ ...prev, ...updates }));
   };
   

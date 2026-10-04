@@ -1,10 +1,7 @@
 import admin from 'firebase-admin';
+import { STICKER_PACK_NAME } from '../utils/stickerLibrary.js';
 
 const HEARTBEAT_PERSIST_INTERVAL_MS = 15_000;
-const TELEGRAM_STICKER_PACKS = new Set([
-  'kiiromiko_by_kiiro_sticker_bot',
-  'kiirouniform_by_kiiro_sticker_bot',
-]);
 const STICKER_WORKER_URL = process.env.STICKER_WORKER_URL
   || 'https://umami-hls-proxy.identityonlyforgaming.workers.dev/';
 
@@ -14,7 +11,7 @@ function buildStickerMessage(payload, identity) {
   const stickerId = String(payload?.stickerId || '');
   const format = String(payload?.format || '');
   const emoji = typeof payload?.emoji === 'string' ? payload.emoji.slice(0, 16) : '';
-  if (!TELEGRAM_STICKER_PACKS.has(pack)
+  if (!STICKER_PACK_NAME.test(pack)
     || !/^[A-Za-z0-9_-]{10,250}$/.test(fileId)
     || !/^[A-Za-z0-9_-]{5,250}$/.test(stickerId)
     || !['webp', 'webm'].includes(format)) return null;
@@ -206,6 +203,14 @@ export default function setupSockets(io) {
       } else if (payload?.type === 'sticker') {
         msg = buildStickerMessage(payload, identity);
         if (!msg) return;
+        try {
+          const profile = await admin.firestore().collection('users').doc(uid).get();
+          const saved = profile?.data()?.telegramStickerPacks;
+          const packs = Array.isArray(saved) ? saved : [];
+          if (!packs.some(pack => pack.name === msg.stickerPack && pack.enabled !== false)) return;
+        } catch {
+          return socket.emit('error', 'Could not load your sticker library. Please try again.');
+        }
       } else {
         // text (or legacy plain string)
         const text = typeof payload === 'string' ? payload : payload?.text;

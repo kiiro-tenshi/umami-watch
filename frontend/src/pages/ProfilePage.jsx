@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useWatchlist } from '../hooks/useWatchlist';
 import { useHistory } from '../hooks/useHistory';
 import ContentCard from '../components/ContentCard';
+import StickerLibrarySettings from '../components/StickerLibrarySettings';
 import { auth } from '../firebase';
 import { clearLocalProgress } from '../utils/playerPreferences';
 
@@ -259,6 +260,8 @@ export default function ProfilePage() {
                 </div>
               </div>
             </div>
+
+            <StickerLibrarySettings />
 
             <div className="bg-surface rounded-2xl shadow-sm border border-border overflow-hidden">
               <div className="p-6 bg-surface-raised border-b border-border">

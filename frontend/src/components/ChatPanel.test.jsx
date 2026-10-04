@@ -17,10 +17,6 @@ vi.mock('@emoji-mart/react', () => ({
 }));
 vi.mock('@emoji-mart/data', () => ({ default: {} }));
 vi.mock('../api/telegramStickers', () => ({
-  TELEGRAM_STICKER_PACKS: [
-    { name: 'kiiromiko_by_kiiro_sticker_bot', title: 'Kiiro Miko' },
-    { name: 'kiirouniform_by_kiiro_sticker_bot', title: 'Kiiro Uniform' },
-  ],
   getTelegramStickerPack: mockGetTelegramStickerPack,
 }));
 
@@ -210,8 +206,8 @@ describe('ChatPanel', () => {
     expect(screen.queryByPlaceholderText('Search GIFs...')).not.toBeInTheDocument();
   });
 
-  it('loads and sends a curated Telegram sticker', async () => {
-    render(<ChatPanel roomId="r1" socket={socket} user={USER} />);
+  it('loads and sends a Telegram pack explicitly saved in the library', async () => {
+    render(<ChatPanel roomId="r1" socket={socket} user={{ ...USER, telegramStickerPacks: [{ name: 'kiiromiko_by_kiiro_sticker_bot', title: 'Kiiro Miko', enabled: true }] }} />);
     await userEvent.click(screen.getByText('STK'));
 
     const sticker = await screen.findByRole('button', { name: 'Send sticker 😊' });
@@ -235,5 +231,31 @@ describe('ChatPanel', () => {
     const input = screen.getByPlaceholderText('Type a message...');
     await userEvent.type(input, 'H');
     expect(socket.emit).toHaveBeenCalledWith('chat:typing');
+  });
+});
+
+
+describe('personal sticker selection', () => {
+  it('shows only enabled personal packs and emits the custom pack name', async () => {
+    const socket = makeSocket();
+    mockGetTelegramStickerPack.mockResolvedValue({ stickers: [{ id: 'unique123', fileId: 'file123456789', format: 'webp', emoji: '', url: 'https://worker.example/sticker' }] });
+    render(<ChatPanel roomId="r1" socket={socket} user={{ ...USER, telegramStickerPacks: [
+      { name: 'Cats', title: 'Custom Cats', enabled: true },
+      { name: 'Dogs', title: 'Hidden Dogs', enabled: false },
+    ] }} />);
+    await userEvent.click(screen.getByText('STK'));
+    expect(screen.getByRole('button', { name: 'Custom Cats' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hidden Dogs' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Kiiro Miko' })).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Send sticker' }));
+    expect(socket.emit).toHaveBeenCalledWith('chat:message', expect.objectContaining({ pack: 'Cats', type: 'sticker' }));
+  });
+
+  it.each([undefined, []])('offers profile settings when no packs have been added or all packs are removed', async packs => {
+    mockGetTelegramStickerPack.mockClear();
+    render(<ChatPanel roomId="r1" socket={makeSocket()} user={{ ...USER, telegramStickerPacks: packs }} />);
+    await userEvent.click(screen.getByText('STK'));
+    expect(screen.getByRole('link', { name: 'Profile Settings' })).toHaveAttribute('href', '/profile');
+    expect(mockGetTelegramStickerPack).not.toHaveBeenCalled();
   });
 });

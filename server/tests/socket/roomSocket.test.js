@@ -234,7 +234,8 @@ describe('setupSockets', () => {
       expect(mockFsAdd).not.toHaveBeenCalled();
     });
 
-    it('saves and broadcasts an allowlisted Telegram sticker', async () => {
+    it('saves and broadcasts a Telegram sticker explicitly added to the library', async () => {
+      mockFsGet.mockResolvedValueOnce({ data: () => ({ telegramStickerPacks: [{ name: 'kiiromiko_by_kiiro_sticker_bot', enabled: true }] }) });
       await socket._trigger('chat:message', {
         type: 'sticker',
         pack: 'kiiromiko_by_kiiro_sticker_bot',
@@ -253,7 +254,31 @@ describe('setupSockets', () => {
       expect(io.to).toHaveBeenCalledWith('chat-room');
     });
 
-    it('rejects stickers from packs outside the allowlist', async () => {
+    it('does not implicitly allow the original packs for users without a library', async () => {
+      mockFsGet.mockResolvedValueOnce({ data: () => ({}) });
+      await socket._trigger('chat:message', {
+        type: 'sticker', pack: 'kiiromiko_by_kiiro_sticker_bot', fileId: 'CAACAgUAAxkBAASticker123', stickerId: 'AgADStickerUnique123', format: 'webp',
+      });
+      expect(mockFsAdd).not.toHaveBeenCalled();
+    });
+
+    it('allows enabled custom packs saved in the sender profile', async () => {
+      mockFsGet.mockResolvedValueOnce({ data: () => ({ telegramStickerPacks: [{ name: 'CustomCats', enabled: true }] }) });
+      await socket._trigger('chat:message', {
+        type: 'sticker', pack: 'CustomCats', fileId: 'CAACAgUAAxkBAASticker123', stickerId: 'AgADStickerUnique123', format: 'webp',
+      });
+      expect(mockFsAdd).toHaveBeenCalledWith(expect.objectContaining({ stickerPack: 'CustomCats' }));
+    });
+
+    it.each([[], [{ name: 'CustomCats', enabled: false }]])('rejects packs removed or disabled in the sender profile', async packs => {
+      mockFsGet.mockResolvedValueOnce({ data: () => ({ telegramStickerPacks: packs }) });
+      await socket._trigger('chat:message', {
+        type: 'sticker', pack: 'CustomCats', fileId: 'CAACAgUAAxkBAASticker123', stickerId: 'AgADStickerUnique123', format: 'webp',
+      });
+      expect(mockFsAdd).not.toHaveBeenCalled();
+    });
+
+    it('rejects stickers from packs outside the personal library', async () => {
       await socket._trigger('chat:message', {
         type: 'sticker',
         pack: 'unknown_pack',

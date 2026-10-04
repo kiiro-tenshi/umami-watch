@@ -128,7 +128,7 @@ export function parseHlsEmbedSources(html) {
   return (subbed.length ? subbed : ranked).slice(0, 8);
 }
 
-// GET /api/anime/gogoanime/search?q=
+// GET /api/anime/anineko/search?q=
 router.get('/search', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.status(400).json({ error: 'q required' });
@@ -141,7 +141,7 @@ router.get('/search', async (req, res) => {
   }
 });
 
-// GET /api/anime/gogoanime/episodes?slug=
+// GET /api/anime/anineko/episodes?slug=
 router.get('/episodes', async (req, res) => {
   const { slug } = req.query;
   if (!slug) return res.status(400).json({ error: 'slug required' });
@@ -154,7 +154,7 @@ router.get('/episodes', async (req, res) => {
   }
 });
 
-// GET /api/anime/gogoanime/sources?slug=&ep=
+// GET /api/anime/anineko/sources?slug=&ep=
 router.get('/sources', async (req, res) => {
   const { slug, ep } = req.query;
   if (!slug || !ep) return res.status(400).json({ error: 'slug and ep required' });

@@ -1,12 +1,7 @@
-export const TELEGRAM_STICKER_PACKS = [
-  { name: 'kiiromiko_by_kiiro_sticker_bot', title: 'Kiiro Miko' },
-  { name: 'kiirouniform_by_kiiro_sticker_bot', title: 'Kiiro Uniform' },
-];
-
-const ALLOWED_PACKS = new Set(TELEGRAM_STICKER_PACKS.map(pack => pack.name));
+import { STICKER_PACK_NAME } from '../utils/stickerLibrary';
 
 export async function getTelegramStickerPack(packName, workerBase = import.meta.env.VITE_HLS_PROXY_URL, fetchFn = fetch) {
-  if (!ALLOWED_PACKS.has(packName)) throw new Error('Sticker pack is not allowed.');
+  if (typeof packName !== 'string' || !STICKER_PACK_NAME.test(packName)) throw new Error('Invalid sticker pack name.');
   if (!workerBase) throw new Error('Telegram stickers are not configured.');
 
   const url = new URL(workerBase);

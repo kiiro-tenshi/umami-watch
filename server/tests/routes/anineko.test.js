@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseHlsEmbedSources } from '../../routes/gogoanime.js';
+import { parseHlsEmbedSources } from '../../routes/anineko.js';
 
 describe('parseHlsEmbedSources', () => {
   it('returns labeled Cloudflare-resolvable HLS embeds and subtitle tracks', () => {

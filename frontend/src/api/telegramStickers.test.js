@@ -14,8 +14,8 @@ describe('getTelegramStickerPack', () => {
       .toBe('kiiromiko_by_kiiro_sticker_bot');
   });
 
-  it('rejects packs outside the curated allowlist', async () => {
-    await expect(getTelegramStickerPack('unknown', 'https://worker.example/'))
-      .rejects.toThrow(/not allowed/i);
+  it('rejects malformed pack names before fetching', async () => {
+    await expect(getTelegramStickerPack('../unknown', 'https://worker.example/'))
+      .rejects.toThrow(/invalid/i);
   });
 });

@@ -1,6 +1,6 @@
 import { findMovieSubtitles } from './movieSubtitles.js';
 import { auth } from '../firebase.js';
-import { buildProxiedHlsSources, probeAvailableHlsSources } from './gogoanime.js';
+import { buildProxiedHlsSources, probeAvailableHlsSources } from './anineko.js';
 
 export async function resolveMovieStream(content, workerBase, overrides = {}) {
   if (!workerBase) throw new Error('Cloudflare HLS proxy is not configured.');

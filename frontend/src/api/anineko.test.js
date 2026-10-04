@@ -6,7 +6,7 @@ import {
   probeAvailableHlsSources,
   findNextHlsSource,
   planHlsRecovery,
-} from './gogoanime.js';
+} from './anineko.js';
 
 const FRIEREN_SHOWS = [
   { slug: 'sousou-no-frieren-season-2', title: 'Frieren: Beyond Journey\'s End Season 2' },
@@ -67,7 +67,7 @@ describe('pickBestShow', () => {
   });
 
   // Compact match: AniList may store a title as one concatenated word (e.g. "MARRIAGETOXIN")
-  // while GogoAnime indexes it with spaces ("Marriage Toxin"). Strip spaces from both and compare.
+  // while AniNeko indexes it with spaces ("Marriage Toxin"). Strip spaces from both and compare.
   it('compact match — "MARRIAGETOXIN" matches "Marriage Toxin"', () => {
     const shows = [
       { slug: 'some-romance-show', title: 'My Lovely Marriage' },
