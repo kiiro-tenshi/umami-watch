@@ -13,7 +13,7 @@ UmamiStream is a private, invite-only streaming portal for anime, movies, and TV
 ## 2. Tech Stack
 
 ### Runtime & Language
-- **Node.js 20** (required by CI; both frontend build and backend server)
+- **Node.js 24.22.3** (required by CI; both frontend build and backend server)
 - **JavaScript (ESM)** throughout — `"type": "module"` in all `package.json` files
 - **Python 3.12** for pure-logic test suite in `tests/`
 
@@ -23,15 +23,15 @@ UmamiStream is a private, invite-only streaming portal for anime, movies, and TV
 | `react` | 18.2.0 | UI framework |
 | `react-dom` | 18.2.0 | DOM rendering |
 | `react-router-dom` | 6.22.0 | Client-side routing (`BrowserRouter`) |
-| `firebase` | 10.8.0 | Auth + Firestore client SDK |
+| `firebase` | 13.4.0 | Auth + Firestore client SDK |
 | `socket.io-client` | 4.7.2 | WebSocket client for room sync |
 | `plyr` | 3.7.8 | HTML5 video player wrapper |
 | `hls.js` | 1.5.8 | HLS stream decoding |
 | `emoji-mart` | 5.6.0 | Emoji picker (chat feature) |
 | `@emoji-mart/react` | 1.1.1 | React binding for emoji-mart |
-| `vite` | 5.1.3 | Dev server + bundler |
+| `vite` | 8.3.8 | Dev server + bundler |
 | `tailwindcss` | 3.4.1 | Utility CSS (dark-mode: `class` strategy) |
-| `vitest` | 1.6.0 | Test runner |
+| `vitest` | 4.1.x | Test runner |
 | `@testing-library/react` | 14.3.0 | Component testing |
 | `jsdom` | 24.0.0 | DOM environment for tests |
 
@@ -43,7 +43,7 @@ UmamiStream is a private, invite-only streaming portal for anime, movies, and TV
 | `firebase-admin` | 12.0.0 | Auth token verification + Firestore admin |
 | `compression` | 1.7.4 | HTTP gzip (disabled for HLS proxy route) |
 | `cors` | 2.8.5 | CORS middleware |
-| `vitest` | 1.6.0 | Test runner |
+| `vitest` | 4.1.x | Test runner |
 | `supertest` | 7.0.0 | HTTP assertion for route tests |
 
 ### Database
@@ -410,7 +410,7 @@ docker compose -f docker-compose.dev.yml up --build
 
 ### Option B: Manual (without Docker)
 
-**Prerequisites:** Node.js 20, Java (for Firebase emulator), Firebase CLI
+**Prerequisites:** Node.js 24.22.3, Java (for Firebase emulator), Firebase CLI
 
 ```bash
 # Terminal 1: Firebase emulator

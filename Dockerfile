@@ -1,7 +1,8 @@
-FROM node:20-alpine AS frontend-builder
+FROM node:24.22.3-alpine AS frontend-builder
+RUN apk upgrade --no-cache && npm install --global npm@12.2.3
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci
 COPY frontend/ ./
 
 # Accept Vite env vars injected by Cloud Build (--build-arg)
@@ -33,10 +34,11 @@ ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY \
 
 RUN npm run build
 
-FROM node:20-alpine AS production
+FROM node:24.22.3-alpine AS production
+RUN apk upgrade --no-cache && npm install --global npm@12.2.3
 WORKDIR /app/server
 COPY server/package*.json ./
-RUN npm install --omit=dev
+RUN npm ci --omit=dev
 COPY server/ ./
 WORKDIR /app
 COPY --from=frontend-builder /app/frontend/dist ./public

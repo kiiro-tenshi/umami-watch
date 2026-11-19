@@ -27,12 +27,12 @@ const mockHlsInstance = {
 };
 
 vi.mock('plyr', () => ({
-  default: vi.fn(() => mockPlyrInstance),
+  default: vi.fn(function PlyrMock() { return mockPlyrInstance; }),
 }));
 
 vi.mock('hls.js', () => ({
   default: Object.assign(
-    vi.fn(config => {
+    vi.fn(function HlsMock(config) {
       mockHlsInstance.config = { ...config };
       return mockHlsInstance;
     }),

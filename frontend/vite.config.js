@@ -15,14 +15,16 @@ export default defineConfig({
     },
   },
   build: {
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
-          'vendor-player': ['plyr', 'hls.js'],
-          'vendor-emoji': ['emoji-mart', '@emoji-mart/react'],
-          'vendor-socket': ['socket.io-client'],
+        codeSplitting: {
+          groups: [
+            { name: 'vendor-react', test: /[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom)[\\/]/ },
+            { name: 'vendor-firebase', test: /[\\/]node_modules[\\/](@firebase|firebase)[\\/]/ },
+            { name: 'vendor-player', test: /[\\/]node_modules[\\/](plyr|hls\.js)[\\/]/ },
+            { name: 'vendor-emoji', test: /[\\/]node_modules[\\/](@emoji-mart|emoji-mart)[\\/]/ },
+            { name: 'vendor-socket', test: /[\\/]node_modules[\\/]socket\.io-client[\\/]/ },
+          ],
         },
       },
     },
